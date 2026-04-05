@@ -482,7 +482,53 @@ except ImportError:
 
 // --- File operation helpers ---
 
+// Deny access to sensitive system paths from AI tool calls.
+const SENSITIVE_PATTERNS_WIN = [
+  /[\\/]windows[\\/]system32[\\/]config/i,
+  /[\\/]\.ssh[\\/]/i,
+  /[\\/]\.gnupg[\\/]/i,
+  /[\\/]\.aws[\\/]/i,
+  /[\\/]\.azure[\\/]/i,
+  /[\\/]\.gcloud[\\/]/i,
+  /[\\/]\.docker[\\/]/i,
+  /[\\/]\.kube[\\/]/i,
+  /[\\/]credential/i,
+  /[\\/]\.env$/i,
+  /[\\/]\.env\./i,
+  /[\\/]\.npmrc$/i,
+  /[\\/]\.netrc$/i,
+  /[\\/]\.pgpass$/i,
+];
+
+const SENSITIVE_PATTERNS_UNIX = [
+  /^\/etc\/shadow/i,
+  /^\/etc\/passwd/i,
+  /^\/etc\/sudoers/i,
+  /[\\/]\.ssh[\\/]/i,
+  /[\\/]\.gnupg[\\/]/i,
+  /[\\/]\.aws[\\/]/i,
+  /[\\/]\.azure[\\/]/i,
+  /[\\/]\.gcloud[\\/]/i,
+  /[\\/]\.docker[\\/]/i,
+  /[\\/]\.kube[\\/]/i,
+  /[\\/]credential/i,
+  /[\\/]\.env$/i,
+  /[\\/]\.env\./i,
+  /[\\/]\.npmrc$/i,
+  /[\\/]\.netrc$/i,
+  /[\\/]\.pgpass$/i,
+];
+
+function isPathBlocked(filePath) {
+  const resolved = path.resolve(filePath);
+  const patterns = process.platform === 'win32' ? SENSITIVE_PATTERNS_WIN : SENSITIVE_PATTERNS_UNIX;
+  return patterns.some(re => re.test(resolved));
+}
+
 function executeReadFile(filePath) {
+  if (isPathBlocked(filePath)) {
+    return { error: 'Access denied: this path is restricted for security.' };
+  }
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
     const truncated = content.length > 50000;
@@ -493,6 +539,9 @@ function executeReadFile(filePath) {
 }
 
 function executeWriteFile(filePath, content) {
+  if (isPathBlocked(filePath)) {
+    return { error: 'Access denied: this path is restricted for security.' };
+  }
   try {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, content, 'utf-8');
@@ -503,6 +552,9 @@ function executeWriteFile(filePath, content) {
 }
 
 function executeEditFile(filePath, oldText, newText) {
+  if (isPathBlocked(filePath)) {
+    return { error: 'Access denied: this path is restricted for security.' };
+  }
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
     if (!content.includes(oldText)) {
@@ -517,6 +569,9 @@ function executeEditFile(filePath, oldText, newText) {
 }
 
 function executeDeleteFile(filePath) {
+  if (isPathBlocked(filePath)) {
+    return { error: 'Access denied: this path is restricted for security.' };
+  }
   try {
     const stat = fs.statSync(filePath);
     if (stat.isDirectory()) {
@@ -531,6 +586,9 @@ function executeDeleteFile(filePath) {
 }
 
 function executeListDirectory(dirPath) {
+  if (isPathBlocked(dirPath)) {
+    return { error: 'Access denied: this path is restricted for security.' };
+  }
   try {
     const entries = fs.readdirSync(dirPath, { withFileTypes: true });
     const items = entries.slice(0, 100).map(e => {
@@ -1259,6 +1317,13 @@ function registerHandlers(ipcMain) {
   });
 
   ipcMain.handle(IPC.OPEN_FOLDER, async (_e, folderPath) => {
+    // Only open actual directories — refuse files to prevent executing binaries.
+    try {
+      const stat = fs.statSync(folderPath);
+      if (!stat.isDirectory()) return;
+    } catch {
+      return;
+    }
     shell.openPath(folderPath);
   });
 

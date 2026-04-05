@@ -32,7 +32,11 @@ function create() {
     },
   });
 
-  mainWindow.setBackgroundMaterial('acrylic');
+  if (process.platform === 'win32') {
+    mainWindow.setBackgroundMaterial('acrylic');
+  } else if (process.platform === 'darwin') {
+    mainWindow.setVibrancy('under-window');
+  }
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
   mainWindow.on('blur', () => {

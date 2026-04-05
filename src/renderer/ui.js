@@ -263,7 +263,9 @@ async function loadAppIcon(result) {
       const idx = currentResults.indexOf(result);
       if (idx >= 0 && items[idx]) {
         const iconDiv = items[idx].querySelector('.result-icon');
-        iconDiv.innerHTML = `<img src="${icon}">`;
+        const img = document.createElement('img');
+        img.src = icon;
+        iconDiv.replaceChildren(img);
       }
     }
   } catch {
@@ -340,7 +342,8 @@ function sanitizeHTML(html) {
       ALLOW_DATA_ATTR: false,
     });
   }
-  return html;
+  // DOMPurify failed to load — strip all HTML tags as a safe fallback.
+  return html.replace(/<[^>]*>/g, '');
 }
 
 function buildResponseHTML(response) {

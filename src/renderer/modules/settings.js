@@ -52,6 +52,10 @@ function close() {
   input.focus();
 }
 
+function escapeAttr(str) {
+  return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 async function render() {
   const panel = document.getElementById('settings-panel');
   const [settings, cacheInfo] = await Promise.all([
@@ -71,26 +75,26 @@ async function render() {
       <label class="settings-label">Gemini API Key</label>
       <input type="password" class="settings-input" id="settings-api-key"
         placeholder="Enter your Gemini API key"
-        value="${settings.apiKey || ''}">
+        value="${escapeAttr(settings.apiKey || '')}">
       <div class="settings-description">Get a free key from Google AI Studio</div>
     </div>
     <div class="settings-group">
       <label class="settings-label">Flash Model <span class="settings-prefix">?</span></label>
       <input type="text" class="settings-input" id="settings-model"
         placeholder="gemini-3-flash-preview"
-        value="${settings.model || 'gemini-3-flash-preview'}">
+        value="${escapeAttr(settings.model || 'gemini-3-flash-preview')}">
     </div>
     <div class="settings-group">
       <label class="settings-label">Pro Model <span class="settings-prefix">??</span></label>
       <input type="text" class="settings-input" id="settings-model-pro"
         placeholder="gemini-3.1-pro-preview"
-        value="${settings.modelPro || 'gemini-3.1-pro-preview'}">
+        value="${escapeAttr(settings.modelPro || 'gemini-3.1-pro-preview')}">
     </div>
     <div class="settings-group">
       <label class="settings-label">Extra Cached File Types</label>
       <input type="text" class="settings-input" id="settings-cached-file-types"
         placeholder=".blend, .psd, .step"
-        value="${Array.isArray(settings.cachedFileTypes) ? settings.cachedFileTypes.join(', ') : ''}">
+        value="${escapeAttr(Array.isArray(settings.cachedFileTypes) ? settings.cachedFileTypes.join(', ') : '')}">
       <div class="settings-description">Comma-separated extensions to include in file cache whitelist (for f: and # picker).</div>
     </div>
     <div style="display:flex;align-items:center;margin-top:8px">

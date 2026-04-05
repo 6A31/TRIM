@@ -43,11 +43,11 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "assets/icon.ico"
+      "icon": "assets/Trim Logo.ico"
     },
     "mac": {
       "target": "dmg",
-      "icon": "assets/icon.icns",
+      "icon": "assets/Trim Logo.icns",
       "category": "public.app-category.utilities"
     },
     "nsis": {
