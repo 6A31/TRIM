@@ -4,7 +4,7 @@ contextBridge.exposeInMainWorld('trim', {
   searchApps:    ()           => ipcRenderer.invoke('trim:search-apps'),
   getIcon:       (exePath)    => ipcRenderer.invoke('trim:get-icon', exePath),
   openApp:       (appPath)    => ipcRenderer.invoke('trim:open-app', appPath),
-  aiQuery:       (query, usePro, forceShow) => ipcRenderer.invoke('trim:ai-query', query, usePro, forceShow),
+  aiQuery:       (query, usePro, forceShow, followUp) => ipcRenderer.invoke('trim:ai-query', query, usePro, forceShow, followUp),
   searchFolders: (query)      => ipcRenderer.invoke('trim:search-folders', query),
   openFolder:    (folderPath) => ipcRenderer.invoke('trim:open-folder', folderPath),
   loadSettings:  ()           => ipcRenderer.invoke('trim:load-settings'),

@@ -226,6 +226,8 @@
   padding: 16px 18px;
   overflow-y: auto;
   max-height: calc(100vh - 68px);
+  user-select: text;
+  cursor: text;
 }
 
 .ai-loading {
@@ -260,7 +262,7 @@
 /* KaTeX overrides for dark theme */
 .ai-text .katex {
   color: var(--text-primary);
-  font-size: 1.05em;
+  font-size: 1.2em;
 }
 
 .ai-text .katex-display {

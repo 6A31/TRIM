@@ -206,7 +206,9 @@ function sendStatus(event, text) {
 
 // --- AI query with function calling loop ---
 
-async function handleAIQuery(event, query, usePro, forceShowOutput) {
+let chatHistory = null; // { contents: [], model: string }
+
+async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
   if (!ai) {
     return { error: 'No API key configured. Use /settings to add your Gemini API key.' };
   }
@@ -221,7 +223,14 @@ async function handleAIQuery(event, query, usePro, forceShowOutput) {
   let venv = null;
 
   try {
-    const contents = [{ role: 'user', parts: [{ text: query }] }];
+    // Build contents: continue existing conversation or start fresh
+    let contents;
+    if (followUp && chatHistory && chatHistory.model === modelName) {
+      contents = [...chatHistory.contents, { role: 'user', parts: [{ text: query }] }];
+    } else {
+      contents = [{ role: 'user', parts: [{ text: query }] }];
+    }
+
     const codeOutputs = [];
     const MAX_ROUNDS = 6;
 
@@ -313,6 +322,10 @@ async function handleAIQuery(event, query, usePro, forceShowOutput) {
           ?.filter(c => c.web)
           .map(c => ({ title: c.web.title, uri: c.web.uri })) || [];
 
+        // Save conversation history for follow-ups
+        contents.push(candidate.content);
+        chatHistory = { contents, model: modelName };
+
         return { text, sources, codeOutputs };
       }
     }
@@ -375,8 +388,8 @@ function registerHandlers(ipcMain) {
     }
   });
 
-  ipcMain.handle(IPC.AI_QUERY, async (event, query, usePro, forceShowOutput) => {
-    return handleAIQuery(event, query, usePro, forceShowOutput);
+  ipcMain.handle(IPC.AI_QUERY, async (event, query, usePro, forceShowOutput, followUp) => {
+    return handleAIQuery(event, query, usePro, forceShowOutput, followUp);
   });
 
   ipcMain.handle(IPC.SEARCH_FOLDERS, async (_e, query) => {

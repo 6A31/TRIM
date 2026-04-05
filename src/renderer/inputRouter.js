@@ -38,6 +38,13 @@ function init() {
     // AI and solve only fire on Enter, not on typing
     if (mode === 'ai' || mode === 'ai_pro' || mode === 'solve') {
       clearTimeout(debounceTimer);
+      // Clear any stale results from partial prefix typing
+      const rc = document.getElementById('results-container');
+      if (rc.innerHTML) {
+        rc.innerHTML = '';
+        document.getElementById('search-bar').classList.remove('has-results');
+        window.trim.resizeWindow(document.getElementById('search-bar').offsetHeight);
+      }
       return;
     }
 

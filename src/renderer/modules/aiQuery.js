@@ -1,4 +1,6 @@
 let isQuerying = false;
+let hasConversation = false;
+let conversationPrefix = null; // 'ai', 'ai_pro', or 'solve'
 
 async function search(query) {
   if (!query.trim()) return [];
@@ -9,13 +11,21 @@ async function search(query) {
 }
 
 async function execute(query, usePro, forceShow, renderFn) {
+  const prefix = usePro ? 'ai_pro' : 'ai';
+  const followUp = hasConversation && conversationPrefix === prefix;
+
+  // Auto-pin on follow-up
+  if (followUp && window._chips && !window._chips.isActive('pin')) {
+    window._chips.toggle('pin');
+  }
+
   // Listen for status updates from main process
   window.trim.onAIStatus((data) => {
     window._ui.updateAIStatus(data.text);
   });
 
   try {
-    const result = await window.trim.aiQuery(query, usePro, forceShow);
+    const result = await window.trim.aiQuery(query, usePro, forceShow, followUp);
 
     if (result.error) {
       renderFn({ type: 'ai-error', error: result.error });
@@ -26,6 +36,9 @@ async function execute(query, usePro, forceShow, renderFn) {
         sources: result.sources || [],
         codeOutputs: result.codeOutputs || [],
       });
+      // Mark conversation active
+      hasConversation = true;
+      conversationPrefix = prefix;
     }
   } catch (err) {
     renderFn({ type: 'ai-error', error: err.message || 'Failed to reach Gemini' });
@@ -33,6 +46,15 @@ async function execute(query, usePro, forceShow, renderFn) {
     isQuerying = false;
     window.trim.offAIStatus();
   }
+}
+
+function clearConversation() {
+  hasConversation = false;
+  conversationPrefix = null;
+}
+
+function isFollowUp() {
+  return hasConversation;
 }
 
 function renderLatex(text) {
@@ -49,7 +71,7 @@ function renderLatex(text) {
   });
 
   // Inline math: $...$ (not $$) or \(...\)
-  text = text.replace(/\$([^\$\n]+?)\$/g, (_m, expr) => {
+  text = text.replace(/\$([^\$]+?)\$/g, (_m, expr) => {
     try { return katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false }); }
     catch { return _m; }
   });
@@ -99,4 +121,4 @@ function formatMarkdown(text) {
     .replace(/^(.+)$/, '<p>$1</p>');
 }
 
-window._aiQuery = { search, execute, formatMarkdown };
+window._aiQuery = { search, execute, formatMarkdown, clearConversation, isFollowUp };

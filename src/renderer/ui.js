@@ -49,7 +49,9 @@ function handleKeyboard(e) {
         const expr = input.slice(3).trim();
         if (expr) {
           showAILoading('Solving...');
-          const solvePrompt = `Solve this math problem step by step. Use LaTeX notation ($$...$$ for display, $...$ for inline) for all math expressions. Use the run_python tool to compute and verify your answer. Show clear, concise steps.\n\nProblem: ${expr}`;
+          // Only wrap with solve instructions on first query, not follow-ups
+          const isFollowUp = window._aiQuery.isFollowUp();
+          const solvePrompt = isFollowUp ? expr : `Solve this math problem step by step. Use LaTeX notation ($$...$$ for display, $...$ for inline) for all math expressions. Use the run_python tool to compute and verify your answer. Show clear, concise steps.\n\nProblem: ${expr}`;
           window._aiQuery.execute(solvePrompt, false, true, (response) => {
             renderAIResponse(response);
           });
@@ -347,6 +349,17 @@ function renderAIResponse(response) {
     const contentH = getBarHeight() + aiContainer.scrollHeight;
     window.trim.resizeWindow(Math.min(contentH, 500));
   });
+
+  // Prep input for follow-up: clear to just the prefix
+  const searchInput = document.getElementById('search-input');
+  const val = searchInput.value;
+  const prefix = val.startsWith('cs:') ? 'cs: '
+    : val.startsWith('??') ? '?? '
+    : val.startsWith('?') ? '? ' : '';
+  if (prefix) {
+    searchInput.value = prefix;
+    searchInput.setSelectionRange(prefix.length, prefix.length);
+  }
 }
 
 function clearResults() {
@@ -359,6 +372,8 @@ function clearResults() {
   currentResults = [];
   selectedIndex = -1;
   window.trim.resizeWindow(getBarHeight());
+  // Clear conversation history
+  if (window._aiQuery) window._aiQuery.clearConversation();
 }
 
 function escapeHtml(str) {
