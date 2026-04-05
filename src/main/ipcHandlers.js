@@ -45,7 +45,7 @@ function loadSettingsSync() {
 
 const PYTHON_TOOL = {
   name: 'run_python',
-  description: 'Execute a Python code snippet. Use for calculations, data processing, plotting charts, or any task that benefits from code execution. You can install pip packages first. For plots, use matplotlib and save to the path in the PLOT_PATH variable with plt.savefig(PLOT_PATH) — it will be displayed to the user automatically. Set show_output to true if the user should see the code and its output, false if you just need the result internally.',
+  description: 'Execute a Python code snippet. Use for calculations, data processing, plotting charts, or any task that benefits from code execution. You can install pip packages first. For plots, use matplotlib and ALWAYS save to the path in the PLOT_PATH variable with plt.savefig(PLOT_PATH) — it will be displayed to the user automatically. NEVER save plots to any other filename or reference images in your response text — only use PLOT_PATH. Set show_output to true if the user should see the code and its output, false if you just need the result internally.',
   parameters: {
     type: 'OBJECT',
     properties: {
@@ -202,6 +202,8 @@ You have access to a run_python tool for local code execution. Use it when:
 - You need to process data or run algorithms
 - A precise numerical answer is needed rather than an approximation
 - You can install any pip package you need
+
+IMPORTANT for plots: Always use plt.savefig(PLOT_PATH) — the plot is captured and shown automatically. Never save to any other path or filename, and NEVER reference images in your text (no markdown image links like ![](...)). Just call plt.savefig(PLOT_PATH) and describe the result in words.
 
 Set show_output=true when the user would benefit from seeing the code/result (e.g. plots, tables, computed values). Set show_output=false when you just need an intermediate calculation to inform your answer.`;
 

@@ -288,6 +288,7 @@
 }
 
 .ai-text pre {
+  position: relative;
   background: var(--bg-secondary);
   border-radius: 8px;
   padding: 12px;
@@ -406,6 +407,55 @@
   flex-shrink: 0;
 }
 
+/* Code copy button */
+.code-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+pre:hover .code-copy-btn,
+.ai-code-header .code-copy-btn {
+  opacity: 1;
+}
+
+.ai-code-header .code-copy-btn {
+  position: static;
+  margin-left: auto;
+  background: none;
+  border: none;
+  opacity: 0.5;
+  padding: 2px;
+}
+
+.ai-code-header .code-copy-btn:hover {
+  opacity: 1;
+}
+
+.code-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+}
+
+/* highlight.js overrides */
+.ai-text pre code.hljs,
+.ai-code-block code.hljs {
+  background: transparent;
+  padding: 0;
+}
+
 /* No results */
 .no-results {
   text-align: center;
@@ -440,6 +490,7 @@
 }
 
 .ai-code-block {
+  position: relative;
   background: var(--bg-secondary);
   padding: 10px 12px;
   margin: 0;

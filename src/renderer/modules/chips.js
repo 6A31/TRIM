@@ -56,8 +56,19 @@ function init() {
   });
 }
 
+function deactivate(id) {
+  activeToggles[id] = false;
+  renderChips(chipMode);
+}
+
 function updateMode(mode) {
   if (mode === chipMode) return; // skip rebuild if unchanged — preserves CSS transitions
+  // Leaving an AI/solve mode — deactivate pin
+  const aiModes = ['ai', 'ai_pro', 'solve'];
+  if (aiModes.includes(chipMode) && !aiModes.includes(mode)) {
+    activeToggles['pin'] = false;
+    activeToggles['force_code'] = false;
+  }
   chipMode = mode;
   renderChips(mode);
 }
@@ -101,4 +112,4 @@ function renderChips(mode) {
   }
 }
 
-window._chips = { init, updateMode, isActive, register, toggle };
+window._chips = { init, updateMode, isActive, register, toggle, deactivate };

@@ -89,12 +89,13 @@ function formatMarkdown(text) {
   // Protect code blocks from LaTeX processing
   const codeBlocks = [];
   text = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
-    codeBlocks.push(`<pre><code>${code}</code></pre>`);
+    const cls = lang ? ` class="language-${lang}"` : '';
+    codeBlocks.push(`<pre><code${cls}>${escapeHtmlInline(code)}</code></pre>`);
     return `%%CODEBLOCK_${codeBlocks.length - 1}%%`;
   });
   const inlineCodes = [];
   text = text.replace(/`([^`]+)`/g, (_m, code) => {
-    inlineCodes.push(`<code>${code}</code>`);
+    inlineCodes.push(`<code>${escapeHtmlInline(code)}</code>`);
     return `%%INLINE_${inlineCodes.length - 1}%%`;
   });
 
@@ -121,4 +122,15 @@ function formatMarkdown(text) {
     .replace(/^(.+)$/, '<p>$1</p>');
 }
 
-window._aiQuery = { search, execute, formatMarkdown, clearConversation, isFollowUp };
+function escapeHtmlInline(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function highlightCodeBlocks(container) {
+  if (typeof hljs === 'undefined') return;
+  container.querySelectorAll('pre code[class*="language-"]').forEach(el => {
+    hljs.highlightElement(el);
+  });
+}
+
+window._aiQuery = { search, execute, formatMarkdown, clearConversation, isFollowUp, highlightCodeBlocks };

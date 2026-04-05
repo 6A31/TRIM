@@ -39,7 +39,11 @@ register('/clear', {
   execute: () => {
     document.getElementById('search-input').value = '';
     window._ui.clearResults();
-    if (window._chips) window._chips.updateMode('app');
+    if (window._chips) {
+      window._chips.deactivate('pin');
+      window._chips.deactivate('force_code');
+      window._chips.updateMode('app');
+    }
     window.trim.cleanup();
     document.getElementById('search-input').dispatchEvent(new Event('input'));
   },

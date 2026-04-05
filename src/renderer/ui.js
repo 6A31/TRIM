@@ -303,8 +303,11 @@ function buildResponseHTML(response) {
         html += `<div class="ai-code-header">
           <span class="material-symbols-rounded" style="font-size:14px">code</span>
           <span>Python</span>
+          <button class="code-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.ai-code-output').querySelector('.ai-code-block code').textContent).then(()=>{this.querySelector('span').textContent='check';setTimeout(()=>this.querySelector('span').textContent='content_copy',1500)})">
+            <span class="material-symbols-rounded" style="font-size:14px">content_copy</span>
+          </button>
         </div>
-        <pre class="ai-code-block"><code>${escapeHtml(output.code)}</code></pre>`;
+        <pre class="ai-code-block"><code class="language-python">${escapeHtml(output.code)}</code></pre>`;
       }
       if (output.stdout) {
         html += `<div class="ai-code-header">
@@ -386,6 +389,9 @@ function renderAIResponse(response) {
     aiContainer.innerHTML = html;
   }
 
+  // Syntax highlighting + copy buttons for markdown code blocks
+  postProcessCodeBlocks(aiContainer);
+
   // Resize to fit content, capped
   requestAnimationFrame(() => {
     const contentH = getBarHeight() + aiContainer.scrollHeight;
@@ -403,6 +409,29 @@ function renderAIResponse(response) {
     searchInput.value = prefix;
     searchInput.setSelectionRange(prefix.length, prefix.length);
   }
+}
+
+function postProcessCodeBlocks(container) {
+  // Syntax highlighting
+  if (window._aiQuery) window._aiQuery.highlightCodeBlocks(container);
+
+  // Add copy buttons to markdown code blocks (ai-text pre blocks that don't already have one)
+  container.querySelectorAll('.ai-text pre').forEach(pre => {
+    if (pre.querySelector('.code-copy-btn')) return;
+    const btn = document.createElement('button');
+    btn.className = 'code-copy-btn';
+    btn.innerHTML = '<span class="material-symbols-rounded" style="font-size:14px">content_copy</span>';
+    btn.addEventListener('mousedown', (e) => e.preventDefault());
+    btn.addEventListener('click', () => {
+      const code = pre.querySelector('code');
+      if (code) navigator.clipboard.writeText(code.textContent).then(() => {
+        btn.querySelector('span').textContent = 'check';
+        setTimeout(() => btn.querySelector('span').textContent = 'content_copy', 1500);
+      });
+    });
+    pre.style.position = 'relative';
+    pre.appendChild(btn);
+  });
 }
 
 function clearResults() {
