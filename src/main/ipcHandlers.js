@@ -719,11 +719,24 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
     // Fallback after max rounds
     return { text: 'Reached maximum processing rounds.', sources: [], codeOutputs };
   } catch (err) {
-    return { error: err.message || 'AI query failed' };
+    return { error: friendlyError(err) };
   } finally {
     // Always clean up venv after query completes
     cleanupVenv(venv);
   }
+}
+
+function friendlyError(err) {
+  const msg = (err.message || '').toLowerCase();
+  if (msg.includes('fetch failed') || msg.includes('enotfound') || msg.includes('enetunreach') || msg.includes('etimedout'))
+    return 'No internet connection — check your network and try again.';
+  if (msg.includes('api key') || msg.includes('401') || msg.includes('403'))
+    return 'Invalid API key. Check your key in /settings.';
+  if (msg.includes('429') || msg.includes('rate') || msg.includes('quota'))
+    return 'Rate limited — wait a moment and try again.';
+  if (msg.includes('500') || msg.includes('503') || msg.includes('unavailable'))
+    return 'Gemini is temporarily unavailable. Try again shortly.';
+  return err.message || 'Something went wrong.';
 }
 
 // --- Register all IPC handlers ---
