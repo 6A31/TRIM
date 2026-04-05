@@ -36,8 +36,11 @@ function close() {
   const input = document.getElementById('search-input');
   input.value = '';
   if (window._inputRouter) window._inputRouter.refreshInputDecor(input);
+  // Reset result chrome so the bar returns to single-line mode (no empty lip).
+  if (window._ui && window._ui.renderResults) {
+    window._ui.renderResults([]);
+  }
   input.focus();
-  window.trim.resizeWindow(68);
 }
 
 async function render() {
