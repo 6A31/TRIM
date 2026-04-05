@@ -120,7 +120,13 @@ npm start
 
 Type `/settings`, paste your API key, and save. Try `? hello` to make sure it works.
 
-> **VS Code / Claude Code terminal on Windows**: If `npm start` doesn't work (because `ELECTRON_RUN_AS_NODE` is set in those environments), use `start.bat` instead.
+`npm start` automatically kills any previous Trim instance before launching a new one.
+
+For development with visible console output and DevTools:
+
+```bash
+npm run dev
+```
 
 ## Kill Stale Instances
 
@@ -133,12 +139,12 @@ npm run kill
 ## Building
 
 ```bash
-npm run build
+npm run build          # Auto-detect platform
+npm run build:win      # Windows (.exe via NSIS)
+npm run build:mac      # macOS (.dmg)
 ```
 
-Produces a standalone `.exe` installer in `dist/` via electron-builder.
-
-> Current packaging config targets Windows NSIS installer output.
+Produces a standalone installer in `dist/` via electron-builder.
 
 ## Stack
 
