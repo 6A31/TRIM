@@ -41,6 +41,8 @@ function loadSettingsSync() {
   }
 }
 
+// --- AI init ---
+
 function initAI(apiKey) {
   if (!apiKey) { genAI = null; aiModel = null; return; }
   const { GoogleGenerativeAI } = require('@google/generative-ai');
@@ -48,10 +50,21 @@ function initAI(apiKey) {
   const settings = loadSettingsSync();
   aiModel = genAI.getGenerativeModel({
     model: settings.model || 'gemini-2.5-flash',
-    tools: [{ googleSearch: {} }],
-    systemInstruction: 'You are a concise assistant inside a desktop launcher. Give short, direct answers — a few sentences max. Include all key facts but skip filler, introductions, and unnecessary detail. Use bullet points for lists. Never repeat the question.',
+    tools: [
+      { googleSearch: {} },
+      { codeExecution: {} },
+    ],
+    systemInstruction: `You are a concise assistant inside a desktop launcher called Trim. Give short, direct answers — a few sentences max. Include all key facts but skip filler, introductions, and unnecessary detail. Use bullet points for lists. Never repeat the question.
+
+You have access to code execution. Use it when:
+- The user asks a math/science question that benefits from computation
+- You need to plot or visualize data with matplotlib
+- You need to process data or run algorithms
+- A precise numerical answer is needed rather than an approximation`,
   });
 }
+
+// --- Register all IPC handlers ---
 
 function registerHandlers(ipcMain) {
   // Init AI with saved key
@@ -98,19 +111,51 @@ function registerHandlers(ipcMain) {
     }
   });
 
-  ipcMain.handle(IPC.AI_QUERY, async (_e, query) => {
+  // --- AI query with built-in code execution + google search ---
+  ipcMain.handle(IPC.AI_QUERY, async (event, query) => {
     if (!aiModel) {
       return { error: 'No API key configured. Use /settings to add your Gemini API key.' };
     }
+
     try {
       const result = await aiModel.generateContent(query);
       const response = result.response;
-      const text = response.text();
-      const grounding = response.candidates?.[0]?.groundingMetadata;
+      const candidate = response.candidates?.[0];
+      const parts = candidate?.content?.parts || [];
+
+      // Extract text, code executions, and results from parts
+      let text = '';
+      const codeOutputs = [];
+      let currentCode = null;
+
+      for (const part of parts) {
+        if (part.text) {
+          text += part.text;
+        }
+        if (part.executableCode) {
+          currentCode = part.executableCode.code;
+        }
+        if (part.codeExecutionResult) {
+          codeOutputs.push({
+            code: currentCode,
+            stdout: part.codeExecutionResult.output || null,
+            error: part.codeExecutionResult.outcome === 'OUTCOME_OK' ? null : (part.codeExecutionResult.output || 'Execution failed'),
+          });
+          currentCode = null;
+        }
+      }
+
+      // If there was code with no result yet, still track it
+      if (currentCode) {
+        codeOutputs.push({ code: currentCode, stdout: null, error: null });
+      }
+
+      const grounding = candidate?.groundingMetadata;
       const sources = grounding?.groundingChunks
         ?.filter(c => c.web)
         .map(c => ({ title: c.web.title, uri: c.web.uri })) || [];
-      return { text, sources };
+
+      return { text, sources, codeOutputs };
     } catch (err) {
       return { error: err.message || 'AI query failed' };
     }

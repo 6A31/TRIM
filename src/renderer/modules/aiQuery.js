@@ -15,7 +15,12 @@ async function execute(query, renderFn) {
     if (result.error) {
       renderFn({ type: 'ai-error', error: result.error });
     } else {
-      renderFn({ type: 'ai-response', text: result.text, sources: result.sources || [] });
+      renderFn({
+        type: 'ai-response',
+        text: result.text,
+        sources: result.sources || [],
+        codeOutputs: result.codeOutputs || [],
+      });
     }
   } catch (err) {
     renderFn({ type: 'ai-error', error: err.message || 'Failed to reach Gemini' });

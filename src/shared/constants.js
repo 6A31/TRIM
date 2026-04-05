@@ -10,6 +10,7 @@ const IPC = {
   GET_ICON: 'trim:get-icon',
   OPEN_APP: 'trim:open-app',
   AI_QUERY: 'trim:ai-query',
+  AI_STATUS: 'trim:ai-status',
   SEARCH_FOLDERS: 'trim:search-folders',
   OPEN_FOLDER: 'trim:open-folder',
   LOAD_SETTINGS: 'trim:load-settings',

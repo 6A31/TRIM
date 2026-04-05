@@ -13,4 +13,6 @@ contextBridge.exposeInMainWorld('trim', {
   resizeWindow:  (h)          => ipcRenderer.invoke('trim:resize-window', h),
   onWindowShown: (cb)         => ipcRenderer.on('trim:window-shown', cb),
   onWindowHidden:(cb)         => ipcRenderer.on('trim:window-hidden', cb),
+  onAIStatus:    (cb)         => ipcRenderer.on('trim:ai-status', (_e, data) => cb(data)),
+  offAIStatus:   ()           => ipcRenderer.removeAllListeners('trim:ai-status'),
 });

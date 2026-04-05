@@ -212,7 +212,7 @@ async function loadAppIcon(result) {
   }
 }
 
-function showAILoading() {
+function showAILoading(statusText) {
   const container = document.getElementById('results-container');
   const aiContainer = document.getElementById('ai-response-container');
   const settingsPanel = document.getElementById('settings-panel');
@@ -225,13 +225,29 @@ function showAILoading() {
   aiContainer.innerHTML = `
     <div class="ai-loading">
       <div class="spinner"></div>
-      <span>Asking Gemini...</span>
+      <span>${escapeHtml(statusText || 'Asking Gemini...')}</span>
     </div>
   `;
 
-  window.trim.resizeWindow(getBarHeight() + 50);
+  requestAnimationFrame(() => {
+    const h = getBarHeight() + aiContainer.scrollHeight;
+    window.trim.resizeWindow(h);
+  });
   currentResults = [];
   selectedIndex = -1;
+}
+
+function updateAIStatus(statusText) {
+  const aiContainer = document.getElementById('ai-response-container');
+  const loadingEl = aiContainer.querySelector('.ai-loading');
+  if (loadingEl) {
+    const span = loadingEl.querySelector('span');
+    if (span) span.textContent = statusText;
+    requestAnimationFrame(() => {
+      const h = getBarHeight() + aiContainer.scrollHeight;
+      window.trim.resizeWindow(h);
+    });
+  }
 }
 
 function renderAIResponse(response) {
@@ -244,11 +260,45 @@ function renderAIResponse(response) {
         ${escapeHtml(response.error)}
       </div>
     `;
-    window.trim.resizeWindow(getBarHeight() + aiContainer.scrollHeight);
+    requestAnimationFrame(() => {
+      window.trim.resizeWindow(getBarHeight() + aiContainer.scrollHeight);
+    });
     return;
   }
 
   let html = `<div class="ai-text">${window._aiQuery.formatMarkdown(response.text)}</div>`;
+
+  // Render code execution outputs if present
+  if (response.codeOutputs && response.codeOutputs.length > 0) {
+    for (const output of response.codeOutputs) {
+      html += `<div class="ai-code-output">`;
+      if (output.code) {
+        html += `<div class="ai-code-header">
+          <span class="material-symbols-rounded" style="font-size:14px">code</span>
+          <span>Python</span>
+        </div>
+        <pre class="ai-code-block"><code>${escapeHtml(output.code)}</code></pre>`;
+      }
+      if (output.stdout) {
+        html += `<div class="ai-code-header">
+          <span class="material-symbols-rounded" style="font-size:14px">terminal</span>
+          <span>Output</span>
+        </div>
+        <pre class="ai-code-result"><code>${escapeHtml(output.stdout)}</code></pre>`;
+      }
+      if (output.plot) {
+        html += `<div class="ai-code-header">
+          <span class="material-symbols-rounded" style="font-size:14px">show_chart</span>
+          <span>Plot</span>
+        </div>
+        <div class="ai-plot"><img src="${output.plot}" alt="Plot"></div>`;
+      }
+      if (output.error) {
+        html += `<pre class="ai-code-error"><code>${escapeHtml(output.error)}</code></pre>`;
+      }
+      html += `</div>`;
+    }
+  }
 
   if (response.sources && response.sources.length > 0) {
     html += `<div class="ai-sources">
@@ -275,8 +325,10 @@ function renderAIResponse(response) {
   aiContainer.innerHTML = html;
 
   // Resize to fit content, capped
-  const contentH = getBarHeight() + aiContainer.scrollHeight;
-  window.trim.resizeWindow(Math.min(contentH, 500));
+  requestAnimationFrame(() => {
+    const contentH = getBarHeight() + aiContainer.scrollHeight;
+    window.trim.resizeWindow(Math.min(contentH, 500));
+  });
 }
 
 function clearResults() {
@@ -297,4 +349,4 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-window._ui = { init, renderResults, showAILoading, renderAIResponse, clearResults };
+window._ui = { init, renderResults, showAILoading, updateAIStatus, renderAIResponse, clearResults };
