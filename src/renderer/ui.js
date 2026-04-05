@@ -28,11 +28,20 @@ function handleKeyboard(e) {
       e.preventDefault();
       // If in AI mode, fire the query
       const input = document.getElementById('search-input').value;
-      if (input.startsWith('?')) {
+      const forceShow = window._chips && window._chips.isActive('show_output');
+      if (input.startsWith('??')) {
+        const query = input.slice(2).trim();
+        if (query) {
+          showAILoading('Asking Gemini Pro...');
+          window._aiQuery.execute(query, true, forceShow, (response) => {
+            renderAIResponse(response);
+          });
+        }
+      } else if (input.startsWith('?')) {
         const query = input.slice(1).trim();
         if (query) {
           showAILoading();
-          window._aiQuery.execute(query, (response) => {
+          window._aiQuery.execute(query, false, forceShow, (response) => {
             renderAIResponse(response);
           });
         }

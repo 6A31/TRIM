@@ -49,6 +49,47 @@
   opacity: 0.7;
 }
 
+/* Input chips */
+#chip-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+#chip-container:empty {
+  display: none;
+}
+
+.input-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.input-chip:hover {
+  border-color: var(--accent);
+  color: var(--text-secondary);
+}
+
+.input-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 /* Results list */
 #results-container {
   overflow-y: auto;

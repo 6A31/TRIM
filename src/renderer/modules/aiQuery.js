@@ -8,9 +8,14 @@ async function search(query) {
   return [{ type: 'ai-loading' }];
 }
 
-async function execute(query, renderFn) {
+async function execute(query, usePro, forceShow, renderFn) {
+  // Listen for status updates from main process
+  window.trim.onAIStatus((data) => {
+    window._ui.updateAIStatus(data.text);
+  });
+
   try {
-    const result = await window.trim.aiQuery(query);
+    const result = await window.trim.aiQuery(query, usePro, forceShow);
 
     if (result.error) {
       renderFn({ type: 'ai-error', error: result.error });
@@ -26,6 +31,7 @@ async function execute(query, renderFn) {
     renderFn({ type: 'ai-error', error: err.message || 'Failed to reach Gemini' });
   } finally {
     isQuerying = false;
+    window.trim.offAIStatus();
   }
 }
 

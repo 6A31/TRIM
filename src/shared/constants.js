@@ -1,5 +1,6 @@
 const PREFIXES = {
   AI: '?',
+  AI_PRO: '??',
   FOLDER: 'f:',
   CALC: 'c:',
   COMMAND: '/',
@@ -20,7 +21,8 @@ const IPC = {
 
 const DEFAULTS = {
   theme: 'dark',
-  model: 'gemini-2.5-flash',
+  model: 'gemini-3-flash-preview',
+  modelPro: 'gemini-3.1-pro-preview',
   apiKey: '',
   searchPaths: [],
 };

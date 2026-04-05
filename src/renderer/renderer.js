@@ -9,6 +9,7 @@ const moduleScripts = [
   'modules/folderSearch.js',
   'modules/commands.js',
   'modules/settings.js',
+  'modules/chips.js',
   'ui.js',
   'inputRouter.js',
 ];
@@ -28,6 +29,7 @@ function loadNext() {
 }
 
 function boot() {
+  try { window._chips.init(); } catch (e) { console.error('chips init:', e); }
   window._ui.init();
   window._inputRouter.init();
 
@@ -39,6 +41,7 @@ function boot() {
     input.value = '';
     input.focus();
     window._ui.clearResults();
+    if (window._chips) window._chips.updateMode('app');
   });
 }
 

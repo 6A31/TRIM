@@ -1,13 +1,13 @@
 const { shell } = require('electron');
-const { execFile } = require('child_process');
+const { execFile, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { IPC, DEFAULTS } = require('../shared/constants');
 
 let appCache = null;
 const iconCache = new Map();
-let genAI = null;
-let aiModel = null;
+let ai = null; // GoogleGenAI client
 
 function getScriptsPath() {
   const devPath = path.join(__dirname, '..', '..', 'scripts');
@@ -41,33 +41,242 @@ function loadSettingsSync() {
   }
 }
 
+// --- Python execution ---
+
+const PYTHON_TOOL = {
+  name: 'run_python',
+  description: 'Execute a Python code snippet. Use for calculations, data processing, plotting charts, or any task that benefits from code execution. You can install pip packages first. For plots, use matplotlib and save to the path in the PLOT_PATH variable with plt.savefig(PLOT_PATH) — it will be displayed to the user automatically. Set show_output to true if the user should see the code and its output, false if you just need the result internally.',
+  parameters: {
+    type: 'OBJECT',
+    properties: {
+      code: { type: 'STRING', description: 'Python code to execute' },
+      packages: {
+        type: 'ARRAY',
+        items: { type: 'STRING' },
+        description: 'Pip packages to install before running (e.g. ["numpy", "matplotlib"])',
+      },
+      show_output: { type: 'BOOLEAN', description: 'Whether to show code + output to the user' },
+    },
+    required: ['code'],
+  },
+};
+
+function findPython() {
+  const candidates = ['python', 'python3', 'py'];
+  for (const cmd of candidates) {
+    try {
+      const result = execSync(`${cmd} --version`, { stdio: 'pipe', timeout: 5000 }).toString().trim();
+      if (result.startsWith('Python 3')) return cmd;
+    } catch {}
+  }
+  return null;
+}
+
+let pythonCmd = null;
+
+function runPythonCode(code, packages, plotPath) {
+  return new Promise((resolve) => {
+    if (!pythonCmd) pythonCmd = findPython();
+    if (!pythonCmd) {
+      resolve({ error: 'Python 3 not found. Please install Python 3.' });
+      return;
+    }
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trim-py-'));
+    const scriptPath = path.join(tmpDir, 'script.py');
+
+    // Install packages if needed
+    if (packages && packages.length > 0) {
+      try {
+        execSync(`${pythonCmd} -m pip install ${packages.join(' ')} --quiet`, {
+          stdio: 'pipe',
+          timeout: 60000,
+        });
+      } catch (err) {
+        resolve({ error: `Failed to install packages: ${err.message}` });
+        return;
+      }
+    }
+
+    // Prepend plot path + matplotlib config
+    const preamble = `import os
+PLOT_PATH = ${JSON.stringify(plotPath)}
+os.environ['PLOT_PATH'] = PLOT_PATH
+try:
+    import matplotlib
+    matplotlib.use('Agg')
+except ImportError:
+    pass
+`;
+
+    fs.writeFileSync(scriptPath, preamble + code, 'utf-8');
+
+    execFile(pythonCmd, [scriptPath], {
+      cwd: tmpDir,
+      timeout: 30000,
+      maxBuffer: 5 * 1024 * 1024,
+    }, (err, stdout, stderr) => {
+      let plot = null;
+      if (fs.existsSync(plotPath)) {
+        const buf = fs.readFileSync(plotPath);
+        plot = `data:image/png;base64,${buf.toString('base64')}`;
+      }
+
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+      try { if (fs.existsSync(plotPath)) fs.unlinkSync(plotPath); } catch {}
+
+      if (err && !stdout && !stderr) {
+        resolve({ error: err.message, plot });
+      } else {
+        const output = (stdout || '').trim();
+        const errOutput = (stderr || '').trim();
+        resolve({
+          stdout: output,
+          error: errOutput || (err ? err.message : null),
+          plot,
+        });
+      }
+    });
+  });
+}
+
 // --- AI init ---
 
-function initAI(apiKey) {
-  if (!apiKey) { genAI = null; aiModel = null; return; }
-  const { GoogleGenerativeAI } = require('@google/generative-ai');
-  genAI = new GoogleGenerativeAI(apiKey);
-  const settings = loadSettingsSync();
-  aiModel = genAI.getGenerativeModel({
-    model: settings.model || 'gemini-2.5-flash',
-    tools: [
-      { googleSearch: {} },
-      { codeExecution: {} },
-    ],
-    systemInstruction: `You are a concise assistant inside a desktop launcher called Trim. Give short, direct answers — a few sentences max. Include all key facts but skip filler, introductions, and unnecessary detail. Use bullet points for lists. Never repeat the question.
+const SYSTEM_INSTRUCTION = `You are a concise assistant inside a desktop launcher called Trim. Give short, direct answers — a few sentences max. Include all key facts but skip filler, introductions, and unnecessary detail. Use bullet points for lists. Never repeat the question.
 
-You have access to code execution. Use it when:
+You have access to a run_python tool for local code execution. Use it when:
 - The user asks a math/science question that benefits from computation
-- You need to plot or visualize data with matplotlib
+- You need to plot or visualize data (save to PLOT_PATH using plt.savefig(PLOT_PATH))
 - You need to process data or run algorithms
-- A precise numerical answer is needed rather than an approximation`,
-  });
+- A precise numerical answer is needed rather than an approximation
+- You can install any pip package you need
+
+Set show_output=true when the user would benefit from seeing the code/result (e.g. plots, tables, computed values). Set show_output=false when you just need an intermediate calculation to inform your answer.`;
+
+const AI_TOOLS = [
+  { googleSearch: {} },
+  { functionDeclarations: [PYTHON_TOOL] },
+];
+
+function initAI(apiKey) {
+  if (!apiKey) { ai = null; return; }
+  const { GoogleGenAI } = require('@google/genai');
+  ai = new GoogleGenAI({ apiKey });
+}
+
+// --- Send status to renderer ---
+
+function sendStatus(event, text) {
+  try {
+    event.sender.send(IPC.AI_STATUS, { text });
+  } catch {}
+}
+
+// --- AI query with function calling loop ---
+
+async function handleAIQuery(event, query, usePro, forceShowOutput) {
+  if (!ai) {
+    return { error: 'No API key configured. Use /settings to add your Gemini API key.' };
+  }
+
+  const settings = loadSettingsSync();
+  const modelName = usePro
+    ? (settings.modelPro || 'gemini-3.1-pro-preview')
+    : (settings.model || 'gemini-3-flash-preview');
+
+  sendStatus(event, usePro ? 'Asking Gemini Pro...' : 'Asking Gemini...');
+
+  try {
+    const contents = [{ role: 'user', parts: [{ text: query }] }];
+    const codeOutputs = [];
+    const MAX_ROUNDS = 6;
+
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents,
+        config: {
+          tools: AI_TOOLS,
+          systemInstruction: SYSTEM_INSTRUCTION,
+          toolConfig: {
+            includeServerSideToolInvocations: true,
+          },
+        },
+      });
+
+      const candidate = response.candidates?.[0];
+      const functionCalls = response.functionCalls;
+
+      if (functionCalls && functionCalls.length > 0) {
+        // Append model turn to history
+        contents.push(candidate.content);
+
+        const responseParts = [];
+        for (const fc of functionCalls) {
+          if (fc.name === 'run_python') {
+            const code = fc.args?.code || '';
+            const packages = fc.args?.packages || [];
+            const showOutput = forceShowOutput || fc.args?.show_output !== false;
+
+            if (packages.length > 0) {
+              sendStatus(event, `Installing ${packages.join(', ')}...`);
+            }
+            sendStatus(event, 'Running Python code...');
+
+            const plotPath = path.join(os.tmpdir(), `trim-plot-${Date.now()}.png`);
+            const pyResult = await runPythonCode(code, packages, plotPath);
+
+            if (showOutput) {
+              codeOutputs.push({
+                code,
+                stdout: pyResult.stdout || null,
+                error: pyResult.error || null,
+                plot: pyResult.plot || null,
+              });
+            }
+
+            sendStatus(event, 'Analyzing results...');
+
+            responseParts.push({
+              functionResponse: {
+                name: 'run_python',
+                response: {
+                  result: {
+                    stdout: pyResult.stdout || '',
+                    error: pyResult.error || '',
+                    has_plot: !!pyResult.plot,
+                  },
+                },
+                id: fc.id,
+              },
+            });
+          }
+        }
+
+        // Send function responses back
+        contents.push({ role: 'user', parts: responseParts });
+      } else {
+        // Final text response
+        const text = response.text || '';
+        const grounding = candidate?.groundingMetadata;
+        const sources = grounding?.groundingChunks
+          ?.filter(c => c.web)
+          .map(c => ({ title: c.web.title, uri: c.web.uri })) || [];
+
+        return { text, sources, codeOutputs };
+      }
+    }
+
+    // Fallback after max rounds
+    return { text: 'Reached maximum processing rounds.', sources: [], codeOutputs };
+  } catch (err) {
+    return { error: err.message || 'AI query failed' };
+  }
 }
 
 // --- Register all IPC handlers ---
 
 function registerHandlers(ipcMain) {
-  // Init AI with saved key
   const settings = loadSettingsSync();
   if (settings.apiKey) initAI(settings.apiKey);
 
@@ -102,7 +311,6 @@ function registerHandlers(ipcMain) {
       if (appPath.endsWith('.lnk') || appPath.endsWith('.exe')) {
         shell.openPath(appPath);
       } else {
-        // UWP AppUserModelId
         const { exec } = require('child_process');
         exec(`start shell:AppsFolder\\${appPath}`);
       }
@@ -111,54 +319,8 @@ function registerHandlers(ipcMain) {
     }
   });
 
-  // --- AI query with built-in code execution + google search ---
-  ipcMain.handle(IPC.AI_QUERY, async (event, query) => {
-    if (!aiModel) {
-      return { error: 'No API key configured. Use /settings to add your Gemini API key.' };
-    }
-
-    try {
-      const result = await aiModel.generateContent(query);
-      const response = result.response;
-      const candidate = response.candidates?.[0];
-      const parts = candidate?.content?.parts || [];
-
-      // Extract text, code executions, and results from parts
-      let text = '';
-      const codeOutputs = [];
-      let currentCode = null;
-
-      for (const part of parts) {
-        if (part.text) {
-          text += part.text;
-        }
-        if (part.executableCode) {
-          currentCode = part.executableCode.code;
-        }
-        if (part.codeExecutionResult) {
-          codeOutputs.push({
-            code: currentCode,
-            stdout: part.codeExecutionResult.output || null,
-            error: part.codeExecutionResult.outcome === 'OUTCOME_OK' ? null : (part.codeExecutionResult.output || 'Execution failed'),
-          });
-          currentCode = null;
-        }
-      }
-
-      // If there was code with no result yet, still track it
-      if (currentCode) {
-        codeOutputs.push({ code: currentCode, stdout: null, error: null });
-      }
-
-      const grounding = candidate?.groundingMetadata;
-      const sources = grounding?.groundingChunks
-        ?.filter(c => c.web)
-        .map(c => ({ title: c.web.title, uri: c.web.uri })) || [];
-
-      return { text, sources, codeOutputs };
-    } catch (err) {
-      return { error: err.message || 'AI query failed' };
-    }
+  ipcMain.handle(IPC.AI_QUERY, async (event, query, usePro, forceShowOutput) => {
+    return handleAIQuery(event, query, usePro, forceShowOutput);
   });
 
   ipcMain.handle(IPC.SEARCH_FOLDERS, async (_e, query) => {
@@ -199,7 +361,7 @@ function registerHandlers(ipcMain) {
     const merged = { ...current, ...data };
     fs.writeFileSync(getSettingsPath(), JSON.stringify(merged, null, 2));
     if (data.apiKey !== undefined) initAI(data.apiKey);
-    appCache = null; // force re-scan on next search
+    appCache = null;
     return merged;
   });
 }

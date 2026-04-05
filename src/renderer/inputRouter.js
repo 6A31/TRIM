@@ -1,6 +1,7 @@
 const MODE_ICONS = {
   app: 'search',
   ai: 'auto_awesome',
+  ai_pro: 'auto_awesome',
   folder: 'folder_open',
   calc: 'calculate',
   command: 'terminal',
@@ -9,6 +10,7 @@ const MODE_ICONS = {
 const MODE_HINTS = {
   app: '',
   ai: 'AI',
+  ai_pro: 'AI PRO',
   folder: 'FOLDERS',
   calc: 'CALC',
   command: 'CMD',
@@ -32,7 +34,7 @@ function init() {
     }
 
     // AI only fires on Enter, not on typing
-    if (mode === 'ai') {
+    if (mode === 'ai' || mode === 'ai_pro') {
       clearTimeout(debounceTimer);
       return;
     }
@@ -51,6 +53,7 @@ function getDebounceDelay(raw) {
 
 function detectMode(raw) {
   if (raw.startsWith('/')) return 'command';
+  if (raw.startsWith('??')) return 'ai_pro';
   if (raw.startsWith('?')) return 'ai';
   if (raw.startsWith('f:')) return 'folder';
   if (raw.startsWith('c:')) return 'calc';
@@ -66,6 +69,9 @@ function updateModeIndicator(raw) {
   icon.classList.toggle('active', mode !== 'app');
   hint.textContent = MODE_HINTS[mode];
   currentMode = mode;
+
+  // Update chips for current mode
+  try { if (window._chips) window._chips.updateMode(mode); } catch {}
 }
 
 async function route(rawInput) {
@@ -96,7 +102,7 @@ async function route(rawInput) {
     return;
   }
 
-  if (mode === 'ai') {
+  if (mode === 'ai' || mode === 'ai_pro') {
     // AI only fires on Enter — just update the UI hint
     return;
   }
@@ -106,4 +112,4 @@ async function route(rawInput) {
   window._ui.renderResults(results);
 }
 
-window._inputRouter = { init, route };
+window._inputRouter = { init, route, detectMode };

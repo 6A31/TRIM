@@ -44,10 +44,16 @@ async function render() {
       <div class="settings-description">Get a free key from Google AI Studio</div>
     </div>
     <div class="settings-group">
-      <label class="settings-label">AI Model</label>
+      <label class="settings-label">Flash Model <span class="settings-prefix">?</span></label>
       <input type="text" class="settings-input" id="settings-model"
-        placeholder="gemini-2.5-flash"
-        value="${settings.model || 'gemini-2.5-flash'}">
+        placeholder="gemini-3-flash-preview"
+        value="${settings.model || 'gemini-3-flash-preview'}">
+    </div>
+    <div class="settings-group">
+      <label class="settings-label">Pro Model <span class="settings-prefix">??</span></label>
+      <input type="text" class="settings-input" id="settings-model-pro"
+        placeholder="gemini-3.1-pro-preview"
+        value="${settings.modelPro || 'gemini-3.1-pro-preview'}">
     </div>
     <div style="display:flex;align-items:center;margin-top:8px">
       <button class="settings-save" id="settings-save-btn">
@@ -68,8 +74,9 @@ async function render() {
 async function save() {
   const apiKey = document.getElementById('settings-api-key').value.trim();
   const model = document.getElementById('settings-model').value.trim();
+  const modelPro = document.getElementById('settings-model-pro').value.trim();
 
-  await window.trim.saveSettings({ apiKey, model });
+  await window.trim.saveSettings({ apiKey, model, modelPro });
 
   const msg = document.getElementById('settings-saved-msg');
   msg.classList.add('show');

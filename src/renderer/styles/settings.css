@@ -111,3 +111,15 @@
 .settings-saved.show {
   opacity: 1;
 }
+
+.settings-prefix {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--bg-secondary);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 4px;
+  letter-spacing: 0;
+  text-transform: none;
+}
