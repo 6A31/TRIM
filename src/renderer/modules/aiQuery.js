@@ -4,13 +4,14 @@ let conversationPrefix = null; // 'ai', 'ai_pro', or 'solve'
 
 async function search(query) {
   if (!query.trim()) return [];
-  isQuerying = true;
-
   // Return a loading indicator - actual response rendered after
   return [{ type: 'ai-loading' }];
 }
 
 async function execute(query, mode, forceShow, renderFn) {
+  if (isQuerying) return; // Prevent concurrent queries
+  isQuerying = true;
+
   const usePro = mode === 'ai_pro';
   const followUp = hasConversation && conversationPrefix === mode;
 
@@ -21,6 +22,9 @@ async function execute(query, mode, forceShow, renderFn) {
 
   try {
     const result = await window.trim.aiQuery(query, usePro, forceShow, followUp);
+
+    // Silently ignore aborted queries
+    if (result.error === '__aborted__') return;
 
     if (result.error) {
       renderFn({ type: 'ai-error', error: result.error });

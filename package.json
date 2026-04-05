@@ -48,13 +48,8 @@
     "mac": {
       "target": "dmg",
       "icon": "assets/Trim Logo.icns",
-      "category": "public.app-category.utilities",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "category": "public.app-category.utilities"
     },
-    "afterSign": "electron-builder-notarize",
     "nsis": {
       "oneClick": true,
       "perMachine": false

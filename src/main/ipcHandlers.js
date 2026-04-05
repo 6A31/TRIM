@@ -736,7 +736,11 @@ function resolveFileReferences(query) {
   return { text: processedText, extraParts };
 }
 
+let activeQueryId = 0;
+
 async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
+  const queryId = ++activeQueryId;
+
   if (!ai) {
     return { error: 'No API key configured. Use /settings to add your Gemini API key.' };
   }
@@ -770,6 +774,11 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
     const MAX_ROUNDS = 6;
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
+      // Bail out if a newer query has started
+      if (queryId !== activeQueryId) {
+        return { error: '__aborted__' };
+      }
+
       const response = await ai.models.generateContent({
         model: modelName,
         contents,
