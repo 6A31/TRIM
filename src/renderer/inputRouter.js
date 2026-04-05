@@ -298,7 +298,7 @@ function renderInputOverlay(inputEl) {
       html += `<span class="input-overlay-text">${escapeHtml(before)}</span>`;
     }
     const label = match[1];
-    html += `<span class="file-ref-pill">#${escapeHtml(label)}</span>`;
+    html += `<span class="file-ref-pill">#[${escapeHtml(label)}]</span>`;
     idx = match.index + match[0].length;
   }
 

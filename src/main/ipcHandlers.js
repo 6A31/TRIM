@@ -556,6 +556,8 @@ Always use absolute paths for file tools. The user will approve write/edit/delet
 
 **googleSearch** — Search the web for current information.`;
 
+const ATTACHMENT_ANALYSIS_ADDENDUM = `\n\nAttachment handling rule:\n- If the user attached images or PDFs, analyze those attachments directly with multimodal reasoning.\n- Do NOT call run_python just to "inspect" or "read" attached images/PDFs unless the user explicitly asks for code-based processing.`;
+
 const FORCE_CODE_ADDENDUM = `\n\nIMPORTANT — Force Code mode is ON:
 - Use Python code execution for ALL calculations, math, logic, comparisons, data lookups, and any verifiable task.
 - Do NOT rely on LLM reasoning for math or numbers — always write and run code to get deterministic, correct results.
@@ -664,9 +666,10 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
     }
 
     // Conditionally add force-code instruction
+    const hasAttachments = extraParts.length > 0;
     const sysInstruction = forceShowOutput
-      ? SYSTEM_INSTRUCTION + FORCE_CODE_ADDENDUM
-      : SYSTEM_INSTRUCTION;
+      ? SYSTEM_INSTRUCTION + ATTACHMENT_ANALYSIS_ADDENDUM + FORCE_CODE_ADDENDUM
+      : SYSTEM_INSTRUCTION + (hasAttachments ? ATTACHMENT_ANALYSIS_ADDENDUM : '');
 
     const codeOutputs = [];
     const MAX_ROUNDS = 6;

@@ -43,6 +43,12 @@
   font-weight: 300;
 }
 
+#search-input::selection {
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
 .search-input-wrap {
   flex: 1;
   min-width: 0;
@@ -72,18 +78,14 @@
 }
 
 .file-ref-pill {
-  display: inline-flex;
-  align-items: center;
-  min-height: 19px;
-  padding: 1px 7px 0;
-  margin: 0 1px;
+  display: inline;
+  margin: 0;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
   background: color-mix(in srgb, var(--accent) 9%, transparent);
   color: color-mix(in srgb, var(--accent) 82%, #ffffff);
-  font-size: 12px;
   font-weight: 500;
-  line-height: 1.2;
+  line-height: inherit;
 }
 
 .search-hint {
