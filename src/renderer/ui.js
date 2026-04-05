@@ -521,6 +521,7 @@ function postProcessCodeBlocks(container) {
 }
 
 function clearResults() {
+  lastResultsKey = '';
   document.getElementById('results-container').innerHTML = '';
   document.getElementById('results-container').classList.remove('hidden');
   document.getElementById('ai-response-container').innerHTML = '';
