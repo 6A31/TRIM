@@ -62,6 +62,15 @@ function boot() {
   window.trim.onWindowShown(() => {
     const hasChat = window._aiQuery && window._aiQuery.isFollowUp();
     if (hasChat) {
+      const mode = window._aiQuery.getConversationPrefix ? window._aiQuery.getConversationPrefix() : 'ai';
+      const prefix = mode === 'ai_pro' ? '?? '
+        : mode === 'solve' ? 'cs: '
+          : '? ';
+      input.value = prefix;
+      if (window._inputRouter) window._inputRouter.refreshInputDecor(input);
+      input.setSelectionRange(prefix.length, prefix.length);
+      input.dispatchEvent(new Event('input'));
+
       // Restore window size to fit persisted conversation
       requestAnimationFrame(() => {
         const barH = document.getElementById('search-bar').offsetHeight;

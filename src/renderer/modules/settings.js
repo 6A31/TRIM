@@ -40,6 +40,15 @@ function close() {
   if (window._ui && window._ui.renderResults) {
     window._ui.renderResults([]);
   }
+  // Reset mode indicator and hint to default app mode.
+  const icon = document.getElementById('search-mode-icon');
+  const hint = document.getElementById('search-hint');
+  if (icon) {
+    icon.textContent = 'search';
+    icon.classList.remove('active');
+  }
+  if (hint) hint.textContent = '';
+  if (window._chips) window._chips.updateMode('app');
   input.focus();
 }
 

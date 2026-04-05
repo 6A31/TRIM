@@ -60,6 +60,10 @@ function isFollowUp() {
   return hasConversation;
 }
 
+function getConversationPrefix() {
+  return conversationPrefix;
+}
+
 function renderLatex(text) {
   if (!text || typeof katex === 'undefined') return text;
 
@@ -136,4 +140,4 @@ function highlightCodeBlocks(container) {
   });
 }
 
-window._aiQuery = { search, execute, prepareForQuery, formatMarkdown, clearConversation, isFollowUp, highlightCodeBlocks };
+window._aiQuery = { search, execute, prepareForQuery, formatMarkdown, clearConversation, isFollowUp, getConversationPrefix, highlightCodeBlocks };

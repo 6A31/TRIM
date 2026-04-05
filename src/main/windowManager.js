@@ -21,7 +21,8 @@ function create() {
     resizable: false,
     maximizable: false,
     fullscreenable: false,
-    backgroundColor: '#00000000',
+    // Dark fallback background avoids bright acrylic flash during show transitions.
+    backgroundColor: '#1E1E28CC',
     webPreferences: {
       preload: path.join(__dirname, '..', 'renderer', 'preload.js'),
       contextIsolation: true,
@@ -38,7 +39,8 @@ function create() {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.setContentSize(WIN_W, BAR_H);
-    mainWindow.show();
+    // Use the same code path as hotkey toggles so animation/timing matches.
+    show();
   });
 
   return mainWindow;
