@@ -220,7 +220,7 @@ function insertFileRef(inputEl, filePath) {
   const val = inputEl.value;
   const hashMatch = val.match(/#([^#\\\/]*)$/);
   const base = filePath.split(/[/\\]/).pop() || filePath;
-  const label = makeUniqueRefLabel(base);
+  const label = makeUniqueRefLabel(base, inputEl.value, filePath);
   aiFileRefs.set(label, filePath);
   const token = `#[${label}]`;
 
@@ -237,15 +237,37 @@ function insertFileRef(inputEl, filePath) {
   window._ui.restoreAIArea();
 }
 
-function makeUniqueRefLabel(baseLabel) {
-  if (!aiFileRefs.has(baseLabel)) return baseLabel;
+function makeUniqueRefLabel(baseLabel, rawInput, targetPath) {
+  const active = new Set(getActiveRefLabels(rawInput || ''));
+  if (!active.has(baseLabel)) return baseLabel;
+
+  const existingPath = aiFileRefs.get(baseLabel);
+  if (existingPath && existingPath === targetPath) return baseLabel;
+
   let n = 2;
   let next = `${baseLabel} (${n})`;
-  while (aiFileRefs.has(next)) {
+  while (active.has(next) && aiFileRefs.get(next) !== targetPath) {
     n += 1;
     next = `${baseLabel} (${n})`;
   }
   return next;
+}
+
+function getActiveRefLabels(value) {
+  const labels = [];
+  const tokenRegex = /#\[([^\]]+)\]/g;
+  let m;
+  while ((m = tokenRegex.exec(value || '')) !== null) {
+    labels.push(m[1]);
+  }
+  return labels;
+}
+
+function pruneStaleFileRefs(rawValue) {
+  const active = new Set(getActiveRefLabels(rawValue || ''));
+  for (const key of aiFileRefs.keys()) {
+    if (!active.has(key)) aiFileRefs.delete(key);
+  }
 }
 
 function resolveAIFileRefsInQuery(query) {
@@ -298,7 +320,7 @@ function renderInputOverlay(inputEl) {
       html += `<span class="input-overlay-text">${escapeHtml(before)}</span>`;
     }
     const label = match[1];
-    html += `<span class="file-ref-pill"><span class="file-ref-visible">#${escapeHtml(label)}</span><span class="file-ref-hidden-brackets">[]</span></span>`;
+    html += `<span class="file-ref-pill"><span class="file-ref-hidden-brackets">[</span><span class="file-ref-visible">#${escapeHtml(label)}</span><span class="file-ref-hidden-brackets">]</span></span>`;
     idx = match.index + match[0].length;
   }
 
@@ -312,6 +334,7 @@ function renderInputOverlay(inputEl) {
 }
 
 function refreshInputDecor(inputEl) {
+  pruneStaleFileRefs(inputEl.value || '');
   updateFileRefTooltip(inputEl);
   renderInputOverlay(inputEl);
 }

@@ -69,7 +69,10 @@ function handleKeyboard(e) {
           });
         }
       } else {
-        executeSelected();
+        const didExecute = executeSelected();
+        if (!didExecute && window._chips && window._chips.triggerVisibleAction) {
+          window._chips.triggerVisibleAction();
+        }
       }
       break;
     case 'Escape':
@@ -120,7 +123,9 @@ function executeSelected() {
     if (result.type !== 'command' && result.type !== 'calc') {
       window.trim.hideWindow();
     }
+    return true;
   }
+  return false;
 }
 
 function getBarHeight() {
@@ -138,6 +143,7 @@ async function renderResults(results) {
 
   currentResults = results;
   selectedIndex = results.length > 0 ? 0 : -1;
+  if (window._chips) window._chips.setResultsCount(results.length);
 
   if (results.length === 0) {
     container.innerHTML = '';
@@ -461,6 +467,7 @@ function clearResults() {
   document.getElementById('search-bar').classList.remove('has-results');
   currentResults = [];
   selectedIndex = -1;
+  if (window._chips) window._chips.setResultsCount(0);
   window.trim.resizeWindow(getBarHeight());
   // Clear conversation history
   if (window._aiQuery) window._aiQuery.clearConversation();

@@ -5,6 +5,7 @@ const chips = new Map(); // id -> { label, icon, active, modes }
 const activeToggles = {}; // id -> boolean
 let inputEl = null;
 let currentRawInput = '';
+let currentResultsCount = 0;
 
 function register(id, opts) {
   chips.set(id, {
@@ -36,6 +37,7 @@ register('switch_ai', {
     const raw = (ctx.rawInput || '').trim();
     if (!raw) return false;
     if (raw.startsWith('/') || raw.startsWith('?') || raw.startsWith('c:') || raw.startsWith('f:') || raw.startsWith('cs:')) return false;
+    if ((ctx.resultsCount || 0) > 0) return false;
     const whitespaceCount = (raw.match(/\s+/g) || []).length;
     return whitespaceCount >= 2;
   },
@@ -101,7 +103,7 @@ function renderChips(mode) {
 
   for (const [id, chip] of chips) {
     if (!chip.modes.includes(mode)) continue;
-    if (chip.visibleWhen && !chip.visibleWhen({ rawInput: currentRawInput, mode })) continue;
+    if (chip.visibleWhen && !chip.visibleWhen({ rawInput: currentRawInput, mode, resultsCount: currentResultsCount })) continue;
 
     const el = document.createElement('button');
     const isAction = !!chip.action;
@@ -137,4 +139,22 @@ function renderChips(mode) {
   }
 }
 
-window._chips = { init, updateMode, isActive, register, toggle, deactivate };
+function setResultsCount(count) {
+  currentResultsCount = Number.isFinite(count) ? Math.max(0, count) : 0;
+  renderChips(chipMode);
+}
+
+function triggerVisibleAction() {
+  for (const [, chip] of chips) {
+    if (!chip.action) continue;
+    if (!chip.modes.includes(chipMode)) continue;
+    if (chip.visibleWhen && !chip.visibleWhen({ rawInput: currentRawInput, mode: chipMode, resultsCount: currentResultsCount })) {
+      continue;
+    }
+    chip.action();
+    return true;
+  }
+  return false;
+}
+
+window._chips = { init, updateMode, isActive, register, toggle, deactivate, setResultsCount, triggerVisibleAction };
