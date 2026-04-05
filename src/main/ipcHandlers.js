@@ -711,13 +711,24 @@ function resolveFileReferences(query) {
   for (const file of files) {
     const ext = path.extname(file.filePath).toLowerCase();
     try {
+      const MAX_BINARY_SIZE = 20 * 1024 * 1024; // 20 MB
       if (ext === '.pdf') {
+        const stat = fs.statSync(file.filePath);
+        if (stat.size > MAX_BINARY_SIZE) {
+          processedText = processedText.replace(file.ref, `[File too large: ${path.basename(file.filePath)} (${Math.round(stat.size / 1024 / 1024)}MB, limit 20MB)]`);
+          continue;
+        }
         const buf = fs.readFileSync(file.filePath);
         extraParts.push({
           inlineData: { mimeType: 'application/pdf', data: buf.toString('base64') },
         });
         processedText = processedText.replace(file.ref, `[Attached: ${path.basename(file.filePath)}]`);
       } else if (['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'].includes(ext)) {
+        const stat = fs.statSync(file.filePath);
+        if (stat.size > MAX_BINARY_SIZE) {
+          processedText = processedText.replace(file.ref, `[File too large: ${path.basename(file.filePath)} (${Math.round(stat.size / 1024 / 1024)}MB, limit 20MB)]`);
+          continue;
+        }
         const buf = fs.readFileSync(file.filePath);
         const mime = `image/${ext === '.jpg' ? 'jpeg' : ext.slice(1)}`;
         extraParts.push({
