@@ -758,14 +758,15 @@ pre:hover .code-copy-btn,
 }
 
 .confirm-approve {
-  background: rgba(124, 138, 255, 0.12);
-  border-color: rgba(124, 138, 255, 0.3);
-  color: var(--accent);
+  background: rgba(124, 138, 255, 0.28);
+  border-color: rgba(124, 138, 255, 0.6);
+  color: #eef2ff;
 }
 
 .confirm-approve:hover {
-  background: rgba(124, 138, 255, 0.25);
+  background: var(--accent);
   border-color: var(--accent);
+  color: #ffffff;
 }
 
 .confirm-denied {

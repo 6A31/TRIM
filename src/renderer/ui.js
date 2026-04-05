@@ -139,7 +139,6 @@ async function renderResults(results) {
 
   aiContainer.classList.add('hidden');
   settingsPanel.classList.add('hidden');
-  container.classList.remove('hidden');
 
   currentResults = results;
   selectedIndex = results.length > 0 ? 0 : -1;
@@ -147,17 +146,20 @@ async function renderResults(results) {
 
   if (results.length === 0) {
     container.innerHTML = '';
+    container.classList.add('hidden');
     document.getElementById('search-bar').classList.remove('has-results');
     window.trim.resizeWindow(getBarHeight());
     return;
   }
 
   document.getElementById('search-bar').classList.add('has-results');
-  container.innerHTML = '';
+  const frag = document.createDocumentFragment();
   for (const result of results) {
     const el = createResultElement(result);
-    container.appendChild(el);
+    frag.appendChild(el);
   }
+  container.replaceChildren(frag);
+  container.classList.remove('hidden');
 
   updateSelection();
 
@@ -433,6 +435,7 @@ function renderAIResponse(response) {
     searchInput.setSelectionRange(prefix.length, prefix.length);
     if (window._inputRouter) window._inputRouter.refreshInputDecor(searchInput);
   }
+  searchInput.focus();
 }
 
 function postProcessCodeBlocks(container) {
