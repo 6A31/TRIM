@@ -21,9 +21,49 @@ const MODE_HINTS = {
 let debounceTimer = null;
 let currentMode = 'app';
 let filePickActive = false;
+let activeFolderRequestId = null;
+let activeFilePickRequestId = null;
 
 function init() {
   const input = document.getElementById('search-input');
+
+  window.trim.offFolderSearchUpdate();
+  window.trim.onFolderSearchUpdate((data) => {
+    const currentRaw = input.value;
+    const mode = detectMode(currentRaw);
+
+    if (!data || !Array.isArray(data.results)) return;
+
+    if (mode === 'folder') {
+      const q = currentRaw.trim().slice(2).trim();
+      if (data.requestId !== activeFolderRequestId || data.query !== q) return;
+      const mapped = data.results.map(entry => ({
+        type: 'folder',
+        icon: entry.isDirectory ? 'folder' : 'description',
+        title: entry.name,
+        subtitle: entry.path,
+        action: () => window.trim.openFolder(entry.path),
+      }));
+      window._ui.renderResults(mapped);
+      return;
+    }
+
+    if ((mode === 'ai' || mode === 'ai_pro' || mode === 'solve') && filePickActive) {
+      const hashMatch = currentRaw.match(/#([^#\\\/\s][^#\\\/]*)$/);
+      const searchTerm = hashMatch && hashMatch[1] ? hashMatch[1].trim() : '';
+      if (!searchTerm) return;
+      if (data.requestId !== activeFilePickRequestId || data.query !== searchTerm) return;
+      const mapped = data.results.map(entry => ({
+        type: 'file-ref',
+        icon: entry.isDirectory ? 'folder' : 'description',
+        title: entry.name,
+        subtitle: entry.path,
+        action: () => insertFileRef(input, entry.path),
+      }));
+      window._ui.renderResults(mapped);
+    }
+  });
+
   input.addEventListener('input', () => {
     const raw = input.value;
     const mode = detectMode(raw);
@@ -46,7 +86,9 @@ function init() {
         const searchTerm = hashMatch[1].trim();
         filePickActive = true;
         debounceTimer = setTimeout(async () => {
-          const results = await window.trim.searchFolders(searchTerm);
+          const payload = await window.trim.searchFolders(searchTerm);
+          const results = Array.isArray(payload) ? payload : (payload?.results || []);
+          activeFilePickRequestId = payload?.requestId || null;
           const mapped = results.map(entry => ({
             type: 'file-ref',
             icon: entry.isDirectory ? 'folder' : 'description',
@@ -54,9 +96,7 @@ function init() {
             subtitle: entry.path,
             action: () => insertFileRef(input, entry.path),
           }));
-          if (mapped.length > 0) {
-            window._ui.renderResults(mapped);
-          }
+          window._ui.renderResults(mapped);
         }, 150);
         return;
       }
@@ -64,6 +104,7 @@ function init() {
       // No active file pick — restore AI area if needed
       if (filePickActive) {
         filePickActive = false;
+        activeFilePickRequestId = null;
         window._ui.restoreAIArea();
       }
 
@@ -78,6 +119,7 @@ function init() {
       return;
     }
     filePickActive = false;
+    activeFilePickRequestId = null;
 
     const delay = getDebounceDelay(raw);
     clearTimeout(debounceTimer);
@@ -138,10 +180,20 @@ async function route(rawInput) {
   }
 
   if (mode === 'folder') {
-    const results = await window._folderSearch.search(input.slice(2));
+    const payload = await window.trim.searchFolders(input.slice(2));
+    const results = (Array.isArray(payload) ? payload : (payload?.results || [])).map(entry => ({
+      type: 'folder',
+      icon: entry.isDirectory ? 'folder' : 'description',
+      title: entry.name,
+      subtitle: entry.path,
+      action: () => window.trim.openFolder(entry.path),
+    }));
+    activeFolderRequestId = payload?.requestId || null;
     window._ui.renderResults(results);
     return;
   }
+
+  activeFolderRequestId = null;
 
   if (mode === 'ai' || mode === 'ai_pro' || mode === 'solve') {
     return;

@@ -55,6 +55,13 @@ async function render() {
         placeholder="gemini-3.1-pro-preview"
         value="${settings.modelPro || 'gemini-3.1-pro-preview'}">
     </div>
+    <div class="settings-group">
+      <label class="settings-label">Extra Cached File Types</label>
+      <input type="text" class="settings-input" id="settings-cached-file-types"
+        placeholder=".blend, .psd, .step"
+        value="${Array.isArray(settings.cachedFileTypes) ? settings.cachedFileTypes.join(', ') : ''}">
+      <div class="settings-description">Comma-separated extensions to include in file cache whitelist (for f: and # picker).</div>
+    </div>
     <div style="display:flex;align-items:center;margin-top:8px">
       <button class="settings-save" id="settings-save-btn">
         <span class="material-symbols-rounded" style="font-size:16px">save</span>
@@ -67,7 +74,7 @@ async function render() {
     </div>
     <div class="settings-group" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
       <label class="settings-label">Cache</label>
-      <div class="settings-description">Clears app list, icons, and usage data. Apps will be re-scanned.</div>
+      <div class="settings-description">Clears app list, icons, usage data, and file search cache. Apps will be re-scanned.</div>
       <button class="settings-danger-btn" id="settings-clear-cache-btn">
         <span class="material-symbols-rounded" style="font-size:16px">delete_sweep</span>
         Clear Cache
@@ -91,8 +98,16 @@ async function save() {
   const apiKey = document.getElementById('settings-api-key').value.trim();
   const model = document.getElementById('settings-model').value.trim();
   const modelPro = document.getElementById('settings-model-pro').value.trim();
+  const rawTypes = document.getElementById('settings-cached-file-types').value.trim();
 
-  await window.trim.saveSettings({ apiKey, model, modelPro });
+  const cachedFileTypes = rawTypes
+    .split(',')
+    .map(t => t.trim().toLowerCase())
+    .filter(Boolean)
+    .map(t => (t.startsWith('.') ? t : `.${t}`))
+    .filter((t, i, arr) => arr.indexOf(t) === i);
+
+  await window.trim.saveSettings({ apiKey, model, modelPro, cachedFileTypes });
 
   const msg = document.getElementById('settings-saved-msg');
   msg.classList.add('show');

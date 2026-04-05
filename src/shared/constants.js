@@ -15,6 +15,7 @@ const IPC = {
   AI_QUERY: 'trim:ai-query',
   AI_STATUS: 'trim:ai-status',
   SEARCH_FOLDERS: 'trim:search-folders',
+  SEARCH_FOLDERS_UPDATE: 'trim:folder-search-update',
   OPEN_FOLDER: 'trim:open-folder',
   LOAD_SETTINGS: 'trim:load-settings',
   SAVE_SETTINGS: 'trim:save-settings',
@@ -31,6 +32,7 @@ const DEFAULTS = {
   modelPro: 'gemini-3.1-pro-preview',
   apiKey: '',
   searchPaths: [],
+  cachedFileTypes: [],
 };
 
 module.exports = { PREFIXES, IPC, DEFAULTS };

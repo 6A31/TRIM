@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('trim', {
   openApp:       (appPath, appName) => ipcRenderer.invoke('trim:open-app', appPath, appName),
   aiQuery:       (query, usePro, forceShow, followUp) => ipcRenderer.invoke('trim:ai-query', query, usePro, forceShow, followUp),
   searchFolders: (query)      => ipcRenderer.invoke('trim:search-folders', query),
+  onFolderSearchUpdate: (cb)  => ipcRenderer.on('trim:folder-search-update', (_e, data) => cb(data)),
+  offFolderSearchUpdate: ()   => ipcRenderer.removeAllListeners('trim:folder-search-update'),
   openFolder:    (folderPath) => ipcRenderer.invoke('trim:open-folder', folderPath),
   loadSettings:  ()           => ipcRenderer.invoke('trim:load-settings'),
   saveSettings:  (data)       => ipcRenderer.invoke('trim:save-settings', data),

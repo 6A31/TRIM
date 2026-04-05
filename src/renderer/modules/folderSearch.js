@@ -2,7 +2,8 @@ async function search(query) {
   if (!query.trim()) return [];
 
   try {
-    const results = await window.trim.searchFolders(query);
+    const payload = await window.trim.searchFolders(query);
+    const results = Array.isArray(payload) ? payload : (payload?.results || []);
     return results.map(entry => ({
       type: 'folder',
       icon: entry.isDirectory ? 'folder' : 'description',

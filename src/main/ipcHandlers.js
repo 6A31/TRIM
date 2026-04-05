@@ -11,6 +11,26 @@ let ai = null; // GoogleGenAI client
 let iconCacheDirty = false;
 let iconCacheSaveTimer = null;
 let usageData = {}; // { "app name lowercase": count }
+const fileSearchCache = new Map(); // path -> metadata for cacheable file types only
+let fileSearchCacheDirty = false;
+let fileSearchCacheSaveTimer = null;
+let folderSearchRequestSeq = 0;
+const activeFolderRequests = new Map(); // webContentsId -> requestId
+
+// Common cacheable file types. Users can extend this from settings.
+const DEFAULT_CACHEABLE_FILE_TYPES = new Set([
+  '.txt', '.md', '.rtf', '.log', '.csv', '.tsv', '.json', '.jsonl', '.yaml', '.yml', '.toml', '.ini', '.xml',
+  '.html', '.htm', '.css', '.scss', '.less', '.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.vue', '.svelte',
+  '.py', '.ipynb', '.java', '.kt', '.kts', '.c', '.h', '.cpp', '.hpp', '.cc', '.cs', '.go', '.rs', '.php',
+  '.rb', '.swift', '.m', '.mm', '.r', '.jl', '.sql', '.ps1', '.psm1', '.sh', '.bat', '.cmd', '.zsh', '.fish',
+  '.gitignore', '.gitattributes', '.editorconfig', '.dockerfile', '.makefile', '.gradle', '.properties',
+  '.pdf', '.doc', '.docx', '.odt', '.ppt', '.pptx', '.odp', '.xls', '.xlsx', '.ods', '.pages', '.numbers', '.key',
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tif', '.tiff', '.svg', '.ico', '.heic', '.avif', '.raw', '.psd',
+  '.mp3', '.wav', '.flac', '.aac', '.m4a', '.ogg', '.wma', '.mp4', '.mkv', '.mov', '.avi', '.wmv', '.webm', '.m4v',
+  '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.iso',
+  '.blend', '.fbx', '.obj', '.stl', '.step', '.stp', '.dwg', '.dxf', '.skp',
+  '.sqlite', '.db', '.parquet', '.feather', '.h5', '.hdf5', '.pkl', '.joblib', '.onnx', '.pt', '.ckpt',
+]);
 
 function getCachePath(name) {
   const { app } = require('electron');
@@ -20,6 +40,7 @@ function getCachePath(name) {
 function getIconCachePath() { return getCachePath('icon-cache.json'); }
 function getAppCachePath() { return getCachePath('app-cache.json'); }
 function getUsageCachePath() { return getCachePath('usage-cache.json'); }
+function getFileSearchCachePath() { return getCachePath('file-search-cache.json'); }
 
 function loadIconCache() {
   try {
@@ -71,6 +92,96 @@ function loadUsageData() {
 
 function saveUsageData() {
   try { fs.writeFileSync(getUsageCachePath(), JSON.stringify(usageData)); } catch {}
+}
+
+function normalizeFileExt(name) {
+  const ext = path.extname(name || '').toLowerCase();
+  return ext || '';
+}
+
+function getCacheableExtensions(settings) {
+  const merged = new Set(DEFAULT_CACHEABLE_FILE_TYPES);
+  const extra = Array.isArray(settings?.cachedFileTypes) ? settings.cachedFileTypes : [];
+  for (const item of extra) {
+    if (!item || typeof item !== 'string') continue;
+    const ext = item.trim().toLowerCase();
+    if (!ext) continue;
+    merged.add(ext.startsWith('.') ? ext : `.${ext}`);
+  }
+  return merged;
+}
+
+function shouldCacheFileEntry(entry, settings) {
+  if (!entry || entry.isDirectory) return false;
+  const allowed = getCacheableExtensions(settings);
+  const ext = normalizeFileExt(entry.name);
+  return ext && allowed.has(ext);
+}
+
+function loadFileSearchCache() {
+  try {
+    const raw = fs.readFileSync(getFileSearchCachePath(), 'utf-8');
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return;
+    for (const item of arr) {
+      if (!item || !item.path || !item.name || !item.ext) continue;
+      fileSearchCache.set(item.path, {
+        path: item.path,
+        name: item.name,
+        ext: item.ext,
+        parent: item.parent || '',
+        isDirectory: false,
+        cachedAt: item.cachedAt || Date.now(),
+        lastSeenAt: item.lastSeenAt || Date.now(),
+        minDepth: Number.isInteger(item.minDepth) ? item.minDepth : 99,
+      });
+    }
+  } catch {}
+}
+
+function scheduleFileSearchCacheSave() {
+  fileSearchCacheDirty = true;
+  if (fileSearchCacheSaveTimer) clearTimeout(fileSearchCacheSaveTimer);
+  fileSearchCacheSaveTimer = setTimeout(() => {
+    if (!fileSearchCacheDirty) return;
+    fileSearchCacheDirty = false;
+    try {
+      const serializable = [...fileSearchCache.values()].map(v => ({
+        path: v.path,
+        name: v.name,
+        ext: v.ext,
+        parent: v.parent,
+        cachedAt: v.cachedAt,
+        lastSeenAt: v.lastSeenAt,
+        minDepth: v.minDepth,
+      }));
+      fs.writeFileSync(getFileSearchCachePath(), JSON.stringify(serializable));
+    } catch {}
+  }, 2000);
+}
+
+function upsertFileSearchCache(entry, depth, settings) {
+  if (!shouldCacheFileEntry(entry, settings)) return;
+  const now = Date.now();
+  const existing = fileSearchCache.get(entry.path);
+  if (existing) {
+    existing.name = entry.name;
+    existing.parent = path.dirname(entry.path);
+    existing.lastSeenAt = now;
+    existing.minDepth = Math.min(existing.minDepth, depth);
+  } else {
+    fileSearchCache.set(entry.path, {
+      path: entry.path,
+      name: entry.name,
+      ext: normalizeFileExt(entry.name),
+      parent: path.dirname(entry.path),
+      isDirectory: false,
+      cachedAt: now,
+      lastSeenAt: now,
+      minDepth: depth,
+    });
+  }
+  scheduleFileSearchCacheSave();
 }
 
 function recordAppLaunch(appName) {
@@ -739,6 +850,200 @@ function friendlyError(err) {
   return err.message || 'Something went wrong.';
 }
 
+function normalizePathKey(p) {
+  return path.resolve(p).toLowerCase();
+}
+
+function computeFileSearchScore(entry, queryLower, depthHint = 99) {
+  const name = (entry.name || '').toLowerCase();
+  const fullPath = (entry.path || '').toLowerCase();
+  let score = 0;
+
+  if (name === queryLower) score = 1200;
+  else if (name.startsWith(queryLower)) score = 1000;
+  else if (name.includes(queryLower)) score = 780;
+  else if (fullPath.includes(queryLower)) score = 520;
+  else return 0;
+
+  if (entry.isDirectory) score += 60;
+  const depthBonus = Math.max(0, 140 - (depthHint * 20));
+  score += depthBonus;
+
+  return score;
+}
+
+function rankAndTrim(candidateMap, limit = 20) {
+  return [...candidateMap.values()]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(v => v.entry);
+}
+
+function addOrUpgradeCandidate(candidateMap, entry, score) {
+  if (score <= 0) return false;
+  const key = normalizePathKey(entry.path);
+  const existing = candidateMap.get(key);
+  if (!existing || score > existing.score) {
+    candidateMap.set(key, { entry, score });
+    return true;
+  }
+  return false;
+}
+
+function createEntry(name, fullPath, isDirectory) {
+  return { name, path: fullPath, isDirectory: !!isDirectory };
+}
+
+function collectFromCache(queryLower, settings, candidateMap) {
+  for (const cached of fileSearchCache.values()) {
+    const entry = createEntry(cached.name, cached.path, false);
+    const score = computeFileSearchScore(entry, queryLower, cached.minDepth || 99);
+    if (score > 0) addOrUpgradeCandidate(candidateMap, entry, score + 80);
+  }
+}
+
+function quickExistenceCheck(entries, candidateMap, sender, requestId, query) {
+  const targets = entries.filter(e => !e.isDirectory).map(e => e.path);
+  if (targets.length === 0) return;
+
+  let idx = 0;
+  const missing = [];
+
+  const tick = () => {
+    const BATCH = 16;
+    const end = Math.min(idx + BATCH, targets.length);
+    for (; idx < end; idx++) {
+      const p = targets[idx];
+      if (!fs.existsSync(p)) missing.push(p);
+    }
+
+    if (idx < targets.length) {
+      setImmediate(tick);
+      return;
+    }
+
+    if (missing.length === 0) return;
+
+    let changed = false;
+    for (const p of missing) {
+      const key = normalizePathKey(p);
+      if (candidateMap.delete(key)) changed = true;
+      if (fileSearchCache.delete(p)) changed = true;
+    }
+    if (changed) {
+      scheduleFileSearchCacheSave();
+      const active = activeFolderRequests.get(sender.id);
+      if (active === requestId && !sender.isDestroyed()) {
+        sender.send(IPC.SEARCH_FOLDERS_UPDATE, {
+          requestId,
+          query,
+          results: rankAndTrim(candidateMap, 20),
+        });
+      }
+    }
+  };
+
+  setImmediate(tick);
+}
+
+function collectShallowMatches(queryLower, roots, candidateMap, settings) {
+  const MAX_DIRS = 180;
+  const MAX_DEPTH = 1;
+  const queue = roots
+    .filter(r => fs.existsSync(r))
+    .map(r => ({ dir: r, depth: 0 }));
+
+  let visited = 0;
+  while (queue.length > 0 && visited < MAX_DIRS) {
+    const { dir, depth } = queue.shift();
+    visited += 1;
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+    catch { continue; }
+
+    for (const e of entries) {
+      if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+      const fullPath = path.join(dir, e.name);
+      const entry = createEntry(e.name, fullPath, e.isDirectory());
+      const score = computeFileSearchScore(entry, queryLower, depth);
+      if (score > 0) addOrUpgradeCandidate(candidateMap, entry, score);
+      if (!e.isDirectory()) upsertFileSearchCache(entry, depth, settings);
+      if (e.isDirectory() && depth < MAX_DEPTH) {
+        queue.push({ dir: fullPath, depth: depth + 1 });
+      }
+    }
+  }
+}
+
+function streamDeepMatches(queryLower, roots, candidateMap, settings, sender, requestId, query) {
+  const MAX_DEPTH = 5;
+  const BATCH_DIRS = 18;
+  const queue = roots
+    .filter(r => fs.existsSync(r))
+    .map(r => ({ dir: r, depth: 0 }));
+
+  let scanned = 0;
+  let changedSinceLastEmit = false;
+  let emitCounter = 0;
+  let lastFingerprint = rankAndTrim(candidateMap, 20).map(v => v.path).join('|');
+
+  const emitIfChanged = () => {
+    const top = rankAndTrim(candidateMap, 20);
+    const fingerprint = top.map(v => v.path).join('|');
+    if (fingerprint === lastFingerprint) return;
+    lastFingerprint = fingerprint;
+    if (!sender.isDestroyed()) {
+      sender.send(IPC.SEARCH_FOLDERS_UPDATE, { requestId, query, results: top });
+    }
+  };
+
+  const tick = () => {
+    const active = activeFolderRequests.get(sender.id);
+    if (active !== requestId || sender.isDestroyed()) return;
+
+    let processed = 0;
+    while (queue.length > 0 && processed < BATCH_DIRS) {
+      const { dir, depth } = queue.shift();
+      processed += 1;
+      scanned += 1;
+
+      let entries;
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+      catch { continue; }
+
+      for (const e of entries) {
+        if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+        const fullPath = path.join(dir, e.name);
+        const entry = createEntry(e.name, fullPath, e.isDirectory());
+        const score = computeFileSearchScore(entry, queryLower, depth);
+        if (score > 0 && addOrUpgradeCandidate(candidateMap, entry, score)) {
+          changedSinceLastEmit = true;
+        }
+        if (!e.isDirectory()) upsertFileSearchCache(entry, depth, settings);
+        if (e.isDirectory() && depth < MAX_DEPTH) {
+          queue.push({ dir: fullPath, depth: depth + 1 });
+        }
+      }
+    }
+
+    emitCounter += 1;
+    if (changedSinceLastEmit && (emitCounter % 4 === 0 || queue.length === 0)) {
+      changedSinceLastEmit = false;
+      emitIfChanged();
+    }
+
+    // Hard stop keeps deep scan bounded while still materially improving results.
+    if (queue.length === 0 || scanned > 1600) {
+      emitIfChanged();
+      return;
+    }
+
+    setImmediate(tick);
+  };
+
+  setImmediate(tick);
+}
+
 // --- Register all IPC handlers ---
 
 function registerHandlers(ipcMain) {
@@ -751,6 +1056,7 @@ function registerHandlers(ipcMain) {
   loadIconCache();
   loadAppCache();
   loadUsageData();
+  loadFileSearchCache();
 
   // Clean up any orphaned temp dirs from previous crashes
   cleanupOrphanedTempDirs();
@@ -844,19 +1150,30 @@ function registerHandlers(ipcMain) {
 
   ipcMain.handle(IPC.SEARCH_FOLDERS, async (_e, query) => {
     try {
-      const hasPathSep = query.includes('/') || query.includes('\\');
-      const hasDrive = /^[a-zA-Z]:/.test(query);
+      const sender = _e.sender;
+      const requestId = ++folderSearchRequestSeq;
+      activeFolderRequests.set(sender.id, requestId);
+
+      const cleanQuery = (query || '').trim();
+      if (!cleanQuery) {
+        return { requestId, results: [] };
+      }
+
+      const settings = loadSettingsSync();
+      const queryLower = cleanQuery.toLowerCase();
+      const hasPathSep = cleanQuery.includes('/') || cleanQuery.includes('\\');
+      const hasDrive = /^[a-zA-Z]:/.test(cleanQuery);
 
       if (hasPathSep || hasDrive) {
         // Direct path mode: list specific directory
-        const searchPath = hasDrive ? query : path.join(os.homedir(), query);
+        const searchPath = hasDrive ? cleanQuery : path.join(os.homedir(), cleanQuery);
         const dir = path.dirname(searchPath);
         const pattern = path.basename(searchPath).toLowerCase();
 
-        if (!fs.existsSync(dir)) return [];
+        if (!fs.existsSync(dir)) return { requestId, results: [] };
 
         const entries = fs.readdirSync(dir, { withFileTypes: true });
-        return entries
+        const results = entries
           .filter(e => e.name.toLowerCase().includes(pattern || ''))
           .slice(0, 20)
           .map(e => ({
@@ -864,14 +1181,16 @@ function registerHandlers(ipcMain) {
             path: path.join(dir, e.name),
             isDirectory: e.isDirectory(),
           }));
+
+        for (const entry of results) upsertFileSearchCache(entry, 0, settings);
+        return { requestId, results };
       }
 
       // Recursive search mode: search common locations
-      const pattern = query.toLowerCase().trim();
-      if (!pattern) return [];
+      const pattern = queryLower;
+      if (!pattern) return { requestId, results: [] };
 
       const home = os.homedir();
-      const settings = loadSettingsSync();
       const roots = [
         path.join(home, 'Desktop'),
         path.join(home, 'Documents'),
@@ -888,45 +1207,17 @@ function registerHandlers(ipcMain) {
         return true;
       });
 
-      const MAX_DEPTH = 4;
-      const MAX_RESULTS = 20;
-      const results = [];
-      const seenPaths = new Set();
+      const candidates = new Map();
+      collectFromCache(pattern, settings, candidates);
+      collectShallowMatches(pattern, uniqueRoots, candidates, settings);
 
-      function searchDir(dir, depth) {
-        if (depth > MAX_DEPTH || results.length >= MAX_RESULTS) return;
-        let entries;
-        try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
-        catch { return; }
-        for (const e of entries) {
-          if (results.length >= MAX_RESULTS) return;
-          if (e.name.startsWith('.') || e.name === 'node_modules') continue;
-          const fullPath = path.join(dir, e.name);
-          if (e.name.toLowerCase().includes(pattern)) {
-            const norm = path.resolve(fullPath).toLowerCase();
-            if (!seenPaths.has(norm)) {
-              seenPaths.add(norm);
-              results.push({
-                name: e.name,
-                path: fullPath,
-                isDirectory: e.isDirectory(),
-              });
-            }
-          }
-          if (e.isDirectory()) {
-            searchDir(fullPath, depth + 1);
-          }
-        }
-      }
+      const initialResults = rankAndTrim(candidates, 20);
+      quickExistenceCheck(initialResults, candidates, sender, requestId, cleanQuery);
+      streamDeepMatches(pattern, uniqueRoots, candidates, settings, sender, requestId, cleanQuery);
 
-      for (const root of uniqueRoots) {
-        if (results.length >= MAX_RESULTS) break;
-        searchDir(root, 0);
-      }
-
-      return results;
+      return { requestId, results: initialResults };
     } catch {
-      return [];
+      return { requestId: ++folderSearchRequestSeq, results: [] };
     }
   });
 
@@ -941,6 +1232,16 @@ function registerHandlers(ipcMain) {
   ipcMain.handle(IPC.SAVE_SETTINGS, async (_e, data) => {
     const current = loadSettingsSync();
     const merged = { ...current, ...data };
+    if (Array.isArray(merged.cachedFileTypes)) {
+      merged.cachedFileTypes = merged.cachedFileTypes
+        .map(v => (typeof v === 'string' ? v.trim().toLowerCase() : ''))
+        .filter(Boolean)
+        .map(v => (v.startsWith('.') ? v : `.${v}`))
+        .filter((v, i, arr) => arr.indexOf(v) === i)
+        .slice(0, 200);
+    } else {
+      merged.cachedFileTypes = [];
+    }
     fs.writeFileSync(getSettingsPath(), JSON.stringify(merged, null, 2));
     if (data.apiKey !== undefined) initAI(data.apiKey);
     appCache = null;
@@ -957,9 +1258,11 @@ function registerHandlers(ipcMain) {
     appCache = null;
     iconCache.clear();
     usageData = {};
+    fileSearchCache.clear();
     try { fs.unlinkSync(getIconCachePath()); } catch {}
     try { fs.unlinkSync(getAppCachePath()); } catch {}
     try { fs.unlinkSync(getUsageCachePath()); } catch {}
+    try { fs.unlinkSync(getFileSearchCachePath()); } catch {}
     return true;
   });
 }
