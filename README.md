@@ -1,125 +1,167 @@
 # Trim
 
-A Windows Spotlight-like launcher for quickly searching apps, asking AI questions, doing calculations, and browsing folders.
+A keyboard-first launcher for Windows 11. Think Spotlight, but for Windows — with AI built in.
 
-## Prerequisites
+![Trim hero screenshot](placeholder-hero.png)
 
-- **Windows 11**
-- **Node.js LTS** — install via `winget install OpenJS.NodeJS.LTS` if not already installed
+Trim sits behind **Ctrl+Space**, gives you a single search bar with an acrylic glass UI, and gets out of your way. Search apps, ask Gemini questions with live web results, do math, browse files, and automate your filesystem — all without touching the mouse.
 
-## Install
+## Features
+
+### App Search
+
+Type anything and Trim instantly searches your installed apps — both traditional Start Menu shortcuts and Microsoft Store / UWP apps. Results are ranked by how often you launch them, so your most-used apps float to the top. Fuzzy matching means you can type `vsc` and get Visual Studio Code.
+
+![App search results](placeholder-app-search.png)
+
+### AI Chat (Gemini)
+
+Prefix with `?` for Gemini Flash or `??` for Gemini Pro. Responses are grounded with live Google Search, so you get current answers instead of stale training data. Conversations persist between toggles — hide the window, bring it back, keep chatting. Backspace the `?` to start a new conversation.
+
+![AI conversation](placeholder-ai-chat.png)
+
+Responses render full Markdown with syntax-highlighted code blocks, LaTeX math, and one-click copy on every code block.
+
+### Python Execution
+
+The AI runs Python code locally when it needs to compute something. Matplotlib plots render inline. Toggle **Force Code** to make the AI always reach for deterministic Python instead of winging it with LLM reasoning — useful for anything involving actual math.
+
+![Python plot inline](placeholder-python-plot.png)
+
+### File Automation
+
+The AI can read, create, edit, and delete files on your system through dedicated tool calls. Every mutating operation shows an inline confirmation prompt with a preview of what's about to change before anything touches disk. Read and list operations run without asking.
+
+![File operation confirmation](placeholder-file-confirm.png)
+
+### File References
+
+Type `#` followed by a filename inside any AI query to attach file contents as context. Trim shows an inline file picker as you type, and the selected file gets sent to Gemini. Works with text files, PDFs, and images.
+
+### Calculator
+
+`c: 2+2` gives you `4` instantly. Supports trig, roots, logarithms, constants (`pi`, `e`), percentages, and exponentiation. Click the result to copy.
+
+### Folder Search
+
+`f: report` recursively searches Desktop, Documents, and Downloads for matching files and folders. Depth-limited to keep things fast.
+
+### Slash Commands
+
+| Command | What it does |
+|---------|-------------|
+| `/settings` | Open settings panel |
+| `/reload` | Reload the UI |
+| `/clear` | Clear conversation and temp files |
+| `/help` | Show all prefixes and features |
+
+## Prefixes
+
+| Prefix | Mode |
+|--------|------|
+| *(none)* | App search |
+| `?` | AI (Gemini Flash) |
+| `??` | AI (Gemini Pro) |
+| `c:` | Calculator |
+| `f:` | File / folder search |
+| `cs:` | Solver |
+| `/` | Commands |
+| `#file` | Attach file to AI query |
+
+## Keyboard
+
+| Key | Action |
+|-----|--------|
+| **Ctrl+Space** | Toggle Trim |
+| **Escape** | Hide window |
+| **Arrow Up/Down** | Navigate results |
+| **Enter** | Execute / send |
+| **Tab** | Autocomplete file picker |
+
+## Setup
+
+Requires [Node.js LTS](https://nodejs.org/) and Windows 11.
 
 ```bash
-cd C:\Users\Yoshi\Documents\Trim
+git clone https://github.com/your-username/trim.git
+cd trim
 npm install
 ```
 
-## Run
+Get a [Gemini API key](https://aistudio.google.com/apikey) (free tier is fine), then:
 
-**From a regular terminal** (Command Prompt, PowerShell, Windows Terminal):
 ```bash
 npm start
 ```
 
-**From VS Code / Claude Code terminal** (where `ELECTRON_RUN_AS_NODE` is set):
-```bash
-start.bat
-```
+Type `/settings`, paste your API key, and save. Try `? hello` to make sure it works.
 
-Both methods launch Trim in the background and return immediately.
-
-## Usage
-
-Press **Ctrl + Space** to toggle the launcher. Press **Escape** to hide it.
-
-### Prefixes
-
-| Prefix | Function | Example |
-|--------|----------|---------|
-| *(none)* | Search installed apps | `firefox` |
-| `?` | Ask Gemini AI (with web search) | `? weather in tokyo` |
-| `c:` | Calculator | `c: 2^10 + sqrt(144)` |
-| `f:` | Browse folders/files | `f: C:\Users\Yoshi\Documents` |
-| `/` | Slash commands | `/settings` |
-
-### Slash Commands
-
-| Command | Description |
-|---------|-------------|
-| `/settings` | Open settings (API key, model) |
-| `/reload` | Reload the app |
-| `/clear` | Clear search input |
-| `/quit` | Close Trim |
-
-### Keyboard
-
-- **Arrow Up/Down** — navigate results
-- **Enter** — execute selected result
-- **Tab** — autocomplete slash commands
-- **Escape** — hide window
-
-## Gemini AI Setup
-
-1. Get a free API key from [Google AI Studio](https://aistudio.google.com/apikey)
-2. Open Trim, type `/settings`, press Enter
-3. Paste your API key and click Save
-4. Type `? hello` to test
-
-The AI uses `gemini-2.5-flash` with Google Search grounding for real-time web results.
+> **VS Code / Claude Code terminal**: If `npm start` doesn't work (because `ELECTRON_RUN_AS_NODE` is set in those environments), use `start.bat` instead.
 
 ## Kill Stale Instances
-
-If Trim behaves oddly or you see duplicate windows:
 
 ```bash
 npm run kill
 ```
 
-Or directly:
-```bash
-taskkill /F /IM electron.exe
-```
+> This kills all Electron processes including VS Code. Use Task Manager for a targeted kill.
 
-> **Note**: This kills *all* Electron processes, including VS Code if running. To be more targeted: use Task Manager and end only the "Trim" processes.
-
-## Build to .exe
+## Building
 
 ```bash
 npm run build
 ```
 
-Output goes to `dist/`. Requires `assets/icon.ico` for the app icon.
+Produces a standalone `.exe` installer in `dist/` via electron-builder.
+
+## Stack
+
+- **Electron 41** — frameless acrylic window, context isolation, single instance lock
+- **Vanilla JS + CSS** — no frameworks, just `<script>` tags and CSS custom properties
+- **@google/genai** — Gemini 3 Flash / 3.1 Pro with Google Search grounding + function calling
+- **PowerShell** — enumerates Start Menu shortcuts and UWP apps, extracts `.exe` icons as base64 PNG
+- **Python 3** — local code execution sandbox for AI tool use
 
 ## Project Structure
 
 ```
-Trim/
-├── src/
-│   ├── main/           # Electron main process
-│   │   ├── main.js             # Entry point, lifecycle
-│   │   ├── windowManager.js    # Window creation, acrylic, show/hide
-│   │   ├── globalHotkey.js     # Ctrl+Space registration
-│   │   └── ipcHandlers.js      # IPC handlers (apps, AI, folders, settings)
-│   ├── renderer/       # UI (runs in Chromium)
-│   │   ├── index.html          # Main HTML
-│   │   ├── preload.js          # Secure IPC bridge (window.trim.*)
-│   │   ├── renderer.js         # Boot script, module loader
-│   │   ├── inputRouter.js      # Prefix detection → dispatch
-│   │   ├── ui.js               # Result rendering, keyboard nav
-│   │   ├── styles/             # CSS (main, search, settings, animations)
-│   │   └── modules/
-│   │       ├── appSearch.js    # Windows app search + icons
-│   │       ├── aiQuery.js      # Gemini AI with grounding
-│   │       ├── calculator.js   # Math evaluation
-│   │       ├── folderSearch.js # File/folder browser
-│   │       ├── commands.js     # Slash command registry
-│   │       └── settings.js     # Settings panel
-│   └── shared/
-│       └── constants.js        # Prefixes, IPC channels, defaults
-├── scripts/
-│   ├── enumerateApps.ps1       # PowerShell: find installed apps
-│   └── extractIcon.ps1         # PowerShell: extract .exe icons
-├── launch.js           # Launcher (cleans ELECTRON_RUN_AS_NODE env)
-├── start.bat           # Windows batch launcher
-└── package.json
+src/
+├── main/
+│   ├── main.js             # Entry point, app lifecycle
+│   ├── windowManager.js    # Frameless window, acrylic, show/hide/resize
+│   ├── globalHotkey.js     # Ctrl+Space global shortcut
+│   └── ipcHandlers.js      # All IPC: apps, AI, files, settings, caching
+├── renderer/
+│   ├── index.html
+│   ├── renderer.js         # Boot, event wiring
+│   ├── preload.js          # contextBridge → window.trim.* API
+│   ├── inputRouter.js      # Prefix detection → module dispatch
+│   ├── ui.js               # DOM rendering, keyboard nav, confirmations
+│   ├── modules/
+│   │   ├── appSearch.js    # Fuzzy search + usage ranking
+│   │   ├── aiQuery.js      # Gemini conversations with memory
+│   │   ├── calculator.js   # Safe math eval
+│   │   ├── folderSearch.js # Recursive file/folder search
+│   │   ├── commands.js     # Slash command registry
+│   │   ├── chips.js        # Contextual toggle chips (Force Code)
+│   │   └── settings.js     # Settings panel
+│   └── styles/
+│       ├── main.css        # Dark theme, CSS variables
+│       ├── search.css      # Search bar, results, AI responses
+│       ├── settings.css    # Settings panel
+│       └── animations.css  # Transitions
+└── shared/
+    └── constants.js        # Prefixes, IPC channels, defaults
+
+scripts/
+├── enumerateApps.ps1       # Scan Start Menu + UWP → JSON
+└── extractIcon.ps1         # .exe → base64 PNG icon
 ```
+
+## Caching
+
+App lists, icons, and launch frequencies are persisted as JSON in the Electron `userData` directory. On startup, cached results appear instantly while a background refresh runs. Clear everything from Settings → Clear Cache.
+
+## License
+
+ISC
