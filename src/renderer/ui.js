@@ -539,11 +539,11 @@ function clearResults() {
 function smartScroll(aiContainer) {
   const followUps = aiContainer.querySelectorAll('.ai-follow-up-query');
   if (followUps.length === 0) {
-    // Single request — always top-aligned
+    // Single request - always top-aligned
     aiContainer.scrollTop = 0;
     return;
   }
-  // Follow-up — anchor the latest follow-up query to the top,
+  // Follow-up - anchor the latest follow-up query to the top,
   // unless remaining content is shorter than the viewport (fill it instead)
   const lastQuery = followUps[followUps.length - 1];
   const queryTop = lastQuery.offsetTop;

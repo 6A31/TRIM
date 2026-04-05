@@ -1,4 +1,4 @@
-// Trim — Renderer entry point
+// Trim - Renderer entry point
 // Load all modules (order matters: modules first, then router + UI)
 
 // Modules

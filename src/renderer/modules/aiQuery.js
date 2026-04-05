@@ -6,7 +6,7 @@ async function search(query) {
   if (!query.trim()) return [];
   isQuerying = true;
 
-  // Return a loading indicator — actual response rendered after
+  // Return a loading indicator - actual response rendered after
   return [{ type: 'ai-loading' }];
 }
 

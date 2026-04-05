@@ -263,7 +263,7 @@ function saveSettingsWithEncryption(settings) {
 
 const PYTHON_TOOL = {
   name: 'run_python',
-  description: 'Execute a Python code snippet. Use for calculations, data processing, plotting charts, or any task that benefits from code execution. You can install pip packages first. For plots, use matplotlib and ALWAYS save to the path in the PLOT_PATH variable with plt.savefig(PLOT_PATH) — it will be displayed to the user automatically. NEVER save plots to any other filename or reference images in your response text — only use PLOT_PATH. Set show_output to true if the user should see the code and its output, false if you just need the result internally.',
+  description: 'Execute a Python code snippet. Use for calculations, data processing, plotting charts, or any task that benefits from code execution. You can install pip packages first. For plots, use matplotlib and ALWAYS save to the path in the PLOT_PATH variable with plt.savefig(PLOT_PATH) - it will be displayed to the user automatically. NEVER save plots to any other filename or reference images in your response text - only use PLOT_PATH. Set show_output to true if the user should see the code and its output, false if you just need the result internally.',
   parameters: {
     type: 'OBJECT',
     properties: {
@@ -569,26 +569,26 @@ function requestConfirmation(event, details) {
 
 // --- AI init ---
 
-const SYSTEM_INSTRUCTION = `You are a concise assistant inside a desktop launcher called Trim. Give short, direct answers — a few sentences max. Include all key facts but skip filler, introductions, and unnecessary detail. Use bullet points for lists. Never repeat the question.
+const SYSTEM_INSTRUCTION = `You are a concise assistant inside a desktop launcher called Trim. Give short, direct answers - a few sentences max. Include all key facts but skip filler, introductions, and unnecessary detail. Use bullet points for lists. Never repeat the question.
 
 You have access to these tools:
 
-**run_python** — Execute Python code locally for computation, data processing, plotting:
-- Save plots to PLOT_PATH using plt.savefig(PLOT_PATH) — shown automatically
+**run_python** - Execute Python code locally for computation, data processing, plotting:
+- Save plots to PLOT_PATH using plt.savefig(PLOT_PATH) - shown automatically
 - NEVER save plots to other paths or reference images in text (no ![](...)  links)
-- NEVER use Python for file system operations — use the dedicated file tools below
+- NEVER use Python for file system operations - use the dedicated file tools below
 - Set show_output=true when user should see code/result, false for intermediate calculations
 
-**File tools** — For interacting with the user's file system:
-- read_file(path) — Read file contents (no confirmation needed)
-- write_file(path, content) — Create or overwrite a file (requires user approval)
-- edit_file(path, old_text, new_text) — Find-and-replace in a file (requires user approval)
-- delete_file(path) — Delete a file or folder (requires user approval)
-- list_directory(path) — List directory contents (no confirmation needed)
+**File tools** - For interacting with the user's file system:
+- read_file(path) - Read file contents (no confirmation needed)
+- write_file(path, content) - Create or overwrite a file (requires user approval)
+- edit_file(path, old_text, new_text) - Find-and-replace in a file (requires user approval)
+- delete_file(path) - Delete a file or folder (requires user approval)
+- list_directory(path) - List directory contents (no confirmation needed)
 
 Always use absolute paths for file tools. The user will approve write/edit/delete before execution.
 
-**googleSearch** — Search the web for current information.`;
+**googleSearch** - Search the web for current information.`;
 
 function getSystemInstruction(forceShowOutput) {
   const osName = platformAdapter ? platformAdapter.getOSLabel() : (process.platform === 'win32' ? 'Windows' : process.platform === 'darwin' ? 'macOS' : 'Linux');
@@ -598,9 +598,9 @@ function getSystemInstruction(forceShowOutput) {
     : SYSTEM_INSTRUCTION + osLine;
 }
 
-const FORCE_CODE_ADDENDUM = `\n\nIMPORTANT — Force Code mode is ON:
+const FORCE_CODE_ADDENDUM = `\n\nIMPORTANT - Force Code mode is ON:
 - Use Python code execution for ALL calculations, math, logic, comparisons, data lookups, and any verifiable task.
-- Do NOT rely on LLM reasoning for math or numbers — always write and run code to get deterministic, correct results.
+- Do NOT rely on LLM reasoning for math or numbers - always write and run code to get deterministic, correct results.
 - Always set show_output=true so the user sees the code and its output.
 - Only skip code if the question is purely conversational with no computable component.`;
 
@@ -634,7 +634,7 @@ function sendStatus(event, text) {
 
 let chatHistory = null; // { contents: [], model: string }
 
-// Resolve #filepath references in query — read files and build multi-part content
+// Resolve #filepath references in query - read files and build multi-part content
 function resolveFileReferences(query) {
   // Match #"C:\path with spaces\file.png" or #C:\path\file.png or #/unix/path
   const fileRefRegex = /#(?:"([^"]+)"|([A-Za-z]:[\\\/][^\s#]+|\/[^\s#]+))/g;
@@ -667,7 +667,7 @@ function resolveFileReferences(query) {
         });
         processedText = processedText.replace(file.ref, `[Attached image: ${path.basename(file.filePath)}]`);
       } else {
-        // Text file — inline contents
+        // Text file - inline contents
         const content = fs.readFileSync(file.filePath, 'utf-8');
         processedText = processedText.replace(file.ref, `[File: ${path.basename(file.filePath)}]`);
         processedText += `\n\n--- Contents of ${file.filePath} ---\n${content.slice(0, 50000)}\n--- End of file ---`;
@@ -887,11 +887,11 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
 function friendlyError(err) {
   const msg = (err.message || '').toLowerCase();
   if (msg.includes('fetch failed') || msg.includes('enotfound') || msg.includes('enetunreach') || msg.includes('etimedout'))
-    return 'No internet connection — check your network and try again.';
+    return 'No internet connection - check your network and try again.';
   if (msg.includes('api key') || msg.includes('401') || msg.includes('403'))
     return 'Invalid API key. Check your key in /settings.';
   if (msg.includes('429') || msg.includes('rate') || msg.includes('quota'))
-    return 'Rate limited — wait a moment and try again.';
+    return 'Rate limited - wait a moment and try again.';
   if (msg.includes('500') || msg.includes('503') || msg.includes('unavailable'))
     return 'Gemini is temporarily unavailable. Try again shortly.';
   return err.message || 'Something went wrong.';
@@ -1149,7 +1149,7 @@ function registerHandlers(ipcMain) {
   ipcMain.handle(IPC.GET_ICON, async (_e, filePath) => {
     if (iconCache.has(filePath)) return iconCache.get(filePath);
 
-    // Image files (UWP icons) — read directly
+    // Image files (UWP icons) - read directly
     const ext = path.extname(filePath).toLowerCase();
     if (['.png', '.jpg', '.jpeg', '.bmp', '.ico', '.webp', '.gif', '.icns'].includes(ext)) {
       try {

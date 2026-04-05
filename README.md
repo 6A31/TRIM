@@ -2,7 +2,7 @@
 
 A keyboard-first launcher for Windows and macOS. Think Spotlight, but with AI built in.
 
-Trim sits behind **Ctrl+Space**, gives you a single search bar with an acrylic-style glass UI, and gets out of your way. Search apps, ask Gemini questions with live web results, do math, browse files, and automate your filesystem — all without touching the mouse.
+Trim sits behind **Ctrl+Space**, gives you a single search bar with an acrylic-style glass UI, and gets out of your way. Search apps, ask Gemini questions with live web results, do math, browse files, and automate your filesystem - all without touching the mouse.
 
 ## Features
 
@@ -41,13 +41,13 @@ Results are ranked by how often you launch them, so your most-used apps float to
 
 ### AI Chat (Gemini)
 
-Prefix with `?` for Gemini Flash or `??` for Gemini Pro. Responses are grounded with live Google Search, so you get current answers instead of stale training data. Conversations persist between toggles — hide the window, bring it back, keep chatting. Backspace the `?` to start a new conversation.
+Prefix with `?` for Gemini Flash or `??` for Gemini Pro. Responses are grounded with live Google Search, so you get current answers instead of stale training data. Conversations persist between toggles - hide the window, bring it back, keep chatting. Backspace the `?` to start a new conversation.
 
 Responses render full Markdown with syntax-highlighted code blocks, LaTeX math, and one-click copy on every code block.
 
 ### Python Execution
 
-The AI runs Python code locally when it needs to compute something. Matplotlib plots render inline. Toggle **Force Code** to make the AI always reach for deterministic Python instead of winging it with LLM reasoning — useful for anything involving actual math.
+The AI runs Python code locally when it needs to compute something. Matplotlib plots render inline. Toggle **Force Code** to make the AI always reach for deterministic Python instead of winging it with LLM reasoning - useful for anything involving actual math.
 
 ### File Automation
 
@@ -142,12 +142,12 @@ Produces a standalone `.exe` installer in `dist/` via electron-builder.
 
 ## Stack
 
-- **Electron 41** — frameless acrylic window, context isolation, single instance lock
-- **Vanilla JS + CSS** — no frameworks, just `<script>` tags and CSS custom properties
-- **@google/genai** — Gemini 3 Flash / 3.1 Pro with Google Search grounding + function calling
-- **Platform adapter (Windows/macOS)** — modular app enumeration, icon retrieval, app launching, and search roots per OS
-- **PowerShell (Windows)** — Start Menu/UWP enumeration and `.exe` icon extraction
-- **Python 3** — local code execution sandbox for AI tool use
+- **Electron 41** - frameless acrylic window, context isolation, single instance lock
+- **Vanilla JS + CSS** - no frameworks, just `<script>` tags and CSS custom properties
+- **@google/genai** - Gemini 3 Flash / 3.1 Pro with Google Search grounding + function calling
+- **Platform adapter (Windows/macOS)** - modular app enumeration, icon retrieval, app launching, and search roots per OS
+- **PowerShell (Windows)** - Start Menu/UWP enumeration and `.exe` icon extraction
+- **Python 3** - local code execution sandbox for AI tool use
 
 ## Project Structure
 

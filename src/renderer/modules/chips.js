@@ -87,8 +87,8 @@ function deactivate(id) {
 }
 
 function updateMode(mode) {
-  if (mode === chipMode) return; // skip rebuild if unchanged — preserves CSS transitions
-  // Leaving an AI/solve mode — deactivate force_code
+  if (mode === chipMode) return; // skip rebuild if unchanged - preserves CSS transitions
+  // Leaving an AI/solve mode - deactivate force_code
   const aiModes = ['ai', 'ai_pro', 'solve'];
   if (aiModes.includes(chipMode) && !aiModes.includes(mode)) {
     activeToggles['force_code'] = false;

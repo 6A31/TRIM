@@ -79,7 +79,7 @@ function init() {
     updateModeIndicator(raw);
     refreshInputDecor(input);
 
-    // Empty input — always clear and shrink
+    // Empty input - always clear and shrink
     if (!raw.trim()) {
       clearTimeout(debounceTimer);
       window._ui.clearResults();
@@ -90,7 +90,7 @@ function init() {
     if (mode === 'ai' || mode === 'ai_pro' || mode === 'solve') {
       clearTimeout(debounceTimer);
 
-      // Check for #file references — show file picker
+      // Check for #file references - show file picker
       const hashMatch = raw.match(/#([^#\\\/\s][^#\\\/]*)$/);
       if (hashMatch && hashMatch[1].trim()) {
         const searchTerm = hashMatch[1].trim();
@@ -111,7 +111,7 @@ function init() {
         return;
       }
 
-      // No active file pick — restore AI area if needed
+      // No active file pick - restore AI area if needed
       if (filePickActive) {
         filePickActive = false;
         activeFilePickRequestId = null;
