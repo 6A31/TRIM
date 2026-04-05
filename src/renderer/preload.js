@@ -16,4 +16,7 @@ contextBridge.exposeInMainWorld('trim', {
   onAIStatus:    (cb)         => ipcRenderer.on('trim:ai-status', (_e, data) => cb(data)),
   offAIStatus:   ()           => ipcRenderer.removeAllListeners('trim:ai-status'),
   cleanup:       ()           => ipcRenderer.invoke('trim:cleanup'),
+  clearCache:    ()           => ipcRenderer.invoke('trim:clear-cache'),
+  onConfirmAction: (cb)       => ipcRenderer.on('trim:confirm-action', (_e, details) => cb(details)),
+  respondConfirmAction: (approved) => ipcRenderer.send('trim:confirm-action-response', approved),
 });

@@ -26,33 +26,42 @@ function handleKeyboard(e) {
       break;
     case 'Enter':
       e.preventDefault();
+      // If file picker is showing, select the file instead of sending
+      if (window._inputRouter.isFilePickActive() && currentResults.length > 0 && currentResults[0].type === 'file-ref') {
+        const sel = currentResults[selectedIndex >= 0 ? selectedIndex : 0];
+        if (sel.action) sel.action();
+        break;
+      }
       // If in AI mode, fire the query
       const input = document.getElementById('search-input').value;
       const forceShow = window._chips && window._chips.isActive('force_code');
       if (input.startsWith('??')) {
         const query = input.slice(2).trim();
         if (query) {
+          window._aiQuery.prepareForQuery('ai_pro');
           showAILoading('Asking Gemini Pro...');
-          window._aiQuery.execute(query, true, forceShow, (response) => {
+          window._aiQuery.execute(query, 'ai_pro', forceShow, (response) => {
             renderAIResponse(response);
           });
         }
       } else if (input.startsWith('?')) {
         const query = input.slice(1).trim();
         if (query) {
+          window._aiQuery.prepareForQuery('ai');
           showAILoading();
-          window._aiQuery.execute(query, false, forceShow, (response) => {
+          window._aiQuery.execute(query, 'ai', forceShow, (response) => {
             renderAIResponse(response);
           });
         }
       } else if (input.startsWith('cs:')) {
         const expr = input.slice(3).trim();
         if (expr) {
+          window._aiQuery.prepareForQuery('solve');
           showAILoading('Solving...');
           // Only wrap with solve instructions on first query, not follow-ups
           const isFollowUp = window._aiQuery.isFollowUp();
           const solvePrompt = isFollowUp ? expr : `Solve this math problem step by step. Use LaTeX notation ($$...$$ for display, $...$ for inline) for all math expressions. Use the run_python tool to compute and verify your answer. Show clear, concise steps.\n\nProblem: ${expr}`;
-          window._aiQuery.execute(solvePrompt, false, true, (response) => {
+          window._aiQuery.execute(solvePrompt, 'solve', true, (response) => {
             renderAIResponse(response);
           });
         }
@@ -66,8 +75,11 @@ function handleKeyboard(e) {
       break;
     case 'Tab':
       e.preventDefault();
-      // Autocomplete for commands
-      if (currentResults.length > 0 && currentResults[0].type === 'command') {
+      // Autocomplete for file references or commands
+      if (currentResults.length > 0 && currentResults[0].type === 'file-ref') {
+        const sel = currentResults[selectedIndex >= 0 ? selectedIndex : 0];
+        if (sel.action) sel.action();
+      } else if (currentResults.length > 0 && currentResults[0].type === 'command') {
         document.getElementById('search-input').value = currentResults[selectedIndex >= 0 ? selectedIndex : 0].title;
       }
       break;
@@ -197,7 +209,7 @@ function createResultElement(result) {
   if (result.type) {
     const badge = document.createElement('span');
     badge.className = 'result-badge';
-    const labels = { app: 'App', calc: 'Copy', folder: 'Open', command: 'Run' };
+    const labels = { app: 'App', calc: 'Copy', folder: 'Open', command: 'Run', 'file-ref': 'Ref' };
     badge.textContent = labels[result.type] || '';
     if (badge.textContent) el.appendChild(badge);
   }
@@ -467,10 +479,115 @@ function smartScroll(aiContainer) {
   }
 }
 
+function showConfirmation(details) {
+  const aiContainer = document.getElementById('ai-response-container');
+  const turnDiv = aiContainer.querySelector('.ai-current-turn');
+  if (!turnDiv) return;
+
+  let icon, title, body;
+  if (details.tool === 'write_file') {
+    icon = 'edit_document';
+    title = 'Write file';
+    body = `<div class="confirm-path">${escapeHtml(details.path)}</div>`;
+    if (details.contentPreview) {
+      body += `<pre class="confirm-preview"><code>${escapeHtml(details.contentPreview)}</code></pre>`;
+      if (details.contentLength > 500) {
+        body += `<div class="confirm-truncated">${details.contentLength.toLocaleString()} chars total</div>`;
+      }
+    }
+  } else if (details.tool === 'edit_file') {
+    icon = 'find_replace';
+    title = 'Edit file';
+    body = `<div class="confirm-path">${escapeHtml(details.path)}</div>`;
+    body += `<div class="confirm-diff">`;
+    body += `<div class="confirm-diff-old"><span class="confirm-diff-label">-</span><code>${escapeHtml(details.oldText || '')}</code></div>`;
+    body += `<div class="confirm-diff-new"><span class="confirm-diff-label">+</span><code>${escapeHtml(details.newText || '')}</code></div>`;
+    body += `</div>`;
+  } else if (details.tool === 'delete_file') {
+    icon = 'delete';
+    title = details.isDirectory ? 'Delete folder' : 'Delete file';
+    body = `<div class="confirm-path">${escapeHtml(details.path)}</div>`;
+  } else {
+    icon = 'warning';
+    title = details.tool;
+    body = `<div class="confirm-path">${escapeHtml(details.path || '')}</div>`;
+  }
+
+  turnDiv.innerHTML = `
+    <div class="confirm-action">
+      <div class="confirm-header">
+        <span class="material-symbols-rounded confirm-icon">${icon}</span>
+        <span class="confirm-title">${title}</span>
+      </div>
+      ${body}
+      <div class="confirm-buttons">
+        <button class="confirm-btn confirm-deny" id="confirm-deny-btn">
+          <span class="material-symbols-rounded" style="font-size:16px">close</span>
+          Deny
+        </button>
+        <button class="confirm-btn confirm-approve" id="confirm-approve-btn">
+          <span class="material-symbols-rounded" style="font-size:16px">check</span>
+          Approve
+        </button>
+      </div>
+    </div>
+  `;
+
+  // Prevent buttons from stealing focus
+  turnDiv.querySelectorAll('.confirm-btn').forEach(btn => {
+    btn.addEventListener('mousedown', (e) => e.preventDefault());
+  });
+
+  document.getElementById('confirm-approve-btn').addEventListener('click', () => {
+    window.trim.respondConfirmAction(true);
+    turnDiv.innerHTML = `
+      <div class="ai-loading">
+        <div class="spinner"></div>
+        <span>Executing ${escapeHtml(details.tool.replace(/_/g, ' '))}...</span>
+      </div>
+    `;
+  });
+
+  document.getElementById('confirm-deny-btn').addEventListener('click', () => {
+    window.trim.respondConfirmAction(false);
+    turnDiv.innerHTML = `
+      <div class="confirm-denied">
+        <span class="material-symbols-rounded" style="font-size:16px">block</span>
+        Operation denied
+      </div>
+    `;
+  });
+
+  requestAnimationFrame(() => {
+    const h = getBarHeight() + aiContainer.scrollHeight;
+    window.trim.resizeWindow(Math.min(h, 500));
+    smartScroll(aiContainer);
+  });
+}
+
+function restoreAIArea() {
+  const rc = document.getElementById('results-container');
+  const aiContainer = document.getElementById('ai-response-container');
+  rc.innerHTML = '';
+  rc.classList.add('hidden');
+  // If there's AI content, show it again
+  if (aiContainer.innerHTML) {
+    aiContainer.classList.remove('hidden');
+    document.getElementById('search-bar').classList.add('has-results');
+    requestAnimationFrame(() => {
+      const h = getBarHeight() + aiContainer.scrollHeight;
+      window.trim.resizeWindow(Math.min(h, 500));
+    });
+  } else {
+    document.getElementById('search-bar').classList.remove('has-results');
+    window.trim.resizeWindow(getBarHeight());
+  }
+}
+
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
 }
 
-window._ui = { init, renderResults, showAILoading, updateAIStatus, renderAIResponse, clearResults };
+window._ui = { init, renderResults, showAILoading, updateAIStatus, renderAIResponse, clearResults, restoreAIArea, showConfirmation };

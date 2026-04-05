@@ -20,6 +20,7 @@ const MODE_HINTS = {
 
 let debounceTimer = null;
 let currentMode = 'app';
+let filePickActive = false;
 
 function init() {
   const input = document.getElementById('search-input');
@@ -38,15 +39,45 @@ function init() {
     // AI and solve only fire on Enter, not on typing
     if (mode === 'ai' || mode === 'ai_pro' || mode === 'solve') {
       clearTimeout(debounceTimer);
+
+      // Check for #file references — show file picker
+      const hashMatch = raw.match(/#([^#\\\/\s][^#\\\/]*)$/);
+      if (hashMatch && hashMatch[1].trim()) {
+        const searchTerm = hashMatch[1].trim();
+        filePickActive = true;
+        debounceTimer = setTimeout(async () => {
+          const results = await window.trim.searchFolders(searchTerm);
+          const mapped = results.map(entry => ({
+            type: 'file-ref',
+            icon: entry.isDirectory ? 'folder' : 'description',
+            title: entry.name,
+            subtitle: entry.path,
+            action: () => insertFileRef(input, entry.path),
+          }));
+          if (mapped.length > 0) {
+            window._ui.renderResults(mapped);
+          }
+        }, 150);
+        return;
+      }
+
+      // No active file pick — restore AI area if needed
+      if (filePickActive) {
+        filePickActive = false;
+        window._ui.restoreAIArea();
+      }
+
       // Clear any stale results from partial prefix typing
       const rc = document.getElementById('results-container');
-      if (rc.innerHTML) {
+      if (rc.innerHTML && !rc.classList.contains('hidden')) {
         rc.innerHTML = '';
+        rc.classList.add('hidden');
         document.getElementById('search-bar').classList.remove('has-results');
         window.trim.resizeWindow(document.getElementById('search-bar').offsetHeight);
       }
       return;
     }
+    filePickActive = false;
 
     const delay = getDebounceDelay(raw);
     clearTimeout(debounceTimer);
@@ -121,4 +152,23 @@ async function route(rawInput) {
   window._ui.renderResults(results);
 }
 
-window._inputRouter = { init, route, detectMode };
+function insertFileRef(inputEl, filePath) {
+  const val = inputEl.value;
+  const hashMatch = val.match(/#([^#\\\/]*)$/);
+  if (hashMatch) {
+    inputEl.value = val.slice(0, hashMatch.index) + '#' + filePath + ' ';
+  } else {
+    // Fallback: append
+    inputEl.value = val + '#' + filePath + ' ';
+  }
+  inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
+  inputEl.focus();
+  filePickActive = false;
+  window._ui.restoreAIArea();
+}
+
+function isFilePickActive() {
+  return filePickActive;
+}
+
+window._inputRouter = { init, route, detectMode, isFilePickActive };

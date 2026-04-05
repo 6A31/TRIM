@@ -20,13 +20,6 @@ register('force_code', {
   label: 'Force Code',
   icon: 'code',
   default: false,
-  modes: ['ai', 'ai_pro'],
-});
-
-register('pin', {
-  label: 'Pin',
-  icon: 'keep',
-  default: false,
   modes: ['ai', 'ai_pro', 'solve'],
 });
 
@@ -63,10 +56,9 @@ function deactivate(id) {
 
 function updateMode(mode) {
   if (mode === chipMode) return; // skip rebuild if unchanged — preserves CSS transitions
-  // Leaving an AI/solve mode — deactivate pin
+  // Leaving an AI/solve mode — deactivate force_code
   const aiModes = ['ai', 'ai_pro', 'solve'];
   if (aiModes.includes(chipMode) && !aiModes.includes(mode)) {
-    activeToggles['pin'] = false;
     activeToggles['force_code'] = false;
   }
   chipMode = mode;

@@ -33,13 +33,18 @@ function boot() {
   window._ui.init();
   window._inputRouter.init();
 
+  // Listen for file operation confirmations from main process
+  window.trim.onConfirmAction((details) => {
+    window._ui.showConfirmation(details);
+  });
+
   const input = document.getElementById('search-input');
   input.focus();
 
   // Clean up on hide (not on show, to avoid old content blinking)
   window.trim.onWindowHidden(() => {
-    const pinned = window._chips && window._chips.isActive('pin');
-    if (!pinned) {
+    const hasChat = window._aiQuery && window._aiQuery.isFollowUp();
+    if (!hasChat) {
       input.value = '';
       window._ui.clearResults();
       if (window._chips) window._chips.updateMode('app');
@@ -53,9 +58,9 @@ function boot() {
 
   // Re-focus input when window is shown
   window.trim.onWindowShown(() => {
-    const pinned = window._chips && window._chips.isActive('pin');
-    if (pinned) {
-      // Restore window size to fit pinned content
+    const hasChat = window._aiQuery && window._aiQuery.isFollowUp();
+    if (hasChat) {
+      // Restore window size to fit persisted conversation
       requestAnimationFrame(() => {
         const barH = document.getElementById('search-bar').offsetHeight;
         const ai = document.getElementById('ai-response-container');

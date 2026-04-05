@@ -10,14 +10,9 @@ async function search(query) {
   return [{ type: 'ai-loading' }];
 }
 
-async function execute(query, usePro, forceShow, renderFn) {
-  const prefix = usePro ? 'ai_pro' : 'ai';
-  const followUp = hasConversation && conversationPrefix === prefix;
-
-  // Auto-pin on follow-up
-  if (followUp && window._chips && !window._chips.isActive('pin')) {
-    window._chips.toggle('pin');
-  }
+async function execute(query, mode, forceShow, renderFn) {
+  const usePro = mode === 'ai_pro';
+  const followUp = hasConversation && conversationPrefix === mode;
 
   // Listen for status updates from main process
   window.trim.onAIStatus((data) => {
@@ -38,13 +33,21 @@ async function execute(query, usePro, forceShow, renderFn) {
       });
       // Mark conversation active
       hasConversation = true;
-      conversationPrefix = prefix;
+      conversationPrefix = mode;
     }
   } catch (err) {
     renderFn({ type: 'ai-error', error: err.message || 'Failed to reach Gemini' });
   } finally {
     isQuerying = false;
     window.trim.offAIStatus();
+  }
+}
+
+// Call before showAILoading to handle mode switches (e.g. ? → ??)
+function prepareForQuery(mode) {
+  if (hasConversation && conversationPrefix !== mode) {
+    hasConversation = false;
+    conversationPrefix = null;
   }
 }
 
@@ -133,4 +136,4 @@ function highlightCodeBlocks(container) {
   });
 }
 
-window._aiQuery = { search, execute, formatMarkdown, clearConversation, isFollowUp, highlightCodeBlocks };
+window._aiQuery = { search, execute, prepareForQuery, formatMarkdown, clearConversation, isFollowUp, highlightCodeBlocks };

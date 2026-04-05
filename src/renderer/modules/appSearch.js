@@ -48,7 +48,7 @@ function mapResult(app) {
   return {
     type: 'app',
     icon: null,
-    iconPath: app.target || null,
+    iconPath: app.target || app.iconPath || null,
     title: app.name,
     subtitle: isUWP ? 'Microsoft Store App' : app.target,
     action: () => window.trim.openApp(app.lnkPath || app.target || app.appId),

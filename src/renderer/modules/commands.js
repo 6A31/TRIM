@@ -16,7 +16,8 @@ register('/help', {
       { type: 'command', icon: 'function', title: 'cs: expression', subtitle: 'Math solver — step-by-step with LaTeX and Python' },
       { type: 'command', icon: 'calculate', title: 'c: expression', subtitle: 'Calculator — e.g. c: 2^10 + sqrt(144)' },
       { type: 'command', icon: 'folder_open', title: 'f: path', subtitle: 'Browse folders and files' },
-      { type: 'command', icon: 'terminal', title: '/ command', subtitle: 'Run commands — /settings, /reload, /quit' },
+      { type: 'command', icon: 'attach_file', title: '#filename', subtitle: 'Reference a file in AI queries (Tab to select)' },
+      { type: 'command', icon: 'terminal', title: '/ command', subtitle: 'Run commands — /settings, /reload, /clear' },
     ];
     window._ui.renderResults(helpResults);
   },
@@ -28,9 +29,11 @@ register('/settings', {
 });
 
 register('/reload', {
-  description: 'Reload Trim',
+  description: 'Reload Trim and clear caches',
   icon: 'refresh',
-  execute: () => location.reload(),
+  execute: () => {
+    window.trim.clearCache().then(() => location.reload());
+  },
 });
 
 register('/clear', {
@@ -40,19 +43,12 @@ register('/clear', {
     document.getElementById('search-input').value = '';
     window._ui.clearResults();
     if (window._chips) {
-      window._chips.deactivate('pin');
       window._chips.deactivate('force_code');
       window._chips.updateMode('app');
     }
     window.trim.cleanup();
     document.getElementById('search-input').dispatchEvent(new Event('input'));
   },
-});
-
-register('/quit', {
-  description: 'Close Trim',
-  icon: 'close',
-  execute: () => window.close(),
 });
 
 function search(input) {

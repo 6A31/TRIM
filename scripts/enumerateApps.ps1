@@ -39,6 +39,12 @@ foreach ($root in $lnkPaths) {
 }
 
 # ── Part 2: UWP / Store apps via Get-StartApps ──
+# Build package lookup once for fast icon resolution
+$appxLookup = @{}
+try {
+    Get-AppxPackage | ForEach-Object { $appxLookup[$_.PackageFamilyName] = $_ }
+} catch {}
+
 try {
     $startApps = Get-StartApps | Where-Object {
         $_.Name -and $_.AppID -and
@@ -50,11 +56,45 @@ try {
         if ($seenNames.ContainsKey($key)) { continue }
         $seenNames[$key] = $true
 
+        $iconPath = ""
+        # Resolve UWP icon from AppxManifest
+        try {
+            $familyName = ($app.AppID -split '!')[0]
+            if ($appxLookup.ContainsKey($familyName)) {
+                $pkg = $appxLookup[$familyName]
+                $manifestFile = Join-Path $pkg.InstallLocation "AppxManifest.xml"
+                if (Test-Path $manifestFile) {
+                    [xml]$manifest = Get-Content $manifestFile -ErrorAction SilentlyContinue
+                    $logoRelative = $manifest.Package.Applications.Application.VisualElements.Square44x44Logo
+                    if (-not $logoRelative) {
+                        $logoRelative = $manifest.Package.Properties.Logo
+                    }
+                    if ($logoRelative) {
+                        $logoFull = Join-Path $pkg.InstallLocation $logoRelative
+                        if (Test-Path $logoFull) {
+                            $iconPath = $logoFull
+                        } else {
+                            # Look for scale variants (e.g. Logo.scale-200.png)
+                            $dir = Split-Path $logoFull
+                            $base = [System.IO.Path]::GetFileNameWithoutExtension($logoFull)
+                            $ext = [System.IO.Path]::GetExtension($logoFull)
+                            if (Test-Path $dir) {
+                                $variant = Get-ChildItem -Path $dir -Filter "$base*$ext" -ErrorAction SilentlyContinue |
+                                    Sort-Object Name | Select-Object -First 1
+                                if ($variant) { $iconPath = $variant.FullName }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch {}
+
         $results += [PSCustomObject]@{
-            name    = $app.Name
-            target  = ""
-            lnkPath = ""
-            appId   = $app.AppID
+            name     = $app.Name
+            target   = ""
+            lnkPath  = ""
+            appId    = $app.AppID
+            iconPath = $iconPath
         }
     }
 } catch {

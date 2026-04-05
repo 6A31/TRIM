@@ -19,6 +19,9 @@ const IPC = {
   SAVE_SETTINGS: 'trim:save-settings',
   HIDE_WINDOW: 'trim:hide-window',
   CLEANUP: 'trim:cleanup',
+  CLEAR_CACHE: 'trim:clear-cache',
+  CONFIRM_ACTION: 'trim:confirm-action',
+  CONFIRM_ACTION_RESPONSE: 'trim:confirm-action-response',
 };
 
 const DEFAULTS = {
