@@ -1,16 +1,21 @@
 # Trim
 
-A keyboard-first launcher for Windows 11. Think Spotlight, but for Windows — with AI built in.
+A keyboard-first launcher for Windows and macOS. Think Spotlight, but with AI built in.
 
 ![Trim hero screenshot](placeholder-hero.png)
 
-Trim sits behind **Ctrl+Space**, gives you a single search bar with an acrylic glass UI, and gets out of your way. Search apps, ask Gemini questions with live web results, do math, browse files, and automate your filesystem — all without touching the mouse.
+Trim sits behind **Ctrl+Space**, gives you a single search bar with an acrylic-style glass UI, and gets out of your way. Search apps, ask Gemini questions with live web results, do math, browse files, and automate your filesystem — all without touching the mouse.
 
 ## Features
 
 ### App Search
 
-Type anything and Trim instantly searches your installed apps — both traditional Start Menu shortcuts and Microsoft Store / UWP apps. Results are ranked by how often you launch them, so your most-used apps float to the top. Fuzzy matching means you can type `vsc` and get Visual Studio Code.
+Type anything and Trim instantly searches your installed apps.
+
+- **Windows**: Start Menu shortcuts + Microsoft Store / UWP apps
+- **macOS**: `.app` bundles from `/Applications`, `/System/Applications`, and `~/Applications`
+
+Results are ranked by how often you launch them, so your most-used apps float to the top. Fuzzy matching means you can type `vsc` and get Visual Studio Code.
 
 ![App search results](placeholder-app-search.png)
 
@@ -44,7 +49,7 @@ Type `#` followed by a filename inside any AI query to attach file contents as c
 
 ### Folder Search
 
-`f: report` recursively searches Desktop, Documents, and Downloads for matching files and folders. Depth-limited to keep things fast.
+`f: report` recursively searches common user paths (Desktop, Documents, Downloads, home) and any custom search paths from settings. On macOS, app folders are also included in search roots. Search is depth-limited and incrementally refined for speed.
 
 ### Slash Commands
 
@@ -80,7 +85,12 @@ Type `#` followed by a filename inside any AI query to attach file contents as c
 
 ## Setup
 
-Requires [Node.js LTS](https://nodejs.org/) and Windows 11.
+Requires [Node.js LTS](https://nodejs.org/).
+
+Supported runtime platforms:
+
+- Windows
+- macOS
 
 ```bash
 git clone https://github.com/your-username/trim.git
@@ -96,7 +106,7 @@ npm start
 
 Type `/settings`, paste your API key, and save. Try `? hello` to make sure it works.
 
-> **VS Code / Claude Code terminal**: If `npm start` doesn't work (because `ELECTRON_RUN_AS_NODE` is set in those environments), use `start.bat` instead.
+> **VS Code / Claude Code terminal on Windows**: If `npm start` doesn't work (because `ELECTRON_RUN_AS_NODE` is set in those environments), use `start.bat` instead.
 
 ## Kill Stale Instances
 
@@ -106,6 +116,8 @@ npm run kill
 
 > This kills all Electron processes including VS Code. Use Task Manager for a targeted kill.
 
+> `npm run kill` is Windows-oriented.
+
 ## Building
 
 ```bash
@@ -114,12 +126,15 @@ npm run build
 
 Produces a standalone `.exe` installer in `dist/` via electron-builder.
 
+> Current packaging config targets Windows NSIS installer output.
+
 ## Stack
 
 - **Electron 41** — frameless acrylic window, context isolation, single instance lock
 - **Vanilla JS + CSS** — no frameworks, just `<script>` tags and CSS custom properties
 - **@google/genai** — Gemini 3 Flash / 3.1 Pro with Google Search grounding + function calling
-- **PowerShell** — enumerates Start Menu shortcuts and UWP apps, extracts `.exe` icons as base64 PNG
+- **Platform adapter (Windows/macOS)** — modular app enumeration, icon retrieval, app launching, and search roots per OS
+- **PowerShell (Windows)** — Start Menu/UWP enumeration and `.exe` icon extraction
 - **Python 3** — local code execution sandbox for AI tool use
 
 ## Project Structure
@@ -130,6 +145,7 @@ src/
 │   ├── main.js             # Entry point, app lifecycle
 │   ├── windowManager.js    # Frameless window, acrylic, show/hide/resize
 │   ├── globalHotkey.js     # Ctrl+Space global shortcut
+│   ├── platformAdapter.js  # OS-specific apps/icons/open/search roots
 │   └── ipcHandlers.js      # All IPC: apps, AI, files, settings, caching
 ├── renderer/
 │   ├── index.html

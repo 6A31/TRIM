@@ -1,9 +1,10 @@
-const { shell } = require('electron');
+const { shell, nativeImage } = require('electron');
 const { execFile, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { IPC, DEFAULTS } = require('../shared/constants');
+const { createPlatformAdapter } = require('./platformAdapter');
 
 let appCache = null;
 const iconCache = new Map();
@@ -16,6 +17,7 @@ let fileSearchCacheDirty = false;
 let fileSearchCacheSaveTimer = null;
 let folderSearchRequestSeq = 0;
 const activeFolderRequests = new Map(); // webContentsId -> requestId
+let platformAdapter = null;
 
 // Common cacheable file types. Users can extend this from settings.
 const DEFAULT_CACHEABLE_FILE_TYPES = new Set([
@@ -556,6 +558,14 @@ Always use absolute paths for file tools. The user will approve write/edit/delet
 
 **googleSearch** — Search the web for current information.`;
 
+function getSystemInstruction(forceShowOutput) {
+  const osName = platformAdapter ? platformAdapter.getOSLabel() : (process.platform === 'win32' ? 'Windows' : process.platform === 'darwin' ? 'macOS' : 'Linux');
+  const osLine = `\n\nEnvironment context:\n- Current operating system: ${osName}. Prefer OS-appropriate commands and paths.`;
+  return forceShowOutput
+    ? SYSTEM_INSTRUCTION + osLine + FORCE_CODE_ADDENDUM
+    : SYSTEM_INSTRUCTION + osLine;
+}
+
 const FORCE_CODE_ADDENDUM = `\n\nIMPORTANT — Force Code mode is ON:
 - Use Python code execution for ALL calculations, math, logic, comparisons, data lookups, and any verifiable task.
 - Do NOT rely on LLM reasoning for math or numbers — always write and run code to get deterministic, correct results.
@@ -666,9 +676,7 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
     }
 
     // Conditionally add force-code instruction
-    const sysInstruction = forceShowOutput
-      ? SYSTEM_INSTRUCTION + FORCE_CODE_ADDENDUM
-      : SYSTEM_INSTRUCTION;
+    const sysInstruction = getSystemInstruction(forceShowOutput);
 
     const codeOutputs = [];
     const MAX_ROUNDS = 6;
@@ -1055,6 +1063,15 @@ function streamDeepMatches(queryLower, roots, candidateMap, settings, sender, re
 
 function registerHandlers(ipcMain) {
   ipcMainRef = ipcMain;
+  platformAdapter = createPlatformAdapter({
+    fs,
+    path,
+    os,
+    shell,
+    nativeImage,
+    runPowerShell,
+    getScriptsPath,
+  });
 
   const settings = loadSettingsSync();
   if (settings.apiKey) initAI(settings.apiKey);
@@ -1073,26 +1090,19 @@ function registerHandlers(ipcMain) {
 
   // Background-refresh app list (serves cached data instantly, updates in background)
   function refreshAppList() {
-    const script = path.join(getScriptsPath(), 'enumerateApps.ps1');
-    runPowerShell(script).then(raw => {
-      try {
-        const fresh = JSON.parse(raw);
-        if (Array.isArray(fresh) && fresh.length > 0) {
-          appCache = fresh;
-          saveAppCache();
-        }
-      } catch {}
+    platformAdapter.listApps().then(fresh => {
+      if (Array.isArray(fresh) && fresh.length > 0) {
+        appCache = fresh;
+        saveAppCache();
+      }
     }).catch(() => {});
   }
   setImmediate(refreshAppList);
 
   ipcMain.handle(IPC.SEARCH_APPS, async () => {
     if (appCache) return appCache;
-    // No cache at all — must wait for PowerShell
-    const script = path.join(getScriptsPath(), 'enumerateApps.ps1');
-    const raw = await runPowerShell(script);
     try {
-      appCache = JSON.parse(raw);
+      appCache = await platformAdapter.listApps();
       saveAppCache();
     } catch {
       appCache = [];
@@ -1109,11 +1119,14 @@ function registerHandlers(ipcMain) {
 
     // Image files (UWP icons) — read directly
     const ext = path.extname(filePath).toLowerCase();
-    if (['.png', '.jpg', '.jpeg', '.bmp', '.ico'].includes(ext)) {
+    if (['.png', '.jpg', '.jpeg', '.bmp', '.ico', '.webp', '.gif', '.icns'].includes(ext)) {
       try {
         const buf = fs.readFileSync(filePath);
-        const mime = ext === '.ico' ? 'image/x-icon' : ext === '.bmp' ? 'image/bmp' : `image/${ext.slice(1)}`;
-        const dataUri = `data:${mime};base64,${buf.toString('base64')}`;
+        const mime = ext === '.ico' ? 'image/x-icon'
+          : ext === '.bmp' ? 'image/bmp'
+            : ext === '.icns' ? 'image/icns'
+              : `image/${ext === '.jpg' ? 'jpeg' : ext.slice(1)}`;
+        const dataUri = platformAdapter.toDataUriFromBuffer(buf, mime);
         iconCache.set(filePath, dataUri);
         scheduleIconCacheSave();
         return dataUri;
@@ -1123,13 +1136,10 @@ function registerHandlers(ipcMain) {
       }
     }
 
-    // .exe files — extract via PowerShell
-    const script = path.join(getScriptsPath(), 'extractIcon.ps1');
     try {
-      const base64 = await runPowerShell(script, [filePath]);
-      const dataUri = `data:image/png;base64,${base64}`;
+      const dataUri = await platformAdapter.getPlatformIconDataUri(filePath);
       iconCache.set(filePath, dataUri);
-      scheduleIconCacheSave();
+      if (dataUri) scheduleIconCacheSave();
       return dataUri;
     } catch {
       iconCache.set(filePath, null);
@@ -1140,12 +1150,7 @@ function registerHandlers(ipcMain) {
   ipcMain.handle(IPC.OPEN_APP, async (_e, appPath, appName) => {
     try {
       if (appName) recordAppLaunch(appName);
-      if (appPath.endsWith('.lnk') || appPath.endsWith('.exe')) {
-        shell.openPath(appPath);
-      } else {
-        const { exec } = require('child_process');
-        exec(`start shell:AppsFolder\\${appPath}`);
-      }
+      await platformAdapter.openApp(appPath);
     } catch (err) {
       console.error('Failed to open app:', err);
     }
@@ -1197,14 +1202,7 @@ function registerHandlers(ipcMain) {
       const pattern = queryLower;
       if (!pattern) return { requestId, results: [] };
 
-      const home = os.homedir();
-      const roots = [
-        path.join(home, 'Desktop'),
-        path.join(home, 'Documents'),
-        path.join(home, 'Downloads'),
-        home,
-        ...(settings.searchPaths || []),
-      ];
+      const roots = platformAdapter.getSearchRoots(settings);
 
       const seen = new Set();
       const uniqueRoots = roots.filter(r => {
