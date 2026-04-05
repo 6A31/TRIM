@@ -126,6 +126,10 @@ function createPlatformAdapter(deps) {
         await shell.openPath(appPath);
         return;
       }
+      // Validate UWP app ID to prevent command injection
+      if (!/^[a-zA-Z0-9._!]+$/.test(appPath)) {
+        throw new Error('Invalid UWP app identifier');
+      }
       await new Promise((resolve) => {
         execFile('cmd.exe', ['/c', `start shell:AppsFolder\\${appPath}`], () => resolve());
       });

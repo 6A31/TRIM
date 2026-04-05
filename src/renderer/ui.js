@@ -318,8 +318,20 @@ function updateAIStatus(statusText) {
   }
 }
 
+function sanitizeHTML(html) {
+  if (typeof DOMPurify !== 'undefined') {
+    return DOMPurify.sanitize(html, {
+      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'ul', 'ol', 'li', 'code', 'pre', 'div', 'span', 'img', 'a', 'button', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
+      ALLOWED_ATTR: ['class', 'style', 'alt', 'src', 'title', 'href', 'data-uri'],
+      ALLOW_DATA_ATTR: false,
+    });
+  }
+  return html;
+}
+
 function buildResponseHTML(response) {
-  let html = `<div class="ai-text">${window._aiQuery.formatMarkdown(response.text)}</div>`;
+  const rawMarkdown = window._aiQuery.formatMarkdown(response.text);
+  let html = `<div class="ai-text">${sanitizeHTML(rawMarkdown)}</div>`;
 
   if (response.codeOutputs && response.codeOutputs.length > 0) {
     for (const output of response.codeOutputs) {
@@ -328,7 +340,7 @@ function buildResponseHTML(response) {
         html += `<div class="ai-code-header">
           <span class="material-symbols-rounded" style="font-size:14px">code</span>
           <span>Python</span>
-          <button class="code-copy-btn" onclick="navigator.clipboard.writeText(this.closest('.ai-code-output').querySelector('.ai-code-block code').textContent).then(()=>{this.querySelector('span').textContent='check';setTimeout(()=>this.querySelector('span').textContent='content_copy',1500)})">
+          <button class="code-copy-btn code-output-copy">
             <span class="material-symbols-rounded" style="font-size:14px">content_copy</span>
           </button>
         </div>
@@ -346,7 +358,7 @@ function buildResponseHTML(response) {
           <span class="material-symbols-rounded" style="font-size:14px">show_chart</span>
           <span>Plot</span>
         </div>
-        <div class="ai-plot"><img src="${output.plot}" alt="Plot"></div>`;
+        <div class="ai-plot"><img src="${escapeHtml(output.plot)}" alt="Plot"></div>`;
       }
       if (output.error) {
         html += `<pre class="ai-code-error"><code>${escapeHtml(output.error)}</code></pre>`;
@@ -357,22 +369,19 @@ function buildResponseHTML(response) {
 
   if (response.sources && response.sources.length > 0) {
     html += `<div class="ai-sources">
-      <button class="ai-sources-toggle" onclick="this.parentElement.classList.toggle('expanded'); setTimeout(() => {
-        const c = document.getElementById('ai-response-container');
-        const h = document.getElementById('search-bar').offsetHeight + c.scrollHeight;
-        window.trim.resizeWindow(Math.min(h, 500));
-      }, 10)">
+      <button class="ai-sources-toggle">
         <span class="material-symbols-rounded" style="font-size:14px">link</span>
         <span>${response.sources.length} source${response.sources.length > 1 ? 's' : ''}</span>
         <span class="material-symbols-rounded ai-sources-chevron" style="font-size:16px">expand_more</span>
       </button>
       <div class="ai-sources-list">
-        ${response.sources.map(s =>
-          `<a class="ai-source-link" href="#" onclick="event.preventDefault()" title="${escapeHtml(s.uri || '')}">
+        ${response.sources.map(s => {
+          const safeTitle = escapeHtml(s.title || s.uri || 'Source');
+          return `<a class="ai-source-link" href="#" data-uri="${escapeHtml(s.uri || '')}">
             <span class="material-symbols-rounded" style="font-size:14px">open_in_new</span>
-            ${escapeHtml(s.title || s.uri || 'Source')}
-          </a>`
-        ).join('')}
+            ${safeTitle}
+          </a>`;
+        }).join('')}
       </div>
     </div>`;
   }
@@ -447,17 +456,53 @@ function postProcessCodeBlocks(container) {
     if (pre.querySelector('.code-copy-btn')) return;
     const btn = document.createElement('button');
     btn.className = 'code-copy-btn';
-    btn.innerHTML = '<span class="material-symbols-rounded" style="font-size:14px">content_copy</span>';
+    const icon = document.createElement('span');
+    icon.className = 'material-symbols-rounded';
+    icon.style.fontSize = '14px';
+    icon.textContent = 'content_copy';
+    btn.appendChild(icon);
     btn.addEventListener('mousedown', (e) => e.preventDefault());
     btn.addEventListener('click', () => {
       const code = pre.querySelector('code');
       if (code) navigator.clipboard.writeText(code.textContent).then(() => {
-        btn.querySelector('span').textContent = 'check';
-        setTimeout(() => btn.querySelector('span').textContent = 'content_copy', 1500);
+        icon.textContent = 'check';
+        setTimeout(() => icon.textContent = 'content_copy', 1500);
       });
     });
     pre.style.position = 'relative';
     pre.appendChild(btn);
+  });
+
+  // Wire up code-output copy buttons (replaced inline onclick)
+  container.querySelectorAll('.code-output-copy').forEach(btn => {
+    btn.addEventListener('mousedown', (e) => e.preventDefault());
+    btn.addEventListener('click', () => {
+      const codeEl = btn.closest('.ai-code-output')?.querySelector('.ai-code-block code');
+      if (!codeEl) return;
+      navigator.clipboard.writeText(codeEl.textContent).then(() => {
+        const span = btn.querySelector('span');
+        if (span) { span.textContent = 'check'; setTimeout(() => span.textContent = 'content_copy', 1500); }
+      });
+    });
+  });
+
+  // Wire up sources toggle (replaced inline onclick)
+  container.querySelectorAll('.ai-sources-toggle').forEach(btn => {
+    btn.addEventListener('mousedown', (e) => e.preventDefault());
+    btn.addEventListener('click', () => {
+      btn.parentElement.classList.toggle('expanded');
+      setTimeout(() => {
+        const c = document.getElementById('ai-response-container');
+        const h = document.getElementById('search-bar').offsetHeight + c.scrollHeight;
+        window.trim.resizeWindow(Math.min(h, 500));
+      }, 10);
+    });
+  });
+
+  // Wire up source links (replaced inline onclick)
+  container.querySelectorAll('.ai-source-link').forEach(link => {
+    link.addEventListener('click', (e) => e.preventDefault());
+    link.title = link.dataset.uri || '';
   });
 }
 

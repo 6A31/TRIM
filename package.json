@@ -17,7 +17,11 @@
   "license": "SEE LICENSE IN LICENSE",
   "type": "commonjs",
   "dependencies": {
-    "@google/genai": "^1.48.0"
+    "@google/genai": "^1.48.0",
+    "@highlightjs/cdn-assets": "^11.11.1",
+    "dompurify": "^3.3.3",
+    "highlight.js": "^11.11.1",
+    "katex": "^0.16.45"
   },
   "devDependencies": {
     "electron": "^41.1.1",

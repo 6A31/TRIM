@@ -27,6 +27,7 @@ function create() {
       preload: path.join(__dirname, '..', 'renderer', 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
 

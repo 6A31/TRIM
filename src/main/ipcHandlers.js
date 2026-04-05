@@ -1,5 +1,5 @@
-const { shell, nativeImage } = require('electron');
-const { execFile, execSync } = require('child_process');
+const { shell, nativeImage, safeStorage } = require('electron');
+const { execFile, execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -228,10 +228,35 @@ function getSettingsPath() {
 function loadSettingsSync() {
   try {
     const raw = fs.readFileSync(getSettingsPath(), 'utf-8');
-    return { ...DEFAULTS, ...JSON.parse(raw) };
+    const settings = { ...DEFAULTS, ...JSON.parse(raw) };
+    // Decrypt API key if stored encrypted
+    if (settings.apiKeyEncrypted && !settings.apiKey) {
+      try {
+        if (safeStorage.isEncryptionAvailable()) {
+          const buf = Buffer.from(settings.apiKeyEncrypted, 'base64');
+          settings.apiKey = safeStorage.decryptString(buf);
+        }
+      } catch {}
+    }
+    delete settings.apiKeyEncrypted;
+    return settings;
   } catch {
     return { ...DEFAULTS };
   }
+}
+
+function saveSettingsWithEncryption(settings) {
+  const toWrite = { ...settings };
+  // Encrypt API key before writing to disk
+  if (toWrite.apiKey) {
+    try {
+      if (safeStorage.isEncryptionAvailable()) {
+        toWrite.apiKeyEncrypted = safeStorage.encryptString(toWrite.apiKey).toString('base64');
+        delete toWrite.apiKey;
+      }
+    } catch {}
+  }
+  fs.writeFileSync(getSettingsPath(), JSON.stringify(toWrite, null, 2));
 }
 
 // --- Python execution ---
@@ -321,7 +346,7 @@ function findPython() {
   const candidates = ['python', 'python3', 'py'];
   for (const cmd of candidates) {
     try {
-      const result = execSync(`${cmd} --version`, { stdio: 'pipe', timeout: 5000 }).toString().trim();
+      const result = execFileSync(cmd, ['--version'], { stdio: 'pipe', timeout: 5000 }).toString().trim();
       if (result.startsWith('Python 3')) return cmd;
     } catch {}
   }
@@ -339,7 +364,7 @@ function preinstallGlobalPackages() {
   if (!pythonCmd) pythonCmd = findPython();
   if (!pythonCmd) return;
   try {
-    execSync(`${pythonCmd} -m pip install ${GLOBAL_PACKAGES.join(' ')} --quiet`, {
+    execFileSync(pythonCmd, ['-m', 'pip', 'install', ...GLOBAL_PACKAGES, '--quiet'], {
       stdio: 'pipe', timeout: 120000,
     });
     globalPackagesReady = true;
@@ -374,7 +399,7 @@ function createTempVenv() {
     : path.join(venvDir, 'bin', 'python');
 
   try {
-    execSync(`${pythonCmd} -m venv "${venvDir}"`, { stdio: 'pipe', timeout: 30000 });
+    execFileSync(pythonCmd, ['-m', 'venv', venvDir], { stdio: 'pipe', timeout: 30000 });
   } catch {
     try { fs.rmSync(venvDir, { recursive: true, force: true }); } catch {}
     return null;
@@ -396,7 +421,14 @@ function runPythonCode(py, code, packages, plotPath) {
     // Install packages (into venv or global depending on caller)
     if (packages && packages.length > 0) {
       try {
-        execSync(`"${py}" -m pip install ${packages.join(' ')} --quiet`, {
+        const safePackageRe = /^[a-zA-Z0-9][a-zA-Z0-9._-]*(?:\[.*\])?$/;
+        for (const pkg of packages) {
+          if (!safePackageRe.test(pkg)) {
+            resolve({ error: `Invalid package name: ${pkg}` });
+            return;
+          }
+        }
+        execFileSync(py, ['-m', 'pip', 'install', ...packages, '--quiet'], {
           stdio: 'pipe',
           timeout: 60000,
         });
@@ -1247,7 +1279,7 @@ function registerHandlers(ipcMain) {
     } else {
       merged.cachedFileTypes = [];
     }
-    fs.writeFileSync(getSettingsPath(), JSON.stringify(merged, null, 2));
+    saveSettingsWithEncryption(merged);
     if (data.apiKey !== undefined) initAI(data.apiKey);
     appCache = null;
     return merged;
