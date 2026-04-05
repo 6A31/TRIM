@@ -5,8 +5,11 @@
   "main": "src/main/main.js",
   "scripts": {
     "start": "node launch.js",
+    "dev": "electron .",
     "kill": "node scripts/kill.js",
-    "build": "electron-builder"
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac"
   },
   "keywords": [],
   "author": "6A31",
@@ -17,15 +20,15 @@
   "license": "SEE LICENSE IN LICENSE",
   "type": "commonjs",
   "dependencies": {
-    "@google/genai": "^1.48.0",
-    "@highlightjs/cdn-assets": "^11.11.1",
-    "dompurify": "^3.3.3",
-    "highlight.js": "^11.11.1",
-    "katex": "^0.16.45"
+    "@google/genai": "^1.48.0"
   },
   "devDependencies": {
+    "@highlightjs/cdn-assets": "^11.11.1",
+    "dompurify": "^3.3.3",
     "electron": "^41.1.1",
-    "electron-builder": "^26.8.1"
+    "electron-builder": "^26.8.1",
+    "highlight.js": "^11.11.1",
+    "katex": "^0.16.45"
   },
   "build": {
     "appId": "com.trim.launcher",
@@ -41,6 +44,11 @@
     "win": {
       "target": "nsis",
       "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.utilities"
     },
     "nsis": {
       "oneClick": true,
