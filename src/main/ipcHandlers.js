@@ -239,6 +239,13 @@ function loadSettingsSync() {
       } catch {}
     }
     delete settings.apiKeyEncrypted;
+
+    // Migrate: if plaintext apiKey was on disk, re-save encrypted
+    const parsed = JSON.parse(raw);
+    if (parsed.apiKey) {
+      saveSettingsWithEncryption(settings);
+    }
+
     return settings;
   } catch {
     return { ...DEFAULTS };
@@ -247,14 +254,18 @@ function loadSettingsSync() {
 
 function saveSettingsWithEncryption(settings) {
   const toWrite = { ...settings };
-  // Encrypt API key before writing to disk
+  // Never write plaintext apiKey to disk — encrypt or omit
   if (toWrite.apiKey) {
     try {
       if (safeStorage.isEncryptionAvailable()) {
         toWrite.apiKeyEncrypted = safeStorage.encryptString(toWrite.apiKey).toString('base64');
-        delete toWrite.apiKey;
+      } else {
+        console.warn('safeStorage not available — API key will not be persisted.');
       }
-    } catch {}
+    } catch (err) {
+      console.warn('Failed to encrypt API key:', err.message);
+    }
+    delete toWrite.apiKey;
   }
   fs.writeFileSync(getSettingsPath(), JSON.stringify(toWrite, null, 2));
 }

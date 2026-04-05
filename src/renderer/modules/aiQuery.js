@@ -15,7 +15,8 @@ async function execute(query, mode, forceShow, renderFn) {
   const usePro = mode === 'ai_pro';
   const followUp = hasConversation && conversationPrefix === mode;
 
-  // Listen for status updates from main process
+  // Clean up previous listener before re-registering
+  window.trim.offAIStatus();
   window.trim.onAIStatus((data) => {
     window._ui.updateAIStatus(data.text);
   });

@@ -5,3 +5,5 @@ config/
 .DS_Store
 Thumbs.db
 .trim-dev.pid
+.env
+.env.*
