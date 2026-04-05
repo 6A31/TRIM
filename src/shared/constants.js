@@ -22,6 +22,7 @@ const IPC = {
   HIDE_WINDOW: 'trim:hide-window',
   CLEANUP: 'trim:cleanup',
   CLEAR_CACHE: 'trim:clear-cache',
+  GET_CACHE_SIZE: 'trim:get-cache-size',
   CONFIRM_ACTION: 'trim:confirm-action',
   CONFIRM_ACTION_RESPONSE: 'trim:confirm-action-response',
 };

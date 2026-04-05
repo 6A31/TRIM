@@ -23,6 +23,7 @@ let currentMode = 'app';
 let filePickActive = false;
 let activeFolderRequestId = null;
 let activeFilePickRequestId = null;
+const aiFileRefs = new Map(); // label -> absolute path
 
 function init() {
   const input = document.getElementById('search-input');
@@ -68,6 +69,7 @@ function init() {
     const raw = input.value;
     const mode = detectMode(raw);
     updateModeIndicator(raw);
+    updateFileRefTooltip(input);
 
     // Empty input — always clear and shrink
     if (!raw.trim()) {
@@ -207,20 +209,59 @@ async function route(rawInput) {
 function insertFileRef(inputEl, filePath) {
   const val = inputEl.value;
   const hashMatch = val.match(/#([^#\\\/]*)$/);
+  const base = filePath.split(/[/\\]/).pop() || filePath;
+  const label = makeUniqueRefLabel(base);
+  aiFileRefs.set(label, filePath);
+  const token = `#[${label}]`;
+
   if (hashMatch) {
-    inputEl.value = val.slice(0, hashMatch.index) + '#' + filePath + ' ';
+    inputEl.value = val.slice(0, hashMatch.index) + token + ' ';
   } else {
     // Fallback: append
-    inputEl.value = val + '#' + filePath + ' ';
+    inputEl.value = val + token + ' ';
   }
   inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
   inputEl.focus();
+  updateFileRefTooltip(inputEl);
   filePickActive = false;
   window._ui.restoreAIArea();
+}
+
+function makeUniqueRefLabel(baseLabel) {
+  if (!aiFileRefs.has(baseLabel)) return baseLabel;
+  let n = 2;
+  let next = `${baseLabel} (${n})`;
+  while (aiFileRefs.has(next)) {
+    n += 1;
+    next = `${baseLabel} (${n})`;
+  }
+  return next;
+}
+
+function resolveAIFileRefsInQuery(query) {
+  let out = query;
+  for (const [label, fullPath] of aiFileRefs.entries()) {
+    const token = `#[${label}]`;
+    if (out.includes(token)) {
+      out = out.split(token).join(`#${fullPath}`);
+    }
+  }
+  return out;
+}
+
+function updateFileRefTooltip(inputEl) {
+  const value = inputEl.value || '';
+  const lines = [];
+  for (const [label, fullPath] of aiFileRefs.entries()) {
+    if (value.includes(`#[${label}]`)) {
+      lines.push(`${label} -> ${fullPath}`);
+    }
+  }
+  inputEl.title = lines.join('\n');
 }
 
 function isFilePickActive() {
   return filePickActive;
 }
 
-window._inputRouter = { init, route, detectMode, isFilePickActive };
+window._inputRouter = { init, route, detectMode, isFilePickActive, resolveAIFileRefsInQuery };

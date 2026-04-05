@@ -1,5 +1,19 @@
 let isOpen = false;
 
+function formatBytes(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return `${n} B`;
+  const units = ['KB', 'MB', 'GB'];
+  let value = n / 1024;
+  let idx = 0;
+  while (value >= 1024 && idx < units.length - 1) {
+    value /= 1024;
+    idx += 1;
+  }
+  const fixed = value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(fixed)} ${units[idx]}`;
+}
+
 function open() {
   const panel = document.getElementById('settings-panel');
   const results = document.getElementById('results-container');
@@ -27,7 +41,11 @@ function close() {
 
 async function render() {
   const panel = document.getElementById('settings-panel');
-  const settings = await window.trim.loadSettings();
+  const [settings, cacheInfo] = await Promise.all([
+    window.trim.loadSettings(),
+    window.trim.getCacheSize(),
+  ]);
+  const cacheSizeLabel = formatBytes(cacheInfo?.totalBytes || 0);
 
   panel.innerHTML = `
     <div class="settings-header">
@@ -77,7 +95,7 @@ async function render() {
       <div class="settings-description">Clears app list, icons, usage data, and file search cache. Apps will be re-scanned.</div>
       <button class="settings-danger-btn" id="settings-clear-cache-btn">
         <span class="material-symbols-rounded" style="font-size:16px">delete_sweep</span>
-        Clear Cache
+        Clear Cache (${cacheSizeLabel})
       </button>
     </div>
   `;
@@ -87,9 +105,9 @@ async function render() {
   panel.querySelector('#settings-clear-cache-btn').addEventListener('click', async () => {
     await window.trim.clearCache();
     const btn = document.getElementById('settings-clear-cache-btn');
-    btn.innerHTML = '<span class="material-symbols-rounded" style="font-size:16px">check_circle</span> Cleared';
+    btn.innerHTML = '<span class="material-symbols-rounded" style="font-size:16px">check_circle</span> Cleared (0 B)';
     setTimeout(() => {
-      btn.innerHTML = '<span class="material-symbols-rounded" style="font-size:16px">delete_sweep</span> Clear Cache';
+      render();
     }, 2000);
   });
 }
@@ -112,6 +130,7 @@ async function save() {
   const msg = document.getElementById('settings-saved-msg');
   msg.classList.add('show');
   setTimeout(() => msg.classList.remove('show'), 2000);
+  render();
 }
 
 window._settings = { open, close, isOpen: () => isOpen };

@@ -37,30 +37,33 @@ function handleKeyboard(e) {
       const forceShow = window._chips && window._chips.isActive('force_code');
       if (input.startsWith('??')) {
         const query = input.slice(2).trim();
+        const resolvedQuery = window._inputRouter.resolveAIFileRefsInQuery(query);
         if (query) {
           window._aiQuery.prepareForQuery('ai_pro');
           showAILoading('Asking Gemini Pro...');
-          window._aiQuery.execute(query, 'ai_pro', forceShow, (response) => {
+          window._aiQuery.execute(resolvedQuery, 'ai_pro', forceShow, (response) => {
             renderAIResponse(response);
           });
         }
       } else if (input.startsWith('?')) {
         const query = input.slice(1).trim();
+        const resolvedQuery = window._inputRouter.resolveAIFileRefsInQuery(query);
         if (query) {
           window._aiQuery.prepareForQuery('ai');
           showAILoading();
-          window._aiQuery.execute(query, 'ai', forceShow, (response) => {
+          window._aiQuery.execute(resolvedQuery, 'ai', forceShow, (response) => {
             renderAIResponse(response);
           });
         }
       } else if (input.startsWith('cs:')) {
         const expr = input.slice(3).trim();
+        const resolvedExpr = window._inputRouter.resolveAIFileRefsInQuery(expr);
         if (expr) {
           window._aiQuery.prepareForQuery('solve');
           showAILoading('Solving...');
           // Only wrap with solve instructions on first query, not follow-ups
           const isFollowUp = window._aiQuery.isFollowUp();
-          const solvePrompt = isFollowUp ? expr : `Solve this math problem step by step. Use LaTeX notation ($$...$$ for display, $...$ for inline) for all math expressions. Use the run_python tool to compute and verify your answer. Show clear, concise steps.\n\nProblem: ${expr}`;
+          const solvePrompt = isFollowUp ? resolvedExpr : `Solve this math problem step by step. Use LaTeX notation ($$...$$ for display, $...$ for inline) for all math expressions. Use the run_python tool to compute and verify your answer. Show clear, concise steps.\n\nProblem: ${resolvedExpr}`;
           window._aiQuery.execute(solvePrompt, 'solve', true, (response) => {
             renderAIResponse(response);
           });

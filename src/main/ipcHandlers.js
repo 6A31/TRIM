@@ -42,6 +42,11 @@ function getAppCachePath() { return getCachePath('app-cache.json'); }
 function getUsageCachePath() { return getCachePath('usage-cache.json'); }
 function getFileSearchCachePath() { return getCachePath('file-search-cache.json'); }
 
+function safeFileSize(filePath) {
+  try { return fs.statSync(filePath).size || 0; }
+  catch { return 0; }
+}
+
 function loadIconCache() {
   try {
     const raw = fs.readFileSync(getIconCachePath(), 'utf-8');
@@ -1252,6 +1257,17 @@ function registerHandlers(ipcMain) {
     chatHistory = null;
     cleanupOrphanedTempDirs();
     return true;
+  });
+
+  ipcMain.handle(IPC.GET_CACHE_SIZE, async () => {
+    const files = [
+      getIconCachePath(),
+      getAppCachePath(),
+      getUsageCachePath(),
+      getFileSearchCachePath(),
+    ];
+    const totalBytes = files.reduce((sum, f) => sum + safeFileSize(f), 0);
+    return { totalBytes };
   });
 
   ipcMain.handle(IPC.CLEAR_CACHE, async () => {
