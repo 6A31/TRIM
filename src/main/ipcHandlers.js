@@ -10,11 +10,16 @@ const iconCache = new Map();
 let ai = null; // GoogleGenAI client
 let iconCacheDirty = false;
 let iconCacheSaveTimer = null;
+let usageData = {}; // { "app name lowercase": count }
 
-function getIconCachePath() {
+function getCachePath(name) {
   const { app } = require('electron');
-  return path.join(app.getPath('userData'), 'icon-cache.json');
+  return path.join(app.getPath('userData'), name);
 }
+
+function getIconCachePath() { return getCachePath('icon-cache.json'); }
+function getAppCachePath() { return getCachePath('app-cache.json'); }
+function getUsageCachePath() { return getCachePath('usage-cache.json'); }
 
 function loadIconCache() {
   try {
@@ -23,9 +28,7 @@ function loadIconCache() {
     for (const [k, v] of Object.entries(data)) {
       iconCache.set(k, v);
     }
-  } catch {
-    // No cache file yet — that's fine
-  }
+  } catch {}
 }
 
 function saveIconCache() {
@@ -33,17 +36,51 @@ function saveIconCache() {
   iconCacheDirty = false;
   const obj = {};
   for (const [k, v] of iconCache) {
-    if (v) obj[k] = v; // skip null entries
+    if (v) obj[k] = v;
   }
-  try {
-    fs.writeFileSync(getIconCachePath(), JSON.stringify(obj));
-  } catch {}
+  try { fs.writeFileSync(getIconCachePath(), JSON.stringify(obj)); } catch {}
 }
 
 function scheduleIconCacheSave() {
   iconCacheDirty = true;
   if (iconCacheSaveTimer) clearTimeout(iconCacheSaveTimer);
   iconCacheSaveTimer = setTimeout(saveIconCache, 2000);
+}
+
+function loadAppCache() {
+  try {
+    const raw = fs.readFileSync(getAppCachePath(), 'utf-8');
+    const data = JSON.parse(raw);
+    if (Array.isArray(data) && data.length > 0) {
+      appCache = data;
+    }
+  } catch {}
+}
+
+function saveAppCache() {
+  if (!appCache || appCache.length === 0) return;
+  try { fs.writeFileSync(getAppCachePath(), JSON.stringify(appCache)); } catch {}
+}
+
+function loadUsageData() {
+  try {
+    const raw = fs.readFileSync(getUsageCachePath(), 'utf-8');
+    usageData = JSON.parse(raw) || {};
+  } catch { usageData = {}; }
+}
+
+function saveUsageData() {
+  try { fs.writeFileSync(getUsageCachePath(), JSON.stringify(usageData)); } catch {}
+}
+
+function recordAppLaunch(appName) {
+  const key = appName.toLowerCase();
+  usageData[key] = (usageData[key] || 0) + 1;
+  saveUsageData();
+}
+
+function getUsageCount(appName) {
+  return usageData[appName.toLowerCase()] || 0;
 }
 
 function getScriptsPath() {
@@ -56,8 +93,9 @@ function runPowerShell(script, args = []) {
   return new Promise((resolve, reject) => {
     execFile('powershell.exe', [
       '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-      '-File', script, ...args,
-    ], { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      '-Command',
+      `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; & '${script.replace(/'/g, "''")}' ${args.map(a => `'${a.replace(/'/g, "''")}'`).join(' ')}`,
+    ], { maxBuffer: 10 * 1024 * 1024, encoding: 'utf-8' }, (err, stdout, stderr) => {
       if (err) return reject(err);
       resolve(stdout.trim());
     });
@@ -696,8 +734,10 @@ function registerHandlers(ipcMain) {
   const settings = loadSettingsSync();
   if (settings.apiKey) initAI(settings.apiKey);
 
-  // Load persistent icon cache
+  // Load persistent caches
   loadIconCache();
+  loadAppCache();
+  loadUsageData();
 
   // Clean up any orphaned temp dirs from previous crashes
   cleanupOrphanedTempDirs();
@@ -705,16 +745,37 @@ function registerHandlers(ipcMain) {
   // Pre-install common packages in background
   setImmediate(() => preinstallGlobalPackages());
 
+  // Background-refresh app list (serves cached data instantly, updates in background)
+  function refreshAppList() {
+    const script = path.join(getScriptsPath(), 'enumerateApps.ps1');
+    runPowerShell(script).then(raw => {
+      try {
+        const fresh = JSON.parse(raw);
+        if (Array.isArray(fresh) && fresh.length > 0) {
+          appCache = fresh;
+          saveAppCache();
+        }
+      } catch {}
+    }).catch(() => {});
+  }
+  setImmediate(refreshAppList);
+
   ipcMain.handle(IPC.SEARCH_APPS, async () => {
     if (appCache) return appCache;
+    // No cache at all — must wait for PowerShell
     const script = path.join(getScriptsPath(), 'enumerateApps.ps1');
     const raw = await runPowerShell(script);
     try {
       appCache = JSON.parse(raw);
+      saveAppCache();
     } catch {
       appCache = [];
     }
     return appCache;
+  });
+
+  ipcMain.handle(IPC.GET_USAGE, async () => {
+    return usageData;
   });
 
   ipcMain.handle(IPC.GET_ICON, async (_e, filePath) => {
@@ -750,8 +811,9 @@ function registerHandlers(ipcMain) {
     }
   });
 
-  ipcMain.handle(IPC.OPEN_APP, async (_e, appPath) => {
+  ipcMain.handle(IPC.OPEN_APP, async (_e, appPath, appName) => {
     try {
+      if (appName) recordAppLaunch(appName);
       if (appPath.endsWith('.lnk') || appPath.endsWith('.exe')) {
         shell.openPath(appPath);
       } else {
@@ -881,7 +943,10 @@ function registerHandlers(ipcMain) {
   ipcMain.handle(IPC.CLEAR_CACHE, async () => {
     appCache = null;
     iconCache.clear();
+    usageData = {};
     try { fs.unlinkSync(getIconCachePath()); } catch {}
+    try { fs.unlinkSync(getAppCachePath()); } catch {}
+    try { fs.unlinkSync(getUsageCachePath()); } catch {}
     return true;
   });
 }

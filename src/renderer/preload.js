@@ -3,7 +3,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('trim', {
   searchApps:    ()           => ipcRenderer.invoke('trim:search-apps'),
   getIcon:       (exePath)    => ipcRenderer.invoke('trim:get-icon', exePath),
-  openApp:       (appPath)    => ipcRenderer.invoke('trim:open-app', appPath),
+  getUsage:      ()           => ipcRenderer.invoke('trim:get-usage'),
+  openApp:       (appPath, appName) => ipcRenderer.invoke('trim:open-app', appPath, appName),
   aiQuery:       (query, usePro, forceShow, followUp) => ipcRenderer.invoke('trim:ai-query', query, usePro, forceShow, followUp),
   searchFolders: (query)      => ipcRenderer.invoke('trim:search-folders', query),
   openFolder:    (folderPath) => ipcRenderer.invoke('trim:open-folder', folderPath),

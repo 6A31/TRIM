@@ -29,11 +29,9 @@ register('/settings', {
 });
 
 register('/reload', {
-  description: 'Reload Trim and clear caches',
+  description: 'Reload Trim UI',
   icon: 'refresh',
-  execute: () => {
-    window.trim.clearCache().then(() => location.reload());
-  },
+  execute: () => location.reload(),
 });
 
 register('/clear', {

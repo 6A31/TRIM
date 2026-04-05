@@ -65,10 +65,26 @@ async function render() {
         Saved
       </span>
     </div>
+    <div class="settings-group" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+      <label class="settings-label">Cache</label>
+      <div class="settings-description">Clears app list, icons, and usage data. Apps will be re-scanned.</div>
+      <button class="settings-danger-btn" id="settings-clear-cache-btn">
+        <span class="material-symbols-rounded" style="font-size:16px">delete_sweep</span>
+        Clear Cache
+      </button>
+    </div>
   `;
 
   panel.querySelector('#settings-close-btn').addEventListener('click', close);
   panel.querySelector('#settings-save-btn').addEventListener('click', save);
+  panel.querySelector('#settings-clear-cache-btn').addEventListener('click', async () => {
+    await window.trim.clearCache();
+    const btn = document.getElementById('settings-clear-cache-btn');
+    btn.innerHTML = '<span class="material-symbols-rounded" style="font-size:16px">check_circle</span> Cleared';
+    setTimeout(() => {
+      btn.innerHTML = '<span class="material-symbols-rounded" style="font-size:16px">delete_sweep</span> Clear Cache';
+    }, 2000);
+  });
 }
 
 async function save() {

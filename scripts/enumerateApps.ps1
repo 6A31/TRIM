@@ -65,22 +65,38 @@ try {
                 $manifestFile = Join-Path $pkg.InstallLocation "AppxManifest.xml"
                 if (Test-Path $manifestFile) {
                     [xml]$manifest = Get-Content $manifestFile -ErrorAction SilentlyContinue
-                    $logoRelative = $manifest.Package.Applications.Application.VisualElements.Square44x44Logo
+                    # Use GetElementsByTagName to ignore XML namespaces (uap:VisualElements etc.)
+                    $ve = $manifest.GetElementsByTagName("VisualElements")
+                    $logoRelative = $null
+                    if ($ve.Count -gt 0) {
+                        $logoRelative = $ve[0].GetAttribute("Square44x44Logo")
+                        if (-not $logoRelative) {
+                            $logoRelative = $ve[0].GetAttribute("Square150x150Logo")
+                        }
+                    }
                     if (-not $logoRelative) {
-                        $logoRelative = $manifest.Package.Properties.Logo
+                        $props = $manifest.GetElementsByTagName("Logo")
+                        if ($props.Count -gt 0) { $logoRelative = $props[0].InnerText }
                     }
                     if ($logoRelative) {
                         $logoFull = Join-Path $pkg.InstallLocation $logoRelative
                         if (Test-Path $logoFull) {
                             $iconPath = $logoFull
                         } else {
-                            # Look for scale variants (e.g. Logo.scale-200.png)
+                            # Look for scale/targetsize variants
                             $dir = Split-Path $logoFull
                             $base = [System.IO.Path]::GetFileNameWithoutExtension($logoFull)
-                            $ext = [System.IO.Path]::GetExtension($logoFull)
                             if (Test-Path $dir) {
-                                $variant = Get-ChildItem -Path $dir -Filter "$base*$ext" -ErrorAction SilentlyContinue |
-                                    Sort-Object Name | Select-Object -First 1
+                                $variant = Get-ChildItem -Path $dir -ErrorAction SilentlyContinue |
+                                    Where-Object { $_.Name -match "^$([regex]::Escape($base))" -and $_.Extension -match '\.(png|jpg|ico)$' } |
+                                    Sort-Object {
+                                        $rank = 0
+                                        if ($_.Name -match 'altform-unplated') { $rank += 1000 }
+                                        if ($_.Name -match 'targetsize-(\d+)') { $rank += [int]$Matches[1] }
+                                        elseif ($_.Name -match 'scale-(\d+)') { $rank += [int]$Matches[1] / 10 }
+                                        $rank
+                                    } -Descending |
+                                    Select-Object -First 1
                                 if ($variant) { $iconPath = $variant.FullName }
                             }
                         }

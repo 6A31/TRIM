@@ -11,6 +11,7 @@ const IPC = {
   SEARCH_APPS: 'trim:search-apps',
   GET_ICON: 'trim:get-icon',
   OPEN_APP: 'trim:open-app',
+  GET_USAGE: 'trim:get-usage',
   AI_QUERY: 'trim:ai-query',
   AI_STATUS: 'trim:ai-status',
   SEARCH_FOLDERS: 'trim:search-folders',
