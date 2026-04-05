@@ -34,10 +34,13 @@ register('/reload', {
 });
 
 register('/clear', {
-  description: 'Clear search and results',
+  description: 'Clear search, AI context, and temp files',
   icon: 'clear_all',
   execute: () => {
     document.getElementById('search-input').value = '';
+    window._ui.clearResults();
+    if (window._chips) window._chips.updateMode('app');
+    window.trim.cleanup();
     document.getElementById('search-input').dispatchEvent(new Event('input'));
   },
 });

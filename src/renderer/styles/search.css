@@ -223,6 +223,7 @@
 
 /* AI Response */
 #ai-response-container {
+  position: relative;
   padding: 16px 18px;
   overflow-y: auto;
   max-height: calc(100vh - 68px);
@@ -385,6 +386,24 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* Follow-up query header */
+.ai-follow-up-query {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0 6px;
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.ai-follow-up-query .material-symbols-rounded {
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 /* No results */

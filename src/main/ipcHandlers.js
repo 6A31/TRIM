@@ -74,6 +74,28 @@ function findPython() {
 
 let pythonCmd = null;
 
+// Packages pre-installed globally for fast execution (no venv needed)
+const GLOBAL_PACKAGES = ['numpy', 'matplotlib', 'requests', 'scipy', 'sympy'];
+const GLOBAL_SET = new Set(GLOBAL_PACKAGES);
+let globalPackagesReady = false;
+
+function preinstallGlobalPackages() {
+  if (!pythonCmd) pythonCmd = findPython();
+  if (!pythonCmd) return;
+  try {
+    execSync(`${pythonCmd} -m pip install ${GLOBAL_PACKAGES.join(' ')} --quiet`, {
+      stdio: 'pipe', timeout: 120000,
+    });
+    globalPackagesReady = true;
+  } catch {}
+}
+
+function needsVenv(packages) {
+  if (!packages || packages.length === 0) return false;
+  if (!globalPackagesReady) return true;
+  return packages.some(p => !GLOBAL_SET.has(p));
+}
+
 function cleanupOrphanedTempDirs() {
   try {
     const tmpDir = os.tmpdir();
@@ -110,14 +132,12 @@ function cleanupVenv(venv) {
   try { fs.rmSync(venv.dir, { recursive: true, force: true }); } catch {}
 }
 
-function runPythonCode(venv, code, packages, plotPath) {
+function runPythonCode(py, code, packages, plotPath) {
   return new Promise((resolve) => {
-    const py = venv.python;
-
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trim-py-'));
     const scriptPath = path.join(tmpDir, 'script.py');
 
-    // Install packages into venv
+    // Install packages (into venv or global depending on caller)
     if (packages && packages.length > 0) {
       try {
         execSync(`"${py}" -m pip install ${packages.join(' ')} --quiet`, {
@@ -261,11 +281,30 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
             const packages = fc.args?.packages || [];
             const showOutput = forceShowOutput || fc.args?.show_output !== false;
 
-            // Create venv lazily on first code execution
-            if (!venv) {
-              sendStatus(event, 'Setting up Python environment...');
-              venv = createTempVenv();
+            // Decide: use global Python (fast) or temp venv (exotic packages)
+            let py;
+            if (needsVenv(packages)) {
               if (!venv) {
+                sendStatus(event, 'Setting up Python environment...');
+                venv = createTempVenv();
+                if (!venv) {
+                  responseParts.push({
+                    functionResponse: {
+                      name: 'run_python',
+                      response: { result: { error: 'Python 3 not found.' } },
+                      id: fc.id,
+                    },
+                  });
+                  continue;
+                }
+              }
+              py = venv.python;
+              if (packages.length > 0) {
+                sendStatus(event, `Installing ${packages.join(', ')}...`);
+              }
+            } else {
+              if (!pythonCmd) pythonCmd = findPython();
+              if (!pythonCmd) {
                 responseParts.push({
                   functionResponse: {
                     name: 'run_python',
@@ -275,15 +314,13 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
                 });
                 continue;
               }
+              py = pythonCmd;
             }
 
-            if (packages.length > 0) {
-              sendStatus(event, `Installing ${packages.join(', ')}...`);
-            }
             sendStatus(event, 'Running Python code...');
 
             const plotPath = path.join(os.tmpdir(), `trim-plot-${Date.now()}.png`);
-            const pyResult = await runPythonCode(venv, code, packages, plotPath);
+            const pyResult = await runPythonCode(py, code, packages, plotPath);
 
             if (showOutput) {
               codeOutputs.push({
@@ -348,6 +385,9 @@ function registerHandlers(ipcMain) {
 
   // Clean up any orphaned temp dirs from previous crashes
   cleanupOrphanedTempDirs();
+
+  // Pre-install common packages in background
+  setImmediate(() => preinstallGlobalPackages());
 
   ipcMain.handle(IPC.SEARCH_APPS, async () => {
     if (appCache) return appCache;
@@ -432,6 +472,12 @@ function registerHandlers(ipcMain) {
     if (data.apiKey !== undefined) initAI(data.apiKey);
     appCache = null;
     return merged;
+  });
+
+  ipcMain.handle(IPC.CLEANUP, async () => {
+    chatHistory = null;
+    cleanupOrphanedTempDirs();
+    return true;
   });
 }
 

@@ -15,4 +15,5 @@ contextBridge.exposeInMainWorld('trim', {
   onWindowHidden:(cb)         => ipcRenderer.on('trim:window-hidden', cb),
   onAIStatus:    (cb)         => ipcRenderer.on('trim:ai-status', (_e, data) => cb(data)),
   offAIStatus:   ()           => ipcRenderer.removeAllListeners('trim:ai-status'),
+  cleanup:       ()           => ipcRenderer.invoke('trim:cleanup'),
 });

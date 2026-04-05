@@ -18,6 +18,7 @@ const IPC = {
   LOAD_SETTINGS: 'trim:load-settings',
   SAVE_SETTINGS: 'trim:save-settings',
   HIDE_WINDOW: 'trim:hide-window',
+  CLEANUP: 'trim:cleanup',
 };
 
 const DEFAULTS = {

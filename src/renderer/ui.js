@@ -242,16 +242,39 @@ function showAILoading(statusText) {
   aiContainer.classList.remove('hidden');
   document.getElementById('search-bar').classList.add('has-results');
 
-  aiContainer.innerHTML = `
+  const isFollowUp = window._aiQuery && window._aiQuery.isFollowUp();
+
+  if (!isFollowUp) {
+    aiContainer.innerHTML = '';
+  }
+
+  // Show the user's query as a header for follow-ups
+  if (isFollowUp) {
+    const input = document.getElementById('search-input').value;
+    const queryText = input.startsWith('cs:') ? input.slice(3).trim()
+      : input.startsWith('??') ? input.slice(2).trim()
+      : input.startsWith('?') ? input.slice(1).trim() : input;
+    const queryDiv = document.createElement('div');
+    queryDiv.className = 'ai-follow-up-query';
+    queryDiv.innerHTML = `<span class="material-symbols-rounded" style="font-size:14px">person</span> ${escapeHtml(queryText)}`;
+    aiContainer.appendChild(queryDiv);
+  }
+
+  // Add loading spinner in a turn container
+  const turnDiv = document.createElement('div');
+  turnDiv.className = 'ai-current-turn';
+  turnDiv.innerHTML = `
     <div class="ai-loading">
       <div class="spinner"></div>
       <span>${escapeHtml(statusText || 'Asking Gemini...')}</span>
     </div>
   `;
+  aiContainer.appendChild(turnDiv);
 
   requestAnimationFrame(() => {
     const h = getBarHeight() + aiContainer.scrollHeight;
-    window.trim.resizeWindow(h);
+    window.trim.resizeWindow(Math.min(h, 500));
+    smartScroll(aiContainer);
   });
   currentResults = [];
   selectedIndex = -1;
@@ -265,30 +288,14 @@ function updateAIStatus(statusText) {
     if (span) span.textContent = statusText;
     requestAnimationFrame(() => {
       const h = getBarHeight() + aiContainer.scrollHeight;
-      window.trim.resizeWindow(h);
+      window.trim.resizeWindow(Math.min(h, 500));
     });
   }
 }
 
-function renderAIResponse(response) {
-  const aiContainer = document.getElementById('ai-response-container');
-
-  if (response.type === 'ai-error') {
-    aiContainer.innerHTML = `
-      <div class="ai-error">
-        <span class="material-symbols-rounded" style="font-size:18px">error</span>
-        ${escapeHtml(response.error)}
-      </div>
-    `;
-    requestAnimationFrame(() => {
-      window.trim.resizeWindow(getBarHeight() + aiContainer.scrollHeight);
-    });
-    return;
-  }
-
+function buildResponseHTML(response) {
   let html = `<div class="ai-text">${window._aiQuery.formatMarkdown(response.text)}</div>`;
 
-  // Render code execution outputs if present
   if (response.codeOutputs && response.codeOutputs.length > 0) {
     for (const output of response.codeOutputs) {
       html += `<div class="ai-code-output">`;
@@ -342,12 +349,48 @@ function renderAIResponse(response) {
     </div>`;
   }
 
-  aiContainer.innerHTML = html;
+  return html;
+}
+
+function renderAIResponse(response) {
+  const aiContainer = document.getElementById('ai-response-container');
+  const turnDiv = aiContainer.querySelector('.ai-current-turn');
+
+  if (response.type === 'ai-error') {
+    const errorHTML = `
+      <div class="ai-error">
+        <span class="material-symbols-rounded" style="font-size:18px">error</span>
+        ${escapeHtml(response.error)}
+      </div>
+    `;
+    if (turnDiv) {
+      turnDiv.innerHTML = errorHTML;
+      turnDiv.classList.remove('ai-current-turn');
+    } else {
+      aiContainer.innerHTML = errorHTML;
+    }
+    requestAnimationFrame(() => {
+      const h = getBarHeight() + aiContainer.scrollHeight;
+      window.trim.resizeWindow(Math.min(h, 500));
+      smartScroll(aiContainer);
+    });
+    return;
+  }
+
+  const html = buildResponseHTML(response);
+
+  if (turnDiv) {
+    turnDiv.innerHTML = html;
+    turnDiv.classList.remove('ai-current-turn');
+  } else {
+    aiContainer.innerHTML = html;
+  }
 
   // Resize to fit content, capped
   requestAnimationFrame(() => {
     const contentH = getBarHeight() + aiContainer.scrollHeight;
     window.trim.resizeWindow(Math.min(contentH, 500));
+    smartScroll(aiContainer);
   });
 
   // Prep input for follow-up: clear to just the prefix
@@ -374,6 +417,25 @@ function clearResults() {
   window.trim.resizeWindow(getBarHeight());
   // Clear conversation history
   if (window._aiQuery) window._aiQuery.clearConversation();
+}
+
+function smartScroll(aiContainer) {
+  const followUps = aiContainer.querySelectorAll('.ai-follow-up-query');
+  if (followUps.length === 0) {
+    // Single request — always top-aligned
+    aiContainer.scrollTop = 0;
+    return;
+  }
+  // Follow-up — anchor the latest follow-up query to the top,
+  // unless remaining content is shorter than the viewport (fill it instead)
+  const lastQuery = followUps[followUps.length - 1];
+  const queryTop = lastQuery.offsetTop;
+  const remainingHeight = aiContainer.scrollHeight - queryTop;
+  if (remainingHeight >= aiContainer.clientHeight) {
+    aiContainer.scrollTop = queryTop;
+  } else {
+    aiContainer.scrollTop = aiContainer.scrollHeight - aiContainer.clientHeight;
+  }
 }
 
 function escapeHtml(str) {

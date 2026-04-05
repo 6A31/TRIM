@@ -43,6 +43,11 @@ function boot() {
       input.value = '';
       window._ui.clearResults();
       if (window._chips) window._chips.updateMode('app');
+      // Reset icon and hint to defaults
+      const icon = document.getElementById('search-mode-icon');
+      const hint = document.getElementById('search-hint');
+      if (icon) { icon.textContent = 'search'; icon.classList.remove('active'); }
+      if (hint) hint.textContent = '';
     }
   });
 
