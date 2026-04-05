@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trim</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles/main.css">
+  <link rel="stylesheet" href="styles/search.css">
+  <link rel="stylesheet" href="styles/settings.css">
+  <link rel="stylesheet" href="styles/animations.css">
+</head>
+<body>
+  <div id="app">
+    <div id="search-bar">
+      <span class="material-symbols-rounded search-icon" id="search-mode-icon">search</span>
+      <input
+        type="text"
+        id="search-input"
+        placeholder="Search apps, type ? for AI, c: for calc..."
+        autocomplete="off"
+        spellcheck="false"
+      >
+      <span class="search-hint" id="search-hint"></span>
+    </div>
+    <div id="results-container"></div>
+    <div id="ai-response-container" class="hidden"></div>
+    <div id="settings-panel" class="hidden"></div>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>

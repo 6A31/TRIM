@@ -1,0 +1,51 @@
+{
+  "name": "trim",
+  "version": "1.0.0",
+  "description": "A Spotlight-like launcher for Windows",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "node launch.js",
+    "kill": "taskkill /F /IM electron.exe",
+    "build": "electron-builder"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1"
+  },
+  "devDependencies": {
+    "electron": "^41.1.1",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "com.trim.launcher",
+    "productName": "Trim",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "scripts/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false
+    },
+    "extraResources": [
+      {
+        "from": "scripts/",
+        "to": "scripts/",
+        "filter": [
+          "**/*.ps1"
+        ]
+      }
+    ]
+  }
+}
