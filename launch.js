@@ -1,12 +1,10 @@
-const { execSync, spawn } = require('child_process');
+const { spawn } = require('child_process');
+const fs = require('fs');
 const path = require('path');
-
-// Kill previous instances
-try { execSync('taskkill /F /IM electron.exe', { stdio: 'ignore' }); } catch {}
-
-const electronPath = path.join(__dirname, 'node_modules', 'electron', 'dist', 'electron.exe');
+const electronPath = require('electron');
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
+const pidFile = path.join(__dirname, '.trim-dev.pid');
 
 const child = spawn(electronPath, ['.'], {
   cwd: __dirname,
@@ -14,6 +12,10 @@ const child = spawn(electronPath, ['.'], {
   stdio: 'ignore',
   detached: true,
 });
+
+try {
+  fs.writeFileSync(pidFile, String(child.pid), 'utf-8');
+} catch {}
 
 child.unref();
 process.exit(0);

@@ -2,11 +2,33 @@
 
 A keyboard-first launcher for Windows and macOS. Think Spotlight, but with AI built in.
 
-![Trim hero screenshot](placeholder-hero.png)
-
 Trim sits behind **Ctrl+Space**, gives you a single search bar with an acrylic-style glass UI, and gets out of your way. Search apps, ask Gemini questions with live web results, do math, browse files, and automate your filesystem — all without touching the mouse.
 
 ## Features
+
+## Screenshots
+
+Add your screenshots into `assets/screenshots/` with the filenames below.
+
+### App Search
+
+![App Search](assets/screenshots/app-search.png)
+
+### AI Chat + Python
+
+![AI Chat](assets/screenshots/ai-chat.png)
+
+### File References
+
+![File References](assets/screenshots/file-references.png)
+
+### Folder Search
+
+![Folder Search](assets/screenshots/folder-search.png)
+
+### Settings
+
+![Settings](assets/screenshots/settings.png)
 
 ### App Search
 
@@ -17,13 +39,9 @@ Type anything and Trim instantly searches your installed apps.
 
 Results are ranked by how often you launch them, so your most-used apps float to the top. Fuzzy matching means you can type `vsc` and get Visual Studio Code.
 
-![App search results](placeholder-app-search.png)
-
 ### AI Chat (Gemini)
 
 Prefix with `?` for Gemini Flash or `??` for Gemini Pro. Responses are grounded with live Google Search, so you get current answers instead of stale training data. Conversations persist between toggles — hide the window, bring it back, keep chatting. Backspace the `?` to start a new conversation.
-
-![AI conversation](placeholder-ai-chat.png)
 
 Responses render full Markdown with syntax-highlighted code blocks, LaTeX math, and one-click copy on every code block.
 
@@ -31,13 +49,9 @@ Responses render full Markdown with syntax-highlighted code blocks, LaTeX math, 
 
 The AI runs Python code locally when it needs to compute something. Matplotlib plots render inline. Toggle **Force Code** to make the AI always reach for deterministic Python instead of winging it with LLM reasoning — useful for anything involving actual math.
 
-![Python plot inline](placeholder-python-plot.png)
-
 ### File Automation
 
 The AI can read, create, edit, and delete files on your system through dedicated tool calls. Every mutating operation shows an inline confirmation prompt with a preview of what's about to change before anything touches disk. Read and list operations run without asking.
-
-![File operation confirmation](placeholder-file-confirm.png)
 
 ### File References
 
@@ -93,7 +107,7 @@ Supported runtime platforms:
 - macOS
 
 ```bash
-git clone https://github.com/your-username/trim.git
+git clone https://github.com/6A31/trim.git
 cd trim
 npm install
 ```
@@ -114,9 +128,7 @@ Type `/settings`, paste your API key, and save. Try `? hello` to make sure it wo
 npm run kill
 ```
 
-> This kills all Electron processes including VS Code. Use Task Manager for a targeted kill.
-
-> `npm run kill` is Windows-oriented.
+> `npm run kill` only targets the Trim dev process tracked by Trim's PID file.
 
 ## Building
 
@@ -180,4 +192,4 @@ App lists, icons, and launch frequencies are persisted as JSON in the Electron `
 
 ## License
 
-ISC
+Trim Non-Commercial No-Derivatives License (see `LICENSE`).

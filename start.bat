@@ -1,5 +1,4 @@
 @echo off
-taskkill /F /IM electron.exe >nul 2>&1
 set ELECTRON_RUN_AS_NODE=
 setlocal
 cd /d "%~dp0"
