@@ -77,6 +77,34 @@
   white-space: nowrap;
   transition: all 0.15s ease;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.input-chip .chip-label {
+  transition: width 0.15s ease, opacity 0.15s ease;
+  overflow: hidden;
+}
+
+/* Collapsed state: icon only */
+#chip-container.collapsed .input-chip {
+  padding: 3px 6px;
+  gap: 0;
+}
+
+#chip-container.collapsed .input-chip .chip-label {
+  width: 0;
+  opacity: 0;
+}
+
+/* Expand on hover when collapsed */
+#chip-container.collapsed .input-chip:hover {
+  padding: 3px 10px;
+  gap: 4px;
+}
+
+#chip-container.collapsed .input-chip:hover .chip-label {
+  width: auto;
+  opacity: 1;
 }
 
 .input-chip:hover {
@@ -201,7 +229,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 16px 0;
+  padding: 6px 0;
   color: var(--text-secondary);
   font-size: 13px;
 }

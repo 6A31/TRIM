@@ -34,9 +34,19 @@ function toggle(id) {
 
 let chipMode = 'app';
 let container = null;
+let collapsed = false;
 
 function init() {
   container = document.getElementById('chip-container');
+  const input = document.getElementById('search-input');
+  // Collapse chips when input text gets long enough to crowd them
+  input.addEventListener('input', () => {
+    const shouldCollapse = input.value.length > 20;
+    if (shouldCollapse !== collapsed) {
+      collapsed = shouldCollapse;
+      container.classList.toggle('collapsed', collapsed);
+    }
+  });
 }
 
 function updateMode(mode) {
@@ -64,6 +74,7 @@ function renderChips(mode) {
     }
 
     const label = document.createElement('span');
+    label.className = 'chip-label';
     label.textContent = chip.label;
     el.appendChild(label);
 
