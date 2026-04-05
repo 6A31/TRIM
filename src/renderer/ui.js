@@ -28,7 +28,7 @@ function handleKeyboard(e) {
       e.preventDefault();
       // If in AI mode, fire the query
       const input = document.getElementById('search-input').value;
-      const forceShow = window._chips && window._chips.isActive('show_output');
+      const forceShow = window._chips && window._chips.isActive('force_code');
       if (input.startsWith('??')) {
         const query = input.slice(2).trim();
         if (query) {

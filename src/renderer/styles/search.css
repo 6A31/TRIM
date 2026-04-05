@@ -81,7 +81,10 @@
 }
 
 .input-chip .chip-label {
-  transition: width 0.15s ease, opacity 0.15s ease;
+  display: inline-block;
+  max-width: 100px;
+  opacity: 1;
+  transition: max-width 0.2s ease, opacity 0.15s ease, margin-left 0.2s ease;
   overflow: hidden;
 }
 
@@ -92,7 +95,7 @@
 }
 
 #chip-container.collapsed .input-chip .chip-label {
-  width: 0;
+  max-width: 0;
   opacity: 0;
 }
 
@@ -103,7 +106,7 @@
 }
 
 #chip-container.collapsed .input-chip:hover .chip-label {
-  width: auto;
+  max-width: 100px;
   opacity: 1;
 }
 
@@ -285,7 +288,7 @@
 }
 
 .ai-text li {
-  margin-bottom: 4px;
+  margin-bottom: 1px;
 }
 
 .ai-sources {

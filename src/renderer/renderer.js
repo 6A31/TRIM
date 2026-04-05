@@ -38,10 +38,24 @@ function boot() {
 
   // Re-focus input when window is shown
   window.trim.onWindowShown(() => {
-    input.value = '';
+    const pinned = window._chips && window._chips.isActive('pin');
+    if (!pinned) {
+      input.value = '';
+      window._ui.clearResults();
+      if (window._chips) window._chips.updateMode('app');
+    } else {
+      // Restore window size to fit pinned content
+      requestAnimationFrame(() => {
+        const barH = document.getElementById('search-bar').offsetHeight;
+        const ai = document.getElementById('ai-response-container');
+        const results = document.getElementById('results-container');
+        const contentH = ai.classList.contains('hidden') ? results.scrollHeight : ai.scrollHeight;
+        if (contentH > 0) {
+          window.trim.resizeWindow(Math.min(barH + contentH, 500));
+        }
+      });
+    }
     input.focus();
-    window._ui.clearResults();
-    if (window._chips) window._chips.updateMode('app');
   });
 }
 

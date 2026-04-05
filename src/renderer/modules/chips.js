@@ -16,9 +16,16 @@ function register(id, opts) {
 }
 
 // Built-in chips
-register('show_output', {
-  label: 'Show Output',
+register('force_code', {
+  label: 'Force Code',
   icon: 'code',
+  default: false,
+  modes: ['ai', 'ai_pro'],
+});
+
+register('pin', {
+  label: 'Pin',
+  icon: 'keep',
   default: false,
   modes: ['ai', 'ai_pro'],
 });
@@ -50,6 +57,7 @@ function init() {
 }
 
 function updateMode(mode) {
+  if (mode === chipMode) return; // skip rebuild if unchanged — preserves CSS transitions
   chipMode = mode;
   renderChips(mode);
 }
@@ -77,6 +85,9 @@ function renderChips(mode) {
     label.className = 'chip-label';
     label.textContent = chip.label;
     el.appendChild(label);
+
+    // Prevent chip from stealing focus from the input
+    el.addEventListener('mousedown', (e) => e.preventDefault());
 
     el.addEventListener('click', (e) => {
       e.preventDefault();
