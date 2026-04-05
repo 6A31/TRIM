@@ -36,14 +36,20 @@ function boot() {
   const input = document.getElementById('search-input');
   input.focus();
 
-  // Re-focus input when window is shown
-  window.trim.onWindowShown(() => {
+  // Clean up on hide (not on show, to avoid old content blinking)
+  window.trim.onWindowHidden(() => {
     const pinned = window._chips && window._chips.isActive('pin');
     if (!pinned) {
       input.value = '';
       window._ui.clearResults();
       if (window._chips) window._chips.updateMode('app');
-    } else {
+    }
+  });
+
+  // Re-focus input when window is shown
+  window.trim.onWindowShown(() => {
+    const pinned = window._chips && window._chips.isActive('pin');
+    if (pinned) {
       // Restore window size to fit pinned content
       requestAnimationFrame(() => {
         const barH = document.getElementById('search-bar').offsetHeight;

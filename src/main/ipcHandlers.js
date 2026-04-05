@@ -74,21 +74,53 @@ function findPython() {
 
 let pythonCmd = null;
 
-function runPythonCode(code, packages, plotPath) {
-  return new Promise((resolve) => {
-    if (!pythonCmd) pythonCmd = findPython();
-    if (!pythonCmd) {
-      resolve({ error: 'Python 3 not found. Please install Python 3.' });
-      return;
+function cleanupOrphanedTempDirs() {
+  try {
+    const tmpDir = os.tmpdir();
+    const entries = fs.readdirSync(tmpDir);
+    for (const e of entries) {
+      if (e.startsWith('trim-py-')) {
+        try { fs.rmSync(path.join(tmpDir, e), { recursive: true, force: true }); } catch {}
+      }
     }
+  } catch {}
+}
+
+function createTempVenv() {
+  if (!pythonCmd) pythonCmd = findPython();
+  if (!pythonCmd) return null;
+
+  const venvDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trim-py-venv-'));
+  const venvPy = process.platform === 'win32'
+    ? path.join(venvDir, 'Scripts', 'python.exe')
+    : path.join(venvDir, 'bin', 'python');
+
+  try {
+    execSync(`${pythonCmd} -m venv "${venvDir}"`, { stdio: 'pipe', timeout: 30000 });
+  } catch {
+    try { fs.rmSync(venvDir, { recursive: true, force: true }); } catch {}
+    return null;
+  }
+
+  return { dir: venvDir, python: venvPy };
+}
+
+function cleanupVenv(venv) {
+  if (!venv) return;
+  try { fs.rmSync(venv.dir, { recursive: true, force: true }); } catch {}
+}
+
+function runPythonCode(venv, code, packages, plotPath) {
+  return new Promise((resolve) => {
+    const py = venv.python;
 
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trim-py-'));
     const scriptPath = path.join(tmpDir, 'script.py');
 
-    // Install packages if needed
+    // Install packages into venv
     if (packages && packages.length > 0) {
       try {
-        execSync(`${pythonCmd} -m pip install ${packages.join(' ')} --quiet`, {
+        execSync(`"${py}" -m pip install ${packages.join(' ')} --quiet`, {
           stdio: 'pipe',
           timeout: 60000,
         });
@@ -111,7 +143,7 @@ except ImportError:
 
     fs.writeFileSync(scriptPath, preamble + code, 'utf-8');
 
-    execFile(pythonCmd, [scriptPath], {
+    execFile(py, [scriptPath], {
       cwd: tmpDir,
       timeout: 30000,
       maxBuffer: 5 * 1024 * 1024,
@@ -186,6 +218,8 @@ async function handleAIQuery(event, query, usePro, forceShowOutput) {
 
   sendStatus(event, usePro ? 'Asking Gemini Pro...' : 'Asking Gemini...');
 
+  let venv = null;
+
   try {
     const contents = [{ role: 'user', parts: [{ text: query }] }];
     const codeOutputs = [];
@@ -218,13 +252,29 @@ async function handleAIQuery(event, query, usePro, forceShowOutput) {
             const packages = fc.args?.packages || [];
             const showOutput = forceShowOutput || fc.args?.show_output !== false;
 
+            // Create venv lazily on first code execution
+            if (!venv) {
+              sendStatus(event, 'Setting up Python environment...');
+              venv = createTempVenv();
+              if (!venv) {
+                responseParts.push({
+                  functionResponse: {
+                    name: 'run_python',
+                    response: { result: { error: 'Python 3 not found.' } },
+                    id: fc.id,
+                  },
+                });
+                continue;
+              }
+            }
+
             if (packages.length > 0) {
               sendStatus(event, `Installing ${packages.join(', ')}...`);
             }
             sendStatus(event, 'Running Python code...');
 
             const plotPath = path.join(os.tmpdir(), `trim-plot-${Date.now()}.png`);
-            const pyResult = await runPythonCode(code, packages, plotPath);
+            const pyResult = await runPythonCode(venv, code, packages, plotPath);
 
             if (showOutput) {
               codeOutputs.push({
@@ -271,6 +321,9 @@ async function handleAIQuery(event, query, usePro, forceShowOutput) {
     return { text: 'Reached maximum processing rounds.', sources: [], codeOutputs };
   } catch (err) {
     return { error: err.message || 'AI query failed' };
+  } finally {
+    // Always clean up venv after query completes
+    cleanupVenv(venv);
   }
 }
 
@@ -279,6 +332,9 @@ async function handleAIQuery(event, query, usePro, forceShowOutput) {
 function registerHandlers(ipcMain) {
   const settings = loadSettingsSync();
   if (settings.apiKey) initAI(settings.apiKey);
+
+  // Clean up any orphaned temp dirs from previous crashes
+  cleanupOrphanedTempDirs();
 
   ipcMain.handle(IPC.SEARCH_APPS, async () => {
     if (appCache) return appCache;
