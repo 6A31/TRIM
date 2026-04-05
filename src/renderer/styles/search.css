@@ -88,6 +88,10 @@
   line-height: inherit;
 }
 
+.file-ref-hidden-brackets {
+  visibility: hidden;
+}
+
 .search-hint {
   color: var(--text-muted);
   font-size: 11px;
