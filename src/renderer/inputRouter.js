@@ -253,7 +253,7 @@ function resolveAIFileRefsInQuery(query) {
   for (const [label, fullPath] of aiFileRefs.entries()) {
     const token = `#[${label}]`;
     if (out.includes(token)) {
-      out = out.split(token).join(`#${fullPath}`);
+      out = out.split(token).join(`#"${fullPath}"`);
     }
   }
   return out;

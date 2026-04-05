@@ -556,8 +556,6 @@ Always use absolute paths for file tools. The user will approve write/edit/delet
 
 **googleSearch** — Search the web for current information.`;
 
-const ATTACHMENT_ANALYSIS_ADDENDUM = `\n\nAttachment handling rule:\n- If the user attached images or PDFs, analyze those attachments directly with multimodal reasoning.\n- Do NOT call run_python just to "inspect" or "read" attached images/PDFs unless the user explicitly asks for code-based processing.`;
-
 const FORCE_CODE_ADDENDUM = `\n\nIMPORTANT — Force Code mode is ON:
 - Use Python code execution for ALL calculations, math, logic, comparisons, data lookups, and any verifiable task.
 - Do NOT rely on LLM reasoning for math or numbers — always write and run code to get deterministic, correct results.
@@ -596,12 +594,14 @@ let chatHistory = null; // { contents: [], model: string }
 
 // Resolve #filepath references in query — read files and build multi-part content
 function resolveFileReferences(query) {
-  // Match #C:\path\to\file or #/unix/path (absolute paths after #)
-  const fileRefRegex = /#([A-Za-z]:[\\\/][^\s#]+|\/[^\s#]+)/g;
+  // Match #"C:\path with spaces\file.png" or #C:\path\file.png or #/unix/path
+  const fileRefRegex = /#(?:"([^"]+)"|([A-Za-z]:[\\\/][^\s#]+|\/[^\s#]+))/g;
   const files = [];
   let match;
   while ((match = fileRefRegex.exec(query)) !== null) {
-    files.push({ ref: match[0], filePath: match[1] });
+    const filePath = match[1] || match[2];
+    if (!filePath) continue;
+    files.push({ ref: match[0], filePath });
   }
   if (files.length === 0) return { text: query, extraParts: [] };
 
@@ -666,10 +666,9 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
     }
 
     // Conditionally add force-code instruction
-    const hasAttachments = extraParts.length > 0;
     const sysInstruction = forceShowOutput
-      ? SYSTEM_INSTRUCTION + ATTACHMENT_ANALYSIS_ADDENDUM + FORCE_CODE_ADDENDUM
-      : SYSTEM_INSTRUCTION + (hasAttachments ? ATTACHMENT_ANALYSIS_ADDENDUM : '');
+      ? SYSTEM_INSTRUCTION + FORCE_CODE_ADDENDUM
+      : SYSTEM_INSTRUCTION;
 
     const codeOutputs = [];
     const MAX_ROUNDS = 6;

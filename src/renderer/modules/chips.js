@@ -3,6 +3,8 @@
 
 const chips = new Map(); // id -> { label, icon, active, modes }
 const activeToggles = {}; // id -> boolean
+let inputEl = null;
+let currentRawInput = '';
 
 function register(id, opts) {
   chips.set(id, {
@@ -11,6 +13,8 @@ function register(id, opts) {
     icon: opts.icon || null,
     active: opts.default || false,
     modes: opts.modes || [], // which input modes show this chip
+    action: typeof opts.action === 'function' ? opts.action : null,
+    visibleWhen: typeof opts.visibleWhen === 'function' ? opts.visibleWhen : null,
   });
   activeToggles[id] = opts.default || false;
 }
@@ -21,6 +25,30 @@ register('force_code', {
   icon: 'code',
   default: false,
   modes: ['ai', 'ai_pro', 'solve'],
+});
+
+register('switch_ai', {
+  label: 'Switch to AI?',
+  icon: 'keyboard_return',
+  default: false,
+  modes: ['app'],
+  visibleWhen: (ctx) => {
+    const raw = (ctx.rawInput || '').trim();
+    if (!raw) return false;
+    if (raw.startsWith('/') || raw.startsWith('?') || raw.startsWith('c:') || raw.startsWith('f:') || raw.startsWith('cs:')) return false;
+    const whitespaceCount = (raw.match(/\s+/g) || []).length;
+    return whitespaceCount >= 2;
+  },
+  action: () => {
+    if (!inputEl) return;
+    const raw = (inputEl.value || '').trim();
+    if (!raw || raw.startsWith('?')) return;
+    inputEl.value = `? ${raw}`;
+    if (window._inputRouter) window._inputRouter.refreshInputDecor(inputEl);
+    inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
+    inputEl.focus();
+    inputEl.dispatchEvent(new Event('input'));
+  },
 });
 
 function isActive(id) {
@@ -38,14 +66,16 @@ let collapsed = false;
 
 function init() {
   container = document.getElementById('chip-container');
-  const input = document.getElementById('search-input');
+  inputEl = document.getElementById('search-input');
   // Collapse chips when input text gets long enough to crowd them
-  input.addEventListener('input', () => {
-    const shouldCollapse = input.value.length > 20;
+  inputEl.addEventListener('input', () => {
+    currentRawInput = inputEl.value || '';
+    const shouldCollapse = currentRawInput.length > 20;
     if (shouldCollapse !== collapsed) {
       collapsed = shouldCollapse;
       container.classList.toggle('collapsed', collapsed);
     }
+    renderChips(chipMode);
   });
 }
 
@@ -71,9 +101,11 @@ function renderChips(mode) {
 
   for (const [id, chip] of chips) {
     if (!chip.modes.includes(mode)) continue;
+    if (chip.visibleWhen && !chip.visibleWhen({ rawInput: currentRawInput, mode })) continue;
 
     const el = document.createElement('button');
-    el.className = 'input-chip' + (activeToggles[id] ? ' active' : '');
+    const isAction = !!chip.action;
+    el.className = 'input-chip' + (!isAction && activeToggles[id] ? ' active' : '');
     el.dataset.chipId = id;
 
     if (chip.icon) {
@@ -95,7 +127,8 @@ function renderChips(mode) {
     el.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      toggle(id);
+      if (chip.action) chip.action();
+      else toggle(id);
       // Re-focus search input
       document.getElementById('search-input').focus();
     });
