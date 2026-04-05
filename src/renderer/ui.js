@@ -45,6 +45,15 @@ function handleKeyboard(e) {
             renderAIResponse(response);
           });
         }
+      } else if (input.startsWith('cs:')) {
+        const expr = input.slice(3).trim();
+        if (expr) {
+          showAILoading('Solving...');
+          const solvePrompt = `Solve this math problem step by step. Use LaTeX notation ($$...$$ for display, $...$ for inline) for all math expressions. Use the run_python tool to compute and verify your answer. Show clear, concise steps.\n\nProblem: ${expr}`;
+          window._aiQuery.execute(solvePrompt, false, true, (response) => {
+            renderAIResponse(response);
+          });
+        }
       } else {
         executeSelected();
       }

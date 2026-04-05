@@ -2,6 +2,7 @@ const MODE_ICONS = {
   app: 'search',
   ai: 'auto_awesome',
   ai_pro: 'auto_awesome',
+  solve: 'function',
   folder: 'folder_open',
   calc: 'calculate',
   command: 'terminal',
@@ -11,6 +12,7 @@ const MODE_HINTS = {
   app: '',
   ai: 'AI',
   ai_pro: 'AI PRO',
+  solve: 'SOLVE',
   folder: 'FOLDERS',
   calc: 'CALC',
   command: 'CMD',
@@ -33,8 +35,8 @@ function init() {
       return;
     }
 
-    // AI only fires on Enter, not on typing
-    if (mode === 'ai' || mode === 'ai_pro') {
+    // AI and solve only fire on Enter, not on typing
+    if (mode === 'ai' || mode === 'ai_pro' || mode === 'solve') {
       clearTimeout(debounceTimer);
       return;
     }
@@ -55,6 +57,7 @@ function detectMode(raw) {
   if (raw.startsWith('/')) return 'command';
   if (raw.startsWith('??')) return 'ai_pro';
   if (raw.startsWith('?')) return 'ai';
+  if (raw.startsWith('cs:')) return 'solve';
   if (raw.startsWith('f:')) return 'folder';
   if (raw.startsWith('c:')) return 'calc';
   return 'app';
@@ -102,8 +105,7 @@ async function route(rawInput) {
     return;
   }
 
-  if (mode === 'ai' || mode === 'ai_pro') {
-    // AI only fires on Enter — just update the UI hint
+  if (mode === 'ai' || mode === 'ai_pro' || mode === 'solve') {
     return;
   }
 

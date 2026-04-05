@@ -1,6 +1,7 @@
 const PREFIXES = {
   AI: '?',
   AI_PRO: '??',
+  SOLVE: 'cs:',
   FOLDER: 'f:',
   CALC: 'c:',
   COMMAND: '/',

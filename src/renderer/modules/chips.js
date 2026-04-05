@@ -27,7 +27,7 @@ register('pin', {
   label: 'Pin',
   icon: 'keep',
   default: false,
-  modes: ['ai', 'ai_pro'],
+  modes: ['ai', 'ai_pro', 'solve'],
 });
 
 function isActive(id) {

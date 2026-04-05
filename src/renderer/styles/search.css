@@ -257,6 +257,20 @@
   margin-bottom: 10px;
 }
 
+/* KaTeX overrides for dark theme */
+.ai-text .katex {
+  color: var(--text-primary);
+  font-size: 1.05em;
+}
+
+.ai-text .katex-display {
+  margin: 10px 0;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
 .ai-text strong {
   font-weight: 600;
   color: #fff;

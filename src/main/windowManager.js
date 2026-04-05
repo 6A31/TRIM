@@ -65,8 +65,8 @@ function show() {
 
 function hide() {
   if (!mainWindow) return;
-  mainWindow.hide();
   mainWindow.webContents.send('trim:window-hidden');
+  mainWindow.hide();
 }
 
 function resize(height) {

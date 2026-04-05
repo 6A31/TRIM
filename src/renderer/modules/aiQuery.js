@@ -35,13 +35,55 @@ async function execute(query, usePro, forceShow, renderFn) {
   }
 }
 
+function renderLatex(text) {
+  if (!text || typeof katex === 'undefined') return text;
+
+  // Display math: $$...$$ or \[...\]
+  text = text.replace(/\$\$([\s\S]*?)\$\$/g, (_m, expr) => {
+    try { return katex.renderToString(expr.trim(), { displayMode: true, throwOnError: false }); }
+    catch { return _m; }
+  });
+  text = text.replace(/\\\[([\s\S]*?)\\\]/g, (_m, expr) => {
+    try { return katex.renderToString(expr.trim(), { displayMode: true, throwOnError: false }); }
+    catch { return _m; }
+  });
+
+  // Inline math: $...$ (not $$) or \(...\)
+  text = text.replace(/\$([^\$\n]+?)\$/g, (_m, expr) => {
+    try { return katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false }); }
+    catch { return _m; }
+  });
+  text = text.replace(/\\\(([\s\S]*?)\\\)/g, (_m, expr) => {
+    try { return katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false }); }
+    catch { return _m; }
+  });
+
+  return text;
+}
+
 function formatMarkdown(text) {
   if (!text) return '';
+
+  // Protect code blocks from LaTeX processing
+  const codeBlocks = [];
+  text = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
+    codeBlocks.push(`<pre><code>${code}</code></pre>`);
+    return `%%CODEBLOCK_${codeBlocks.length - 1}%%`;
+  });
+  const inlineCodes = [];
+  text = text.replace(/`([^`]+)`/g, (_m, code) => {
+    inlineCodes.push(`<code>${code}</code>`);
+    return `%%INLINE_${inlineCodes.length - 1}%%`;
+  });
+
+  // Render LaTeX
+  text = renderLatex(text);
+
+  // Restore code blocks
+  text = text.replace(/%%CODEBLOCK_(\d+)%%/g, (_m, i) => codeBlocks[i]);
+  text = text.replace(/%%INLINE_(\d+)%%/g, (_m, i) => inlineCodes[i]);
+
   return text
-    // Code blocks
-    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-    // Inline code
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
     // Bold
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     // Italic
