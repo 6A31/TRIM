@@ -83,7 +83,9 @@ function handleKeyboard(e) {
         const sel = currentResults[selectedIndex >= 0 ? selectedIndex : 0];
         if (sel.action) sel.action();
       } else if (currentResults.length > 0 && currentResults[0].type === 'command') {
-        document.getElementById('search-input').value = currentResults[selectedIndex >= 0 ? selectedIndex : 0].title;
+        const inputEl = document.getElementById('search-input');
+        inputEl.value = currentResults[selectedIndex >= 0 ? selectedIndex : 0].title;
+        if (window._inputRouter) window._inputRouter.refreshInputDecor(inputEl);
       }
       break;
   }
@@ -423,6 +425,7 @@ function renderAIResponse(response) {
   if (prefix) {
     searchInput.value = prefix;
     searchInput.setSelectionRange(prefix.length, prefix.length);
+    if (window._inputRouter) window._inputRouter.refreshInputDecor(searchInput);
   }
 }
 

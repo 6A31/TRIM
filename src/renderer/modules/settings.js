@@ -35,6 +35,7 @@ function close() {
 
   const input = document.getElementById('search-input');
   input.value = '';
+  if (window._inputRouter) window._inputRouter.refreshInputDecor(input);
   input.focus();
   window.trim.resizeWindow(68);
 }

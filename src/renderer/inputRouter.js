@@ -24,9 +24,17 @@ let filePickActive = false;
 let activeFolderRequestId = null;
 let activeFilePickRequestId = null;
 const aiFileRefs = new Map(); // label -> absolute path
+let inputOverlayEl = null;
 
 function init() {
   const input = document.getElementById('search-input');
+  inputOverlayEl = document.getElementById('search-input-overlay');
+
+  input.addEventListener('scroll', () => {
+    if (inputOverlayEl) {
+      inputOverlayEl.style.transform = `translateX(${-input.scrollLeft}px)`;
+    }
+  });
 
   window.trim.offFolderSearchUpdate();
   window.trim.onFolderSearchUpdate((data) => {
@@ -69,7 +77,7 @@ function init() {
     const raw = input.value;
     const mode = detectMode(raw);
     updateModeIndicator(raw);
-    updateFileRefTooltip(input);
+    refreshInputDecor(input);
 
     // Empty input — always clear and shrink
     if (!raw.trim()) {
@@ -127,6 +135,8 @@ function init() {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => route(raw), delay);
   });
+
+  refreshInputDecor(input);
 }
 
 function getDebounceDelay(raw) {
@@ -222,7 +232,7 @@ function insertFileRef(inputEl, filePath) {
   }
   inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
   inputEl.focus();
-  updateFileRefTooltip(inputEl);
+  refreshInputDecor(inputEl);
   filePickActive = false;
   window._ui.restoreAIArea();
 }
@@ -260,8 +270,54 @@ function updateFileRefTooltip(inputEl) {
   inputEl.title = lines.join('\n');
 }
 
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderInputOverlay(inputEl) {
+  if (!inputOverlayEl) return;
+  const raw = inputEl.value || '';
+  if (!raw) {
+    inputOverlayEl.innerHTML = '';
+    return;
+  }
+
+  const tokenRegex = /#\[([^\]]+)\]/g;
+  let html = '';
+  let idx = 0;
+  let match;
+
+  while ((match = tokenRegex.exec(raw)) !== null) {
+    const before = raw.slice(idx, match.index);
+    if (before) {
+      html += `<span class="input-overlay-text">${escapeHtml(before)}</span>`;
+    }
+    const label = match[1];
+    html += `<span class="file-ref-pill">#${escapeHtml(label)}</span>`;
+    idx = match.index + match[0].length;
+  }
+
+  const tail = raw.slice(idx);
+  if (tail) {
+    html += `<span class="input-overlay-text">${escapeHtml(tail)}</span>`;
+  }
+
+  inputOverlayEl.innerHTML = html;
+  inputOverlayEl.style.transform = `translateX(${-inputEl.scrollLeft}px)`;
+}
+
+function refreshInputDecor(inputEl) {
+  updateFileRefTooltip(inputEl);
+  renderInputOverlay(inputEl);
+}
+
 function isFilePickActive() {
   return filePickActive;
 }
 
-window._inputRouter = { init, route, detectMode, isFilePickActive, resolveAIFileRefsInQuery };
+window._inputRouter = { init, route, detectMode, isFilePickActive, resolveAIFileRefsInQuery, refreshInputDecor };

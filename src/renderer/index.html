@@ -21,13 +21,16 @@
   <div id="app">
     <div id="search-bar">
       <span class="material-symbols-rounded search-icon" id="search-mode-icon">search</span>
-      <input
-        type="text"
-        id="search-input"
-        placeholder="Search or type / for commands"
-        autocomplete="off"
-        spellcheck="false"
-      >
+      <div class="search-input-wrap">
+        <div id="search-input-overlay" aria-hidden="true"></div>
+        <input
+          type="text"
+          id="search-input"
+          placeholder="Search or type / for commands"
+          autocomplete="off"
+          spellcheck="false"
+        >
+      </div>
       <div id="chip-container"></div>
       <span class="search-hint" id="search-hint"></span>
     </div>

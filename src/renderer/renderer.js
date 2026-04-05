@@ -46,6 +46,7 @@ function boot() {
     const hasChat = window._aiQuery && window._aiQuery.isFollowUp();
     if (!hasChat) {
       input.value = '';
+      if (window._inputRouter) window._inputRouter.refreshInputDecor(input);
       window._ui.clearResults();
       if (window._chips) window._chips.updateMode('app');
       // Reset icon and hint to defaults
