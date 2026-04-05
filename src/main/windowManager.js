@@ -22,7 +22,8 @@ function create() {
     maximizable: false,
     fullscreenable: false,
     // Dark fallback background avoids bright acrylic flash during show transitions.
-    backgroundColor: '#1E1E28CC',
+    // Note: Electron uses #AARRGGBB (not CSS #RRGGBBAA). Omit alpha since transparent: false.
+    backgroundColor: '#1E1E28',
     webPreferences: {
       preload: path.join(__dirname, '..', 'renderer', 'preload.js'),
       contextIsolation: true,

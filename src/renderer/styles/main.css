@@ -27,6 +27,15 @@ html, body {
   background: transparent;
 }
 
+@media (prefers-reduced-transparency: reduce) {
+  html, body {
+    background: #1E1E28;
+  }
+  #app {
+    background: #1E1E28;
+  }
+}
+
 body {
   font-family: var(--font);
   color: var(--text-primary);
