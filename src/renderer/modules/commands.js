@@ -5,6 +5,20 @@ function register(name, opts) {
 }
 
 // Built-in commands
+register('/help', {
+  description: 'Show available prefixes and commands',
+  icon: 'help',
+  execute: () => {
+    const helpResults = [
+      { type: 'command', icon: 'search', title: 'app name', subtitle: 'Search and launch installed apps' },
+      { type: 'command', icon: 'auto_awesome', title: '? question', subtitle: 'Ask Gemini AI (press Enter to send)' },
+      { type: 'command', icon: 'calculate', title: 'c: expression', subtitle: 'Calculator — e.g. c: 2^10 + sqrt(144)' },
+      { type: 'command', icon: 'folder_open', title: 'f: path', subtitle: 'Browse folders and files' },
+      { type: 'command', icon: 'terminal', title: '/ command', subtitle: 'Run commands — /settings, /reload, /quit' },
+    ];
+    window._ui.renderResults(helpResults);
+  },
+});
 register('/settings', {
   description: 'Open Trim settings',
   icon: 'settings',
