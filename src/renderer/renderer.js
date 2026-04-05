@@ -6,7 +6,6 @@ const moduleScripts = [
   'modules/appSearch.js',
   'modules/aiQuery.js',
   'modules/calculator.js',
-  'modules/folderSearch.js',
   'modules/commands.js',
   'modules/settings.js',
   'modules/chips.js',

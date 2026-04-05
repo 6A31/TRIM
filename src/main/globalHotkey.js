@@ -1,4 +1,4 @@
-const { globalShortcut } = require('electron');
+const { dialog, globalShortcut } = require('electron');
 const windowManager = require('./windowManager');
 
 function register() {
@@ -9,6 +9,8 @@ function register() {
   });
   if (!ok) {
     console.error(`Failed to register global shortcut: ${shortcut}`);
+    const key = process.platform === 'darwin' ? 'Option+Space' : 'Ctrl+Space';
+    dialog.showErrorBox('Trim — Shortcut Conflict', `Could not register ${key}. Another app may be using it.\n\nClose the conflicting app and restart Trim.`);
   }
 }
 

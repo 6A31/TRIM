@@ -355,26 +355,9 @@ function findPython() {
 
 let pythonCmd = null;
 
-// Packages pre-installed globally for fast execution (no venv needed)
-const GLOBAL_PACKAGES = ['numpy', 'matplotlib', 'requests', 'scipy', 'sympy'];
-const GLOBAL_SET = new Set(GLOBAL_PACKAGES);
-let globalPackagesReady = false;
-
-function preinstallGlobalPackages() {
-  if (!pythonCmd) pythonCmd = findPython();
-  if (!pythonCmd) return;
-  try {
-    execFileSync(pythonCmd, ['-m', 'pip', 'install', ...GLOBAL_PACKAGES, '--quiet'], {
-      stdio: 'pipe', timeout: 120000,
-    });
-    globalPackagesReady = true;
-  } catch {}
-}
-
+// All Python execution uses a temp venv — no global pip installs.
 function needsVenv(packages) {
-  if (!packages || packages.length === 0) return false;
-  if (!globalPackagesReady) return true;
-  return packages.some(p => !GLOBAL_SET.has(p));
+  return packages && packages.length > 0;
 }
 
 function cleanupOrphanedTempDirs() {
@@ -709,6 +692,10 @@ function resolveFileReferences(query) {
   const extraParts = [];
 
   for (const file of files) {
+    if (isPathBlocked(file.filePath)) {
+      processedText = processedText.replace(file.ref, `[Access denied: ${path.basename(file.filePath)}]`);
+      continue;
+    }
     const ext = path.extname(file.filePath).toLowerCase();
     try {
       const MAX_BINARY_SIZE = 20 * 1024 * 1024; // 20 MB
@@ -1185,9 +1172,6 @@ function registerHandlers(ipcMain) {
 
   // Clean up any orphaned temp dirs from previous crashes
   cleanupOrphanedTempDirs();
-
-  // Pre-install common packages in background
-  setImmediate(() => preinstallGlobalPackages());
 
   // Background-refresh app list (serves cached data instantly, updates in background)
   function refreshAppList() {
