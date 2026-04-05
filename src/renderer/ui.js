@@ -132,6 +132,12 @@ function getBarHeight() {
   return document.getElementById('search-bar').offsetHeight;
 }
 
+let lastResultsKey = '';
+
+function getResultsKey(results) {
+  return results.map(r => `${r.type}:${r.name || r.title || ''}:${r.target || r.path || ''}`).join('\n');
+}
+
 async function renderResults(results) {
   const container = document.getElementById('results-container');
   const aiContainer = document.getElementById('ai-response-container');
@@ -145,6 +151,7 @@ async function renderResults(results) {
   if (window._chips) window._chips.setResultsCount(results.length);
 
   if (results.length === 0) {
+    lastResultsKey = '';
     container.innerHTML = '';
     container.classList.add('hidden');
     document.getElementById('search-bar').classList.remove('has-results');
@@ -152,13 +159,20 @@ async function renderResults(results) {
     return;
   }
 
+  const key = getResultsKey(results);
+  const unchanged = key === lastResultsKey;
+  lastResultsKey = key;
+
   document.getElementById('search-bar').classList.add('has-results');
-  const frag = document.createDocumentFragment();
-  for (const result of results) {
-    const el = createResultElement(result);
-    frag.appendChild(el);
+
+  if (!unchanged) {
+    const frag = document.createDocumentFragment();
+    for (const result of results) {
+      const el = createResultElement(result);
+      frag.appendChild(el);
+    }
+    container.replaceChildren(frag);
   }
-  container.replaceChildren(frag);
   container.classList.remove('hidden');
 
   updateSelection();
