@@ -101,7 +101,7 @@ async function render() {
         <input type="checkbox" id="settings-autostart" class="settings-toggle" ${settings.autoStart !== false ? 'checked' : ''}>
         <span class="settings-toggle-slider"></span>
       </label>
-      <div class="settings-description">If disabled, you'll need to reopen Trim manually to re-enable this.</div>
+      <div class="settings-description">If disabled, you'll need to reopen TRIM manually to re-enable this.</div>
     </div>
     <div style="display:flex;align-items:center;margin-top:8px">
       <button class="settings-save" id="settings-save-btn">

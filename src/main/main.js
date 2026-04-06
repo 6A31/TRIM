@@ -4,7 +4,7 @@ const globalHotkey = require('./globalHotkey');
 const { registerHandlers } = require('./ipcHandlers');
 const { IPC } = require('../shared/constants');
 
-app.setName('Trim');
+app.setName('TRIM');
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {

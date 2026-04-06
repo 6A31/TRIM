@@ -1,201 +1,89 @@
-# Trim
+# TRIM
+
+[![Download](https://img.shields.io/github/v/release/6A31/TRIM?label=Download&style=flat-square)](https://github.com/6A31/TRIM/releases/latest)
 
 A keyboard-first launcher for Windows and macOS. Think Spotlight, but with AI built in.
 
-Trim sits behind **Ctrl+Space**, gives you a single search bar with an acrylic-style glass UI, and gets out of your way. Search apps, ask Gemini questions with live web results, do math, browse files, and automate your filesystem - all without touching the mouse.
-
-## Features
-
-## Screenshots
-
-Add your screenshots into `assets/screenshots/` with the filenames below.
-
-### App Search
+TRIM sits behind **Ctrl+Space** (Option+Space on Mac), gives you a single search bar with an acrylic glass UI, and gets out of your way.
 
 ![App Search](assets/screenshots/app-search.png)
 
-### AI Chat + Python
-
-![AI Chat](assets/screenshots/ai-chat.png)
-
-### File References
-
-![File References](assets/screenshots/file-references.png)
-
-### Folder Search
-
-![Folder Search](assets/screenshots/folder-search.png)
-
-### Settings
-
-![Settings](assets/screenshots/settings.png)
+## Features
 
 ### App Search
 
-Type anything and Trim instantly searches your installed apps.
+Type anything to instantly search your installed apps. Results rank by launch frequency, so your most-used apps float to the top. Fuzzy matching means `vsc` finds Visual Studio Code.
 
 - **Windows**: Start Menu shortcuts + Microsoft Store / UWP apps
 - **macOS**: `.app` bundles from `/Applications`, `/System/Applications`, and `~/Applications`
 
-Results are ranked by how often you launch them, so your most-used apps float to the top. Fuzzy matching means you can type `vsc` and get Visual Studio Code.
+### AI Chat
 
-### AI Chat (Gemini)
+Prefix with `?` for Gemini Flash or `??` for Gemini Pro. Responses are grounded with live Google Search, render full Markdown with syntax highlighting, LaTeX math, and one-click copy on code blocks.
 
-Prefix with `?` for Gemini Flash or `??` for Gemini Pro. Responses are grounded with live Google Search, so you get current answers instead of stale training data. Conversations persist between toggles - hide the window, bring it back, keep chatting. Backspace the `?` to start a new conversation.
+Conversations persist between toggles — hide the window, bring it back, keep chatting. Backspace the prefix to start fresh.
 
-Responses render full Markdown with syntax-highlighted code blocks, LaTeX math, and one-click copy on every code block.
+![AI Chat](assets/screenshots/ai-chat.png)
 
 ### Python Execution
 
-The AI runs Python code locally when it needs to compute something. Matplotlib plots render inline. Toggle **Force Code** to make the AI always reach for deterministic Python instead of winging it with LLM reasoning - useful for anything involving actual math.
-
-### File Automation
-
-The AI can read, create, edit, and delete files on your system through dedicated tool calls. Every mutating operation shows an inline confirmation prompt with a preview of what's about to change before anything touches disk. Read and list operations run without asking.
+The AI runs Python locally when it needs to compute something. Matplotlib plots render inline. Toggle **Force Code** to make it always reach for deterministic Python instead of LLM reasoning.
 
 ### File References
 
-Type `#` followed by a filename inside any AI query to attach file contents as context. Trim shows an inline file picker as you type, and the selected file gets sent to Gemini. Works with text files, PDFs, and images.
+Type `#` followed by a filename inside any AI query to attach it as context. Works with text files, PDFs, and images.
+
+![File References](assets/screenshots/file-references.png)
+
+### File Automation
+
+The AI can read, create, edit, and delete files through tool calls. Every mutating operation shows a confirmation prompt with a diff preview before anything touches disk.
 
 ### Calculator
 
-`c: 2+2` gives you `4` instantly. Supports trig, roots, logarithms, constants (`pi`, `e`), percentages, and exponentiation. Click the result to copy.
+`c: 2+2` gives you `4` instantly. Supports trig, roots, logarithms, constants, percentages, and exponentiation.
 
 ### Folder Search
 
-`f: report` recursively searches common user paths (Desktop, Documents, Downloads, home) and any custom search paths from settings. On macOS, app folders are also included in search roots. Search is depth-limited and incrementally refined for speed.
+`f: report` recursively searches Desktop, Documents, Downloads, and any custom paths from settings.
 
-### Slash Commands
+![Folder Search](assets/screenshots/folder-search.png)
 
-| Command | What it does |
-|---------|-------------|
-| `/settings` | Open settings panel |
-| `/reload` | Reload the UI |
-| `/clear` | Clear conversation and temp files |
-| `/help` | Show all prefixes and features |
+## Quick Reference
 
-## Prefixes
+| Prefix | Mode | | Key | Action |
+|--------|------|-|-----|--------|
+| *(none)* | App search | | **Ctrl+Space** | Toggle TRIM |
+| `?` | AI Flash | | **Escape** | Hide |
+| `??` | AI Pro | | **Up/Down** | Navigate |
+| `c:` | Calculator | | **Enter** | Execute |
+| `f:` | Folders | | **Tab** | Autocomplete |
+| `cs:` | Solver | | `/` | Commands |
 
-| Prefix | Mode |
-|--------|------|
-| *(none)* | App search |
-| `?` | AI (Gemini Flash) |
-| `??` | AI (Gemini Pro) |
-| `c:` | Calculator |
-| `f:` | File / folder search |
-| `cs:` | Solver |
-| `/` | Commands |
-| `#file` | Attach file to AI query |
+## Install
 
-## Keyboard
-
-| Key | Action |
-|-----|--------|
-| **Ctrl+Space** | Toggle Trim |
-| **Escape** | Hide window |
-| **Arrow Up/Down** | Navigate results |
-| **Enter** | Execute / send |
-| **Tab** | Autocomplete file picker |
-
-## Setup
-
-Requires [Node.js LTS](https://nodejs.org/).
-
-Supported runtime platforms:
-
-- Windows
-- macOS
+Grab the latest installer from [Releases](https://github.com/6A31/TRIM/releases/latest), or build from source:
 
 ```bash
-git clone https://github.com/6A31/trim.git
-cd trim
+git clone https://github.com/6A31/TRIM.git
+cd TRIM
 npm install
-```
-
-Get a [Gemini API key](https://aistudio.google.com/apikey) (free tier is fine), then:
-
-```bash
 npm start
 ```
 
-Type `/settings`, paste your API key, and save. Try `? hello` to make sure it works.
-
-`npm start` automatically kills any previous Trim instance before launching a new one.
-
-For development with visible console output and DevTools:
-
-```bash
-npm run dev
-```
-
-## Kill Stale Instances
-
-```bash
-npm run kill
-```
-
-> `npm run kill` only targets the Trim dev process tracked by Trim's PID file.
+Requires [Node.js LTS](https://nodejs.org/). Get a free [Gemini API key](https://aistudio.google.com/apikey), then type `/settings` to paste it in.
 
 ## Building
 
 ```bash
-npm run build          # Auto-detect platform
-npm run build:win      # Windows (.exe via NSIS)
+npm run build:win      # Windows (.exe installer)
 npm run build:mac      # macOS (.dmg)
 ```
 
-Produces a standalone installer in `dist/` via electron-builder.
-
 ## Stack
 
-- **Electron 41** - frameless acrylic window, context isolation, single instance lock
-- **Vanilla JS + CSS** - no frameworks, just `<script>` tags and CSS custom properties
-- **@google/genai** - Gemini 3 Flash / 3.1 Pro with Google Search grounding + function calling
-- **Platform adapter (Windows/macOS)** - modular app enumeration, icon retrieval, app launching, and search roots per OS
-- **PowerShell (Windows)** - Start Menu/UWP enumeration and `.exe` icon extraction
-- **Python 3** - local code execution sandbox for AI tool use
-
-## Project Structure
-
-```
-src/
-├── main/
-│   ├── main.js             # Entry point, app lifecycle
-│   ├── windowManager.js    # Frameless window, acrylic, show/hide/resize
-│   ├── globalHotkey.js     # Ctrl+Space global shortcut
-│   ├── platformAdapter.js  # OS-specific apps/icons/open/search roots
-│   └── ipcHandlers.js      # All IPC: apps, AI, files, settings, caching
-├── renderer/
-│   ├── index.html
-│   ├── renderer.js         # Boot, event wiring
-│   ├── preload.js          # contextBridge → window.trim.* API
-│   ├── inputRouter.js      # Prefix detection → module dispatch
-│   ├── ui.js               # DOM rendering, keyboard nav, confirmations
-│   ├── modules/
-│   │   ├── appSearch.js    # Fuzzy search + usage ranking
-│   │   ├── aiQuery.js      # Gemini conversations with memory
-│   │   ├── calculator.js   # Safe math eval
-│   │   ├── folderSearch.js # Recursive file/folder search
-│   │   ├── commands.js     # Slash command registry
-│   │   ├── chips.js        # Contextual toggle chips (Force Code)
-│   │   └── settings.js     # Settings panel
-│   └── styles/
-│       ├── main.css        # Dark theme, CSS variables
-│       ├── search.css      # Search bar, results, AI responses
-│       ├── settings.css    # Settings panel
-│       └── animations.css  # Transitions
-└── shared/
-    └── constants.js        # Prefixes, IPC channels, defaults
-
-scripts/
-├── enumerateApps.ps1       # Scan Start Menu + UWP → JSON
-└── extractIcon.ps1         # .exe → base64 PNG icon
-```
-
-## Caching
-
-App lists, icons, and launch frequencies are persisted as JSON in the Electron `userData` directory. On startup, cached results appear instantly while a background refresh runs. Clear everything from Settings → Clear Cache.
+Electron 41, vanilla JS, [@google/genai](https://www.npmjs.com/package/@google/genai) (Gemini 3 Flash / 3.1 Pro), Python 3 for local code execution. No frameworks.
 
 ## License
 
-Trim Non-Commercial No-Derivatives License (see `LICENSE`).
+TRIM Non-Commercial No-Derivatives License (see `LICENSE`).

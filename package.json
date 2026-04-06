@@ -8,14 +8,14 @@
     "dev": "electron .",
     "kill": "node scripts/kill.js",
     "build": "electron-builder",
-    "build:win": "electron-builder --win",
+    "build:win": "set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder --win",
     "build:mac": "electron-builder --mac"
   },
   "keywords": [],
   "author": "6A31",
   "repository": {
     "type": "git",
-    "url": "https://github.com/6A31/trim.git"
+    "url": "https://github.com/6A31/TRIM.git"
   },
   "license": "SEE LICENSE IN LICENSE",
   "type": "commonjs",
@@ -32,7 +32,7 @@
   },
   "build": {
     "appId": "com.trim.launcher",
-    "productName": "Trim",
+    "productName": "TRIM",
     "directories": {
       "output": "dist"
     },

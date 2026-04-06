@@ -23,13 +23,13 @@ register('/help', {
   },
 });
 register('/settings', {
-  description: 'Open Trim settings',
+  description: 'Open TRIM settings',
   icon: 'settings',
   execute: () => window._settings.open(),
 });
 
 register('/reload', {
-  description: 'Reload Trim UI',
+  description: 'Reload TRIM UI',
   icon: 'refresh',
   execute: () => location.reload(),
 });
