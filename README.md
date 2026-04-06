@@ -41,6 +41,8 @@ Type `#` followed by a filename inside any AI query to attach it as context. Wor
 
 The AI can read, create, edit, and delete files through tool calls. Every mutating operation shows a confirmation prompt with a diff preview before anything touches disk.
 
+![File Automation](assets/screenshots/ai-textreplace.png)
+
 ### Calculator
 
 `c: 2+2` gives you `4` instantly. Supports trig, roots, logarithms, constants, percentages, and exponentiation.
