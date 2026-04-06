@@ -27,7 +27,9 @@ Conversations persist between toggles — hide the window, bring it back, keep c
 
 ### Python Execution
 
-The AI runs Python locally when it needs to compute something. Matplotlib plots render inline. Toggle **Force Code** to make it always reach for deterministic Python instead of LLM reasoning.
+More than just plotting — the AI installs packages, runs full scripts, and returns results inline. Toggle **Force Code** to make every query use deterministic Python instead of LLM reasoning, so math, data analysis, and logic get real answers, not approximations.
+
+![Python Execution](assets/screenshots/ai-python.png)
 
 ### File References
 

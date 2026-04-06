@@ -52,7 +52,9 @@
     },
     "nsis": {
       "oneClick": true,
-      "perMachine": false
+      "perMachine": false,
+      "installerIcon": "assets/Trim Logo.ico",
+      "uninstallerIcon": "assets/Trim Logo.ico"
     },
     "extraResources": [
       {
