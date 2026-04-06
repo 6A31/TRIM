@@ -31,9 +31,7 @@ function init() {
   inputOverlayEl = document.getElementById('search-input-overlay');
 
   input.addEventListener('scroll', () => {
-    if (inputOverlayEl) {
-      inputOverlayEl.style.transform = `translateX(${-input.scrollLeft}px)`;
-    }
+    syncOverlayScroll(input);
   });
 
   window.trim.offFolderSearchUpdate();
@@ -304,10 +302,21 @@ function escapeHtml(str) {
 function renderInputOverlay(inputEl) {
   if (!inputOverlayEl) return;
   const raw = inputEl.value || '';
-  if (!raw) {
+  const hasRefs = /#\[[^\]]+\]/.test(raw);
+
+  // No file ref pills — hide overlay, show native input text
+  if (!hasRefs) {
     inputOverlayEl.innerHTML = '';
+    inputOverlayEl.style.display = 'none';
+    inputEl.style.color = '';
+    inputEl.style.webkitTextFillColor = '';
     return;
   }
+
+  // Has file ref pills — show overlay, hide native input text
+  inputOverlayEl.style.display = '';
+  inputEl.style.color = 'transparent';
+  inputEl.style.webkitTextFillColor = 'transparent';
 
   const tokenRegex = /#\[([^\]]+)\]/g;
   let html = '';
@@ -330,13 +339,24 @@ function renderInputOverlay(inputEl) {
   }
 
   inputOverlayEl.innerHTML = html;
-  inputOverlayEl.style.transform = `translateX(${-inputEl.scrollLeft}px)`;
+}
+
+function syncOverlayScroll(inputEl) {
+  if (!inputOverlayEl || inputOverlayEl.style.display === 'none') return;
+  const containerW = inputOverlayEl.parentElement.clientWidth;
+  const contentW = inputOverlayEl.scrollWidth;
+  if (contentW > containerW) {
+    inputOverlayEl.style.transform = `translateX(${containerW - contentW}px)`;
+  } else {
+    inputOverlayEl.style.transform = '';
+  }
 }
 
 function refreshInputDecor(inputEl) {
   pruneStaleFileRefs(inputEl.value || '');
   updateFileRefTooltip(inputEl);
   renderInputOverlay(inputEl);
+  requestAnimationFrame(() => syncOverlayScroll(inputEl));
 }
 
 function isFilePickActive() {

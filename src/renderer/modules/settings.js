@@ -31,15 +31,13 @@ function open() {
 function close() {
   const panel = document.getElementById('settings-panel');
   panel.classList.add('hidden');
+  panel.innerHTML = '';
   isOpen = false;
 
   const input = document.getElementById('search-input');
   input.value = '';
   if (window._inputRouter) window._inputRouter.refreshInputDecor(input);
-  // Reset result chrome so the bar returns to single-line mode (no empty lip).
-  if (window._ui && window._ui.renderResults) {
-    window._ui.renderResults([]);
-  }
+  window._ui.clearResults();
   // Reset mode indicator and hint to default app mode.
   const icon = document.getElementById('search-mode-icon');
   const hint = document.getElementById('search-hint');
@@ -49,7 +47,7 @@ function close() {
   }
   if (hint) hint.textContent = '';
   if (window._chips) window._chips.updateMode('app');
-  input.focus();
+  requestAnimationFrame(() => input.focus());
 }
 
 function escapeAttr(str) {

@@ -23,14 +23,14 @@
 
 #search-input {
   flex: 1;
+  min-width: 0;
   background: none;
   border: none;
   outline: none;
   font-family: var(--font);
   font-size: 16px;
   font-weight: 400;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
+  color: var(--text-primary);
   caret-color: var(--accent);
   letter-spacing: -0.01em;
   position: relative;
@@ -44,9 +44,7 @@
 }
 
 #search-input::selection {
-  background: transparent;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
+  background: var(--accent-glow);
 }
 
 .search-input-wrap {
@@ -55,6 +53,7 @@
   position: relative;
   display: flex;
   align-items: center;
+  overflow: hidden;
 }
 
 #search-input-overlay {
@@ -80,15 +79,14 @@
 .file-ref-pill {
   display: inline-flex;
   align-items: center;
-  margin: 0 0.5px;
-  padding: 0;
-  border-radius: 999px;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
-  background: color-mix(in srgb, var(--accent) 9%, transparent);
-  color: color-mix(in srgb, var(--accent) 82%, #ffffff);
-  font-size: 0.93em;
+  margin: 0 1px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: color-mix(in srgb, var(--accent) 85%, #ffffff);
+  font-size: 0.82em;
   font-weight: 500;
-  line-height: 1.18;
+  line-height: 1.35;
 }
 
 .file-ref-hidden-brackets {
