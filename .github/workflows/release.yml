@@ -17,7 +17,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - run: npx electron-builder --win
+      - run: npx electron-builder --win --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
       - uses: actions/upload-artifact@v4
@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - run: npm run build:mac
+      - run: npx electron-builder --mac --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: mac
