@@ -34,6 +34,7 @@ const DEFAULTS = {
   apiKey: '',
   searchPaths: [],
   cachedFileTypes: [],
+  autoStart: true,
 };
 
 module.exports = { PREFIXES, IPC, DEFAULTS };

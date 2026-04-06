@@ -97,6 +97,14 @@ async function render() {
         value="${escapeAttr(Array.isArray(settings.cachedFileTypes) ? settings.cachedFileTypes.join(', ') : '')}">
       <div class="settings-description">Comma-separated extensions to include in file cache whitelist (for f: and # picker).</div>
     </div>
+    <div class="settings-group settings-toggle-group">
+      <label class="settings-toggle-label" for="settings-autostart">
+        <span>Launch on startup</span>
+        <input type="checkbox" id="settings-autostart" class="settings-toggle" ${settings.autoStart !== false ? 'checked' : ''}>
+        <span class="settings-toggle-slider"></span>
+      </label>
+      <div class="settings-description">If disabled, you'll need to reopen Trim manually to re-enable this.</div>
+    </div>
     <div style="display:flex;align-items:center;margin-top:8px">
       <button class="settings-save" id="settings-save-btn">
         <span class="material-symbols-rounded" style="font-size:16px">save</span>
@@ -134,6 +142,7 @@ async function save() {
   const model = document.getElementById('settings-model').value.trim();
   const modelPro = document.getElementById('settings-model-pro').value.trim();
   const rawTypes = document.getElementById('settings-cached-file-types').value.trim();
+  const autoStart = document.getElementById('settings-autostart').checked;
 
   const cachedFileTypes = rawTypes
     .split(',')
@@ -142,7 +151,7 @@ async function save() {
     .map(t => (t.startsWith('.') ? t : `.${t}`))
     .filter((t, i, arr) => arr.indexOf(t) === i);
 
-  await window.trim.saveSettings({ apiKey, model, modelPro, cachedFileTypes });
+  await window.trim.saveSettings({ apiKey, model, modelPro, cachedFileTypes, autoStart });
 
   const msg = document.getElementById('settings-saved-msg');
   msg.classList.add('show');

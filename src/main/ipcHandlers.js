@@ -1,4 +1,4 @@
-const { shell, nativeImage, safeStorage } = require('electron');
+const { app, shell, nativeImage, safeStorage } = require('electron');
 const { execFile, execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -250,6 +250,11 @@ function loadSettingsSync() {
   } catch {
     return { ...DEFAULTS };
   }
+}
+
+function applyAutoStart(enabled) {
+  if (!app.isPackaged) return;
+  app.setLoginItemSettings({ openAtLogin: enabled });
 }
 
 function saveSettingsWithEncryption(settings) {
@@ -1183,6 +1188,7 @@ function registerHandlers(ipcMain) {
 
   const settings = loadSettingsSync();
   if (settings.apiKey) initAI(settings.apiKey);
+  applyAutoStart(settings.autoStart !== false);
 
   // Load persistent caches
   loadIconCache();
@@ -1361,6 +1367,7 @@ function registerHandlers(ipcMain) {
     }
     saveSettingsWithEncryption(merged);
     if (data.apiKey !== undefined) initAI(data.apiKey);
+    if (data.autoStart !== undefined) applyAutoStart(data.autoStart);
     appCache = null;
     return merged;
   });
