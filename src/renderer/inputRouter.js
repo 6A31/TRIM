@@ -307,7 +307,30 @@ function renderInputOverlay(inputEl) {
   const raw = inputEl.value || '';
   const hasRefs = /#\[[^\]]+\]/.test(raw);
 
-  // No file ref pills — hide overlay, show native input text
+  // Check for conversation follow-up hint: input is just the prefix (e.g. "? " or "?? ")
+  const prefixOnly = /^(\?\??\s*|cs:\s*)$/.test(raw);
+  const inConversation = window._aiQuery && window._aiQuery.isFollowUp();
+
+  if (!hasRefs && !prefixOnly) {
+    inputOverlayEl.innerHTML = '';
+    inputOverlayEl.style.display = 'none';
+    inputEl.style.color = '';
+    inputEl.style.webkitTextFillColor = '';
+    return;
+  }
+
+  // Show conversation hint when input is just the prefix
+  if (!hasRefs && prefixOnly && inConversation) {
+    inputOverlayEl.style.display = '';
+    // Keep native text visible (the prefix) — don't hide it
+    inputEl.style.color = '';
+    inputEl.style.webkitTextFillColor = '';
+    // Invisible spacer matching the prefix width, then muted hint
+    const spacer = `<span style="visibility:hidden">${escapeHtml(raw)}</span>`;
+    inputOverlayEl.innerHTML = `${spacer}<span class="conv-hint">Ask a follow-up or <span class="material-symbols-rounded conv-hint-icon">backspace</span> to exit</span>`;
+    return;
+  }
+
   if (!hasRefs) {
     inputOverlayEl.innerHTML = '';
     inputOverlayEl.style.display = 'none';

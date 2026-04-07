@@ -41,7 +41,7 @@ const DEFAULTS = {
   // Appearance
   accentColor: '#7c8aff',
   appColor: '#1e1e28',
-  transparency: 0.78,
+  transparency: 0.76,
   transparencyType: 'acrylic', // 'acrylic' | 'mica' | 'none'
 };
 

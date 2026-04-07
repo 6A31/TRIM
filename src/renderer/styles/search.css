@@ -76,6 +76,21 @@
   color: var(--text-primary);
 }
 
+.conv-hint {
+  color: var(--text-muted);
+  font-weight: 300;
+  pointer-events: none;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.conv-hint-icon {
+  font-size: 14px;
+  vertical-align: middle;
+}
+
 .file-ref-pill {
   display: inline-flex;
   align-items: center;

@@ -1375,12 +1375,12 @@ function registerHandlers(ipcMain) {
   ipcMain.handle(IPC.SET_BACKGROUND_MATERIAL, async (e, type, appColorHex) => {
     const win = require('electron').BrowserWindow.fromWebContents(e.sender);
     if (!win) return;
-    const allowed = ['acrylic', 'mica', 'none'];
+    const allowed = ['acrylic', 'none'];
     if (!allowed.includes(type)) return;
     if (process.platform === 'win32') {
       win.setBackgroundMaterial(type);
       // Opaque bg for 'none' so the window isn't see-through white;
-      // transparent bg for materials so the acrylic/mica effect shows.
+      // transparent bg for acrylic so the effect shows.
       if (type === 'none') {
         win.setBackgroundColor(appColorHex ? `#FF${appColorHex.replace('#', '')}` : '#FF1E1E28');
       } else {

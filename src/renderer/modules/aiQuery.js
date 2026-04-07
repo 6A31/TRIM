@@ -30,15 +30,15 @@ async function execute(query, mode, forceShow, renderFn) {
     if (result.error) {
       renderFn({ type: 'ai-error', error: result.error });
     } else {
+      // Mark conversation active before rendering so the input hint can show
+      hasConversation = true;
+      conversationPrefix = mode;
       renderFn({
         type: 'ai-response',
         text: result.text,
         sources: result.sources || [],
         codeOutputs: result.codeOutputs || [],
       });
-      // Mark conversation active
-      hasConversation = true;
-      conversationPrefix = mode;
     }
   } catch (err) {
     renderFn({ type: 'ai-error', error: err.message || 'Failed to reach Gemini' });

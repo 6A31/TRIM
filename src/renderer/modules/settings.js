@@ -24,7 +24,7 @@ const APP_COLOR_PRESETS = [
 const APPEARANCE_DEFAULTS = {
   accentColor: '#7c8aff',
   appColor: '#1e1e28',
-  transparency: 0.78,
+  transparency: 0.76,
   transparencyType: 'acrylic',
   showHints: false,
 };
@@ -170,13 +170,13 @@ async function render() {
         min="0" max="100" value="${Math.round((1 - transparency) * 100)}">
     </div>
 
-    <div class="settings-group">
-      <label class="settings-label">Transparency Type</label>
-      <div class="settings-segment" id="settings-transparency-type">
-        <button class="segment-btn${transparencyType === 'acrylic' ? ' active' : ''}" data-value="acrylic">Acrylic</button>
-        <button class="segment-btn${transparencyType === 'mica' ? ' active' : ''}" data-value="mica">Mica</button>
-        <button class="segment-btn${transparencyType === 'none' ? ' active' : ''}" data-value="none">None</button>
-      </div>
+    <div class="settings-group settings-toggle-group">
+      <label class="settings-toggle-label" for="settings-acrylic-toggle">
+        <span>Acrylic</span>
+        <input type="checkbox" id="settings-acrylic-toggle" class="settings-toggle" ${transparencyType === 'acrylic' ? 'checked' : ''}>
+        <span class="settings-toggle-slider"></span>
+      </label>
+      <div class="settings-description">Frosted glass transparency effect (Windows 11)</div>
     </div>
 
     <div class="settings-group settings-toggle-group">
@@ -313,14 +313,13 @@ async function render() {
     previewTransparency(1 - slider.value / 100);
   });
 
-  // Transparency type segment
-  function updateSliderState(type) {
-    const isNone = type === 'none';
-    slider.disabled = isNone;
-    sliderGroup.style.opacity = isNone ? '0.4' : '1';
-    sliderGroup.style.pointerEvents = isNone ? 'none' : '';
-    // When "none", force fully opaque CSS bg
-    if (isNone) {
+  // Acrylic toggle
+  const acrylicToggle = panel.querySelector('#settings-acrylic-toggle');
+  function updateSliderState(isAcrylic) {
+    slider.disabled = !isAcrylic;
+    sliderGroup.style.opacity = isAcrylic ? '1' : '0.4';
+    sliderGroup.style.pointerEvents = isAcrylic ? '' : 'none';
+    if (!isAcrylic) {
       const hex = getSelectedAppColor();
       const { r, g, b } = hexToRgb(hex);
       document.documentElement.style.setProperty('--bg-primary', `rgba(${r},${g},${b},1)`);
@@ -329,16 +328,12 @@ async function render() {
     }
   }
 
-  panel.querySelectorAll('#settings-transparency-type .segment-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      panel.querySelectorAll('#settings-transparency-type .segment-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      updateSliderState(btn.dataset.value);
-    });
+  acrylicToggle.addEventListener('change', () => {
+    updateSliderState(acrylicToggle.checked);
   });
 
-  // Set initial slider state based on current type
-  updateSliderState(transparencyType);
+  // Set initial slider state
+  updateSliderState(transparencyType === 'acrylic');
 
   // Revert to default
   const revertBtn = panel.querySelector('#settings-revert-btn');
@@ -438,8 +433,7 @@ async function save() {
   const accentColor = getSelectedAccent();
   const appColor = getSelectedAppColor();
   const transparency = 1 - Number(document.getElementById('settings-transparency').value) / 100;
-  const activeType = document.querySelector('#settings-transparency-type .segment-btn.active');
-  const transparencyType = activeType ? activeType.dataset.value : 'acrylic';
+  const transparencyType = document.getElementById('settings-acrylic-toggle').checked ? 'acrylic' : 'none';
 
   const cachedFileTypes = rawTypes
     .split(',')
