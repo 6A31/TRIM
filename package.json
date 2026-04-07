@@ -20,7 +20,8 @@
   "license": "SEE LICENSE IN LICENSE",
   "type": "commonjs",
   "dependencies": {
-    "@google/genai": "^1.48.0"
+    "@google/genai": "^1.48.0",
+    "electron-updater": "^6.8.3"
   },
   "devDependencies": {
     "@highlightjs/cdn-assets": "^11.11.1",
@@ -63,6 +64,13 @@
         "filter": [
           "**/*.ps1"
         ]
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "6A31",
+        "repo": "TRIM"
       }
     ]
   }

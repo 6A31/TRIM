@@ -27,6 +27,8 @@ const IPC = {
   CONFIRM_ACTION: 'trim:confirm-action',
   CONFIRM_ACTION_RESPONSE: 'trim:confirm-action-response',
   SET_BACKGROUND_MATERIAL: 'trim:set-background-material',
+  UPDATE_READY: 'trim:update-ready',
+  QUIT_AND_INSTALL: 'trim:quit-and-install',
 };
 
 const DEFAULTS = {

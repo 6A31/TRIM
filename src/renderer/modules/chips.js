@@ -53,6 +53,25 @@ register('switch_ai', {
   },
 });
 
+// Auto-update chip — shown when a new version has been downloaded
+let updateReady = false;
+
+register('update_available', {
+  label: 'Update available',
+  icon: 'download',
+  default: false,
+  modes: ['app'],
+  visibleWhen: () => updateReady,
+  action: () => { window.trim.quitAndInstall(); },
+});
+
+if (window.trim.onUpdateReady) {
+  window.trim.onUpdateReady(() => {
+    updateReady = true;
+    renderChips(chipMode);
+  });
+}
+
 function isActive(id) {
   return activeToggles[id] || false;
 }

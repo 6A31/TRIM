@@ -25,4 +25,6 @@ contextBridge.exposeInMainWorld('trim', {
   onConfirmAction: (cb)       => ipcRenderer.on('trim:confirm-action', (_e, details) => cb(details)),
   respondConfirmAction: (approved) => ipcRenderer.send('trim:confirm-action-response', approved),
   setBackgroundMaterial: (type, appColor) => ipcRenderer.invoke('trim:set-background-material', type, appColor),
+  onUpdateReady: (cb) => ipcRenderer.on('trim:update-ready', cb),
+  quitAndInstall: () => ipcRenderer.send('trim:quit-and-install'),
 });

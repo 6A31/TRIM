@@ -1,6 +1,7 @@
 const { app, ipcMain, screen } = require('electron');
 const windowManager = require('./windowManager');
 const globalHotkey = require('./globalHotkey');
+const updater = require('./updater');
 const { registerHandlers } = require('./ipcHandlers');
 const { IPC } = require('../shared/constants');
 
@@ -30,6 +31,12 @@ if (!gotLock) {
     ipcMain.handle(IPC.GET_DISPLAY_SCALE, () => {
       return screen.getPrimaryDisplay().scaleFactor;
     });
+
+    ipcMain.on(IPC.QUIT_AND_INSTALL, () => {
+      updater.quitAndInstall();
+    });
+
+    updater.init(windowManager.getWindow());
   });
 
   app.on('will-quit', () => {
