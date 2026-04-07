@@ -50,6 +50,15 @@ function close() {
   requestAnimationFrame(() => input.focus());
 }
 
+// Light dismiss: hides the settings panel without clearing the search input.
+// Used when the user starts typing in the search bar while settings is open.
+function dismiss() {
+  const panel = document.getElementById('settings-panel');
+  panel.classList.add('hidden');
+  panel.innerHTML = '';
+  isOpen = false;
+}
+
 function escapeAttr(str) {
   return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -158,4 +167,4 @@ async function save() {
   render();
 }
 
-window._settings = { open, close, isOpen: () => isOpen };
+window._settings = { open, close, dismiss, isOpen: () => isOpen };

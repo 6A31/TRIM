@@ -72,6 +72,11 @@ function init() {
   });
 
   input.addEventListener('input', () => {
+    // Auto-dismiss settings panel when user starts typing in the search bar
+    if (window._settings && window._settings.isOpen()) {
+      window._settings.dismiss();
+    }
+
     const raw = input.value;
     const mode = detectMode(raw);
     updateModeIndicator(raw);
