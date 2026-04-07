@@ -33,3 +33,13 @@ jobs:
       - run: npx electron-builder --mac --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    needs: [build-windows, build-mac]
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh release edit "$TAG" --repo "$REPO" --draft=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}

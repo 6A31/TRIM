@@ -44,12 +44,14 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "assets/Trim Logo.ico"
+      "icon": "assets/Trim Logo.ico",
+      "artifactName": "${productName}-${version}-Windows.${ext}"
     },
     "mac": {
       "target": "dmg",
       "icon": "assets/Trim Logo.icns",
-      "category": "public.app-category.utilities"
+      "category": "public.app-category.utilities",
+      "artifactName": "${productName}-${version}-macOS.${ext}"
     },
     "nsis": {
       "oneClick": true,
