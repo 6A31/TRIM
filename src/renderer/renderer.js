@@ -38,6 +38,9 @@ function boot() {
   });
 
   const input = document.getElementById('search-input');
+  // The initial window-shown event can arrive before this renderer finishes
+  // wiring listeners, so seed the empty-state UI during boot as well.
+  window._ui.clearResults();
   input.focus();
 
   // Clean up on hide (not on show, to avoid old content blinking)
@@ -80,6 +83,8 @@ function boot() {
           window.trim.resizeWindow(Math.min(barH + contentH, 500));
         }
       });
+    } else {
+      window._ui.clearResults();
     }
     input.focus();
   });

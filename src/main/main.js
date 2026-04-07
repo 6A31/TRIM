@@ -1,4 +1,4 @@
-const { app, ipcMain } = require('electron');
+const { app, ipcMain, screen } = require('electron');
 const windowManager = require('./windowManager');
 const globalHotkey = require('./globalHotkey');
 const { registerHandlers } = require('./ipcHandlers');
@@ -25,6 +25,10 @@ if (!gotLock) {
 
     ipcMain.handle('trim:resize-window', (_e, height) => {
       windowManager.resize(height);
+    });
+
+    ipcMain.handle(IPC.GET_DISPLAY_SCALE, () => {
+      return screen.getPrimaryDisplay().scaleFactor;
     });
   });
 

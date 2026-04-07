@@ -1,9 +1,43 @@
 let selectedIndex = -1;
 let currentResults = [];
 const MAX_VISIBLE = 8;
+const HOTFIX_SCALE_FACTOR = 1;
+let hotfixSettings = { showHints: false };
+let displayScaleFactor = window.devicePixelRatio || null;
 
 function init() {
   document.addEventListener('keydown', handleKeyboard);
+  void loadHotfixContext();
+}
+
+async function loadHotfixContext() {
+  try {
+    const [settings, scaleFactor] = await Promise.all([
+      window.trim.loadSettings(),
+      window.trim.getDisplayScale(),
+    ]);
+    hotfixSettings = { ...hotfixSettings, ...(settings || {}) };
+    displayScaleFactor = Number(scaleFactor);
+  } catch {
+    hotfixSettings = { ...hotfixSettings, showHints: false };
+    displayScaleFactor = window.devicePixelRatio || null;
+  }
+}
+
+// HOTFIX: Placeholder rows are only needed to avoid the broken empty-state layout
+// at 100% Windows scaling. A future settings toggle can force these hints on by
+// setting showHints=true, without changing the rest of the renderer flow.
+function shouldShowHintRows() {
+  if (hotfixSettings.showHints) return true;
+  const scale = Number(displayScaleFactor || window.devicePixelRatio || 0);
+  return scale === HOTFIX_SCALE_FACTOR;
+}
+
+function getCurrentModeForHints(rawInput) {
+  if (window._inputRouter && typeof window._inputRouter.detectMode === 'function') {
+    return window._inputRouter.detectMode(rawInput || '');
+  }
+  return 'app';
 }
 
 function handleKeyboard(e) {
@@ -138,6 +172,163 @@ function getResultsKey(results) {
   return results.map(r => `${r.type}:${r.name || r.title || ''}:${r.target || r.path || ''}`).join('\n');
 }
 
+function getPlaceholderKey(mode, kind, placeholder) {
+  return `placeholder:${mode}:${kind}:${placeholder.icon}:${placeholder.title}:${placeholder.subtitle}`;
+}
+
+function getPlaceholderResult(mode, kind) {
+  if (kind === 'empty') {
+    if (mode === 'ai') {
+      return {
+        type: 'placeholder',
+        icon: 'auto_awesome',
+        title: 'Ask Gemini Flash',
+        subtitle: 'Type your prompt, then press Enter',
+      };
+    }
+
+    if (mode === 'ai_pro') {
+      return {
+        type: 'placeholder',
+        icon: 'auto_awesome',
+        title: 'Ask Gemini Pro',
+        subtitle: 'Type your prompt, then press Enter',
+      };
+    }
+
+    if (mode === 'calc') {
+      return {
+        type: 'placeholder',
+        icon: 'calculate',
+        title: 'Enter an expression',
+        subtitle: 'Try c: 2+2, c: sqrt(81), or c: sin(pi/2)',
+      };
+    }
+
+    if (mode === 'solve') {
+      return {
+        type: 'placeholder',
+        icon: 'function',
+        title: 'Solve a math problem',
+        subtitle: 'Type the problem after cs:, then press Enter',
+      };
+    }
+
+    if (mode === 'folder') {
+      return {
+        type: 'placeholder',
+        icon: 'folder_open',
+        title: 'Search your files and folders',
+        subtitle: 'Type after f: to start browsing matches',
+      };
+    }
+
+    if (mode === 'command') {
+      return {
+        type: 'placeholder',
+        icon: 'terminal',
+        title: 'Run a command',
+        subtitle: 'Type after / to filter available commands',
+      };
+    }
+
+    return {
+      type: 'placeholder',
+      icon: 'search',
+      title: 'Start typing to search',
+      subtitle: 'Apps, folders, commands, and more. Type /help for tips',
+    };
+  }
+
+  if (mode === 'ai') {
+    return {
+      type: 'placeholder',
+      icon: 'auto_awesome',
+      title: 'Press Enter to ask Gemini Flash',
+      subtitle: 'AI queries do not show inline results while you type',
+    };
+  }
+
+  if (mode === 'ai_pro') {
+    return {
+      type: 'placeholder',
+      icon: 'auto_awesome',
+      title: 'Press Enter to ask Gemini Pro',
+      subtitle: 'AI queries do not show inline results while you type',
+    };
+  }
+
+  if (mode === 'calc') {
+    return {
+      type: 'placeholder',
+      icon: 'calculate',
+      title: 'Expression not ready',
+      subtitle: 'Check for missing operators, brackets, or function arguments',
+    };
+  }
+
+  if (mode === 'solve') {
+    return {
+      type: 'placeholder',
+      icon: 'function',
+      title: 'Press Enter to solve',
+      subtitle: 'Finish the problem statement, then send it to AI',
+    };
+  }
+
+  return {
+    type: 'placeholder',
+    icon: 'search_off',
+    title: 'No results found',
+    subtitle: 'Try a different query',
+  };
+}
+
+// HOTFIX: This helper isolates the fake-row workaround so the main result
+// rendering flow stays unchanged and the future showHints toggle only needs to
+// affect shouldShowHintRows().
+function renderPlaceholderState(kind, rawInput = '') {
+  if (!shouldShowHintRows()) {
+    lastResultsKey = '';
+    currentResults = [];
+    selectedIndex = -1;
+    const container = document.getElementById('results-container');
+    container.innerHTML = '';
+    container.classList.add('hidden');
+    document.getElementById('search-bar').classList.remove('has-results');
+    window.trim.resizeWindow(getBarHeight());
+    return;
+  }
+
+  const mode = getCurrentModeForHints(rawInput);
+  const placeholderResult = getPlaceholderResult(mode, kind);
+  const placeholderKey = getPlaceholderKey(mode, kind, placeholderResult);
+  const container = document.getElementById('results-container');
+  const needsRender =
+    lastResultsKey !== placeholderKey ||
+    container.childElementCount === 0 ||
+    !container.firstElementChild ||
+    !container.firstElementChild.classList.contains('result-placeholder');
+
+  currentResults = [];
+  selectedIndex = -1;
+  if (needsRender) {
+    const placeholder = createResultElement(placeholderResult);
+    placeholder.classList.add('result-placeholder');
+    placeholder.setAttribute('aria-hidden', 'true');
+    container.replaceChildren(placeholder);
+  }
+  lastResultsKey = placeholderKey;
+  container.classList.remove('hidden');
+  document.getElementById('search-bar').classList.add('has-results');
+
+  requestAnimationFrame(() => {
+    const barH = getBarHeight();
+    const resultsH = container.scrollHeight;
+    window.trim.resizeWindow(barH + resultsH + 2);
+  });
+}
+
 async function renderResults(results) {
   const container = document.getElementById('results-container');
   const aiContainer = document.getElementById('ai-response-container');
@@ -151,11 +342,8 @@ async function renderResults(results) {
   if (window._chips) window._chips.setResultsCount(results.length);
 
   if (results.length === 0) {
-    lastResultsKey = '';
-    container.innerHTML = '';
-    container.classList.add('hidden');
-    document.getElementById('search-bar').classList.remove('has-results');
-    window.trim.resizeWindow(getBarHeight());
+    const rawInput = document.getElementById('search-input').value || '';
+    renderPlaceholderState(rawInput.trim() ? 'no-results' : 'empty', rawInput);
     return;
   }
 
@@ -524,17 +712,14 @@ function postProcessCodeBlocks(container) {
 }
 
 function clearResults() {
-  lastResultsKey = '';
-  document.getElementById('results-container').innerHTML = '';
-  document.getElementById('results-container').classList.remove('hidden');
+  const resultsContainer = document.getElementById('results-container');
+  resultsContainer.classList.remove('hidden');
   document.getElementById('ai-response-container').innerHTML = '';
   document.getElementById('ai-response-container').classList.add('hidden');
   document.getElementById('settings-panel').classList.add('hidden');
-  document.getElementById('search-bar').classList.remove('has-results');
-  currentResults = [];
-  selectedIndex = -1;
   if (window._chips) window._chips.setResultsCount(0);
-  window.trim.resizeWindow(getBarHeight());
+  const rawInput = document.getElementById('search-input').value || '';
+  renderPlaceholderState('empty', rawInput);
   // Clear conversation history
   if (window._aiQuery) window._aiQuery.clearConversation();
 }
@@ -647,7 +832,6 @@ function showConfirmation(details) {
 function restoreAIArea() {
   const rc = document.getElementById('results-container');
   const aiContainer = document.getElementById('ai-response-container');
-  rc.innerHTML = '';
   rc.classList.add('hidden');
   // If there's AI content, show it again
   if (aiContainer.innerHTML) {
@@ -658,8 +842,8 @@ function restoreAIArea() {
       window.trim.resizeWindow(Math.min(h, 500));
     });
   } else {
-    document.getElementById('search-bar').classList.remove('has-results');
-    window.trim.resizeWindow(getBarHeight());
+    const rawInput = document.getElementById('search-input').value || '';
+    renderPlaceholderState(rawInput.trim() ? 'no-results' : 'empty', rawInput);
   }
 }
 
@@ -669,4 +853,4 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-window._ui = { init, renderResults, showAILoading, updateAIStatus, renderAIResponse, clearResults, restoreAIArea, showConfirmation };
+window._ui = { init, renderResults, showAILoading, updateAIStatus, renderAIResponse, clearResults, restoreAIArea, showConfirmation, loadHotfixContext };

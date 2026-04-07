@@ -202,6 +202,35 @@
   background: var(--bg-selected);
 }
 
+/* HOTFIX: Placeholder rows preserve the stable "results visible" layout path on 100% scaling. */
+.result-placeholder {
+  cursor: default;
+  pointer-events: none;
+}
+
+.result-placeholder:hover,
+.result-placeholder.selected {
+  background: transparent;
+}
+
+.result-placeholder .result-icon {
+  background: transparent;
+}
+
+.result-placeholder .material-symbols-rounded {
+  color: var(--text-muted);
+}
+
+.result-placeholder .result-title,
+.result-placeholder .result-subtitle {
+  color: var(--text-muted);
+}
+
+.result-placeholder .result-badge,
+.result-placeholder .result-shortcut {
+  display: none;
+}
+
 .result-icon {
   width: 32px;
   height: 32px;

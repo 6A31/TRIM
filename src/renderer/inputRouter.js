@@ -114,16 +114,14 @@ function init() {
         filePickActive = false;
         activeFilePickRequestId = null;
         window._ui.restoreAIArea();
+        return;
       }
 
-      // Clear any stale results from partial prefix typing
-      const rc = document.getElementById('results-container');
-      if (rc.innerHTML && !rc.classList.contains('hidden')) {
-        rc.innerHTML = '';
-        rc.classList.add('hidden');
-        document.getElementById('search-bar').classList.remove('has-results');
-        window.trim.resizeWindow(document.getElementById('search-bar').offsetHeight);
-      }
+      // HOTFIX: Keep AI-prefix typing on the shared empty-state helper so the
+      // 100%-scale placeholder row can prevent the broken collapsed layout.
+      // restoreAIArea preserves existing AI output and only falls back to hints
+      // when there is no active AI content to show.
+      window._ui.restoreAIArea();
       return;
     }
     filePickActive = false;

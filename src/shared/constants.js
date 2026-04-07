@@ -12,6 +12,7 @@ const IPC = {
   GET_ICON: 'trim:get-icon',
   OPEN_APP: 'trim:open-app',
   GET_USAGE: 'trim:get-usage',
+  GET_DISPLAY_SCALE: 'trim:get-display-scale',
   AI_QUERY: 'trim:ai-query',
   AI_STATUS: 'trim:ai-status',
   SEARCH_FOLDERS: 'trim:search-folders',
@@ -35,6 +36,8 @@ const DEFAULTS = {
   searchPaths: [],
   cachedFileTypes: [],
   autoStart: true,
+  // Hotfix override for placeholder hint rows; the settings UI can expose this later.
+  showHints: false,
 };
 
 module.exports = { PREFIXES, IPC, DEFAULTS };

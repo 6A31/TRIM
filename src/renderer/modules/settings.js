@@ -150,6 +150,7 @@ async function save() {
     .filter((t, i, arr) => arr.indexOf(t) === i);
 
   await window.trim.saveSettings({ apiKey, model, modelPro, cachedFileTypes, autoStart });
+  if (window._ui && window._ui.loadHotfixContext) await window._ui.loadHotfixContext();
 
   const msg = document.getElementById('settings-saved-msg');
   msg.classList.add('show');
