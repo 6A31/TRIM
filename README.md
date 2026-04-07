@@ -1,6 +1,8 @@
 # TRIM
 
-[![Download](https://img.shields.io/github/v/release/6A31/TRIM?label=Download&style=flat-square)](https://github.com/6A31/TRIM/releases/latest)
+[![Download](https://img.shields.io/github/v/release/6A31/TRIM?label=Download&style=for-the-badge)](https://github.com/6A31/TRIM/releases/latest)
+[![Windows](https://img.shields.io/badge/Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/6A31/TRIM/releases/latest/download/TRIM-Setup-1.2.0.exe)
+[![macOS](https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/6A31/TRIM/releases/latest)
 
 A keyboard-first launcher for Windows and macOS. Think Spotlight, but with AI built in.
 
