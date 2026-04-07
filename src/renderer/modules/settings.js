@@ -165,9 +165,9 @@ async function render() {
     </div>
 
     <div class="settings-group">
-      <label class="settings-label">Transparency <span class="settings-value-label" id="transparency-value">${Math.round(transparency * 100)}%</span></label>
+      <label class="settings-label">Transparency <span class="settings-value-label" id="transparency-value">${Math.round((1 - transparency) * 100)}%</span></label>
       <input type="range" class="settings-slider" id="settings-transparency"
-        min="0" max="100" value="${Math.round(transparency * 100)}">
+        min="0" max="100" value="${Math.round((1 - transparency) * 100)}">
     </div>
 
     <div class="settings-group">
@@ -305,11 +305,11 @@ async function render() {
     previewAppColor(e.target.value);
   });
 
-  // Transparency slider
+  // Transparency slider (slider value = transparency %, stored value = opacity)
   const slider = panel.querySelector('#settings-transparency');
   slider.addEventListener('input', () => {
     document.getElementById('transparency-value').textContent = `${slider.value}%`;
-    previewTransparency(slider.value / 100);
+    previewTransparency(1 - slider.value / 100);
   });
 
   // Transparency type segment
@@ -367,7 +367,7 @@ function previewAccent(color) {
 }
 
 function previewAppColor(hex) {
-  const t = Number(document.getElementById('settings-transparency').value) / 100;
+  const t = 1 - Number(document.getElementById('settings-transparency').value) / 100;
   const { r, g, b } = hexToRgb(hex);
   document.documentElement.style.setProperty('--bg-primary', `rgba(${r},${g},${b},${t})`);
   document.documentElement.style.setProperty('--bg-secondary', `rgba(${Math.min(r+15,255)},${Math.min(g+15,255)},${Math.min(b+18,255)},0.50)`);
@@ -415,7 +415,7 @@ async function save() {
 
   const accentColor = getSelectedAccent();
   const appColor = getSelectedAppColor();
-  const transparency = Number(document.getElementById('settings-transparency').value) / 100;
+  const transparency = 1 - Number(document.getElementById('settings-transparency').value) / 100;
   const activeType = document.querySelector('#settings-transparency-type .segment-btn.active');
   const transparencyType = activeType ? activeType.dataset.value : 'acrylic';
 

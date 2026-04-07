@@ -1373,12 +1373,16 @@ function registerHandlers(ipcMain) {
   });
 
   ipcMain.handle(IPC.SET_BACKGROUND_MATERIAL, async (e, type) => {
-    if (process.platform !== 'win32') return;
     const win = require('electron').BrowserWindow.fromWebContents(e.sender);
     if (!win) return;
     const allowed = ['acrylic', 'mica', 'none'];
     if (!allowed.includes(type)) return;
-    win.setBackgroundMaterial(type);
+    if (process.platform === 'win32') {
+      win.setBackgroundMaterial(type);
+    } else if (process.platform === 'darwin') {
+      // macOS: acrylic/mica → vibrancy, none → remove vibrancy
+      win.setVibrancy(type === 'none' ? null : 'under-window');
+    }
   });
 
   ipcMain.handle(IPC.CLEANUP, async () => {
