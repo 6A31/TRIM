@@ -26,6 +26,7 @@ const IPC = {
   GET_CACHE_SIZE: 'trim:get-cache-size',
   CONFIRM_ACTION: 'trim:confirm-action',
   CONFIRM_ACTION_RESPONSE: 'trim:confirm-action-response',
+  SET_BACKGROUND_MATERIAL: 'trim:set-background-material',
 };
 
 const DEFAULTS = {
@@ -36,8 +37,12 @@ const DEFAULTS = {
   searchPaths: [],
   cachedFileTypes: [],
   autoStart: true,
-  // Hotfix override for placeholder hint rows; the settings UI can expose this later.
   showHints: false,
+  // Appearance
+  accentColor: '#7c8aff',
+  appColor: '#1e1e28',
+  transparency: 0.78,
+  transparencyType: 'acrylic', // 'acrylic' | 'mica' | 'none'
 };
 
 module.exports = { PREFIXES, IPC, DEFAULTS };

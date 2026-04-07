@@ -31,6 +31,8 @@ function boot() {
   try { window._chips.init(); } catch (e) { console.error('chips init:', e); }
   window._ui.init();
   window._inputRouter.init();
+  // Apply saved appearance (accent, app color, transparency) from settings
+  if (window._settings && window._settings.applyOnBoot) window._settings.applyOnBoot();
 
   // Listen for file operation confirmations from main process
   window.trim.onConfirmAction((details) => {

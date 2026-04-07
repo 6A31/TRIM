@@ -1372,6 +1372,15 @@ function registerHandlers(ipcMain) {
     return merged;
   });
 
+  ipcMain.handle(IPC.SET_BACKGROUND_MATERIAL, async (e, type) => {
+    if (process.platform !== 'win32') return;
+    const win = require('electron').BrowserWindow.fromWebContents(e.sender);
+    if (!win) return;
+    const allowed = ['acrylic', 'mica', 'none'];
+    if (!allowed.includes(type)) return;
+    win.setBackgroundMaterial(type);
+  });
+
   ipcMain.handle(IPC.CLEANUP, async () => {
     chatHistory = null;
     cleanupOrphanedTempDirs();

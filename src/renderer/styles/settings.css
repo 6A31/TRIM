@@ -36,6 +36,25 @@
   color: var(--text-primary);
 }
 
+/* ── Section titles ── */
+.settings-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 14px;
+}
+
+.settings-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 16px 0;
+}
+
 .settings-group {
   margin-bottom: 18px;
 }
@@ -48,6 +67,14 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 8px;
+}
+
+.settings-value-label {
+  font-weight: 400;
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: 0;
+  margin-left: 4px;
 }
 
 .settings-input {
@@ -73,11 +100,161 @@
   margin-top: 4px;
 }
 
+/* ── Color swatches ── */
+.swatch-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+  position: relative;
+  padding: 0;
+}
+
+.swatch:hover {
+  transform: scale(1.12);
+}
+
+.swatch.active {
+  border-color: #fff;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.2);
+}
+
+.swatch-custom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  overflow: hidden;
+}
+
+.swatch-custom input[type="color"] {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* ── Slider ── */
+.settings-slider {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-secondary);
+  outline: none;
+}
+
+.settings-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  transition: transform 0.1s;
+}
+
+.settings-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+/* ── Segment control ── */
+.settings-segment {
+  display: flex;
+  gap: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.segment-btn {
+  flex: 1;
+  padding: 7px 0;
+  border: none;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.segment-btn:not(:last-child) {
+  border-right: 1px solid var(--border);
+}
+
+.segment-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.segment-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ── Revert button ── */
+.settings-appearance-actions {
+  margin-bottom: 4px;
+}
+
+.settings-revert-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.settings-revert-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.settings-revert-btn.hidden {
+  display: none;
+}
+
+/* ── Save bar ── */
+.settings-save-bar {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+  margin-bottom: 8px;
+  position: sticky;
+  bottom: 0;
+  padding: 10px 0 6px;
+  z-index: 1;
+}
+
 .settings-save {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 20px;
+  padding: 8px 24px;
   border-radius: var(--radius-sm);
   border: none;
   background: var(--accent);
@@ -86,7 +263,7 @@
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.15s, transform 0.1s;
+  transition: opacity 0.15s, transform 0.1s, background 0.2s;
 }
 
 .settings-save:hover {
@@ -95,6 +272,10 @@
 
 .settings-save:active {
   transform: scale(0.97);
+}
+
+.settings-save.saved {
+  background: #4ae08a;
 }
 
 .settings-saved {

@@ -24,4 +24,5 @@ contextBridge.exposeInMainWorld('trim', {
   getCacheSize:  ()           => ipcRenderer.invoke('trim:get-cache-size'),
   onConfirmAction: (cb)       => ipcRenderer.on('trim:confirm-action', (_e, details) => cb(details)),
   respondConfirmAction: (approved) => ipcRenderer.send('trim:confirm-action-response', approved),
+  setBackgroundMaterial: (type) => ipcRenderer.invoke('trim:set-background-material', type),
 });
