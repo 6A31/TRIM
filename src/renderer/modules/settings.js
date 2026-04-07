@@ -307,18 +307,38 @@ async function render() {
 
   // Transparency slider (slider value = transparency %, stored value = opacity)
   const slider = panel.querySelector('#settings-transparency');
+  const sliderGroup = slider.closest('.settings-group');
   slider.addEventListener('input', () => {
     document.getElementById('transparency-value').textContent = `${slider.value}%`;
     previewTransparency(1 - slider.value / 100);
   });
 
   // Transparency type segment
+  function updateSliderState(type) {
+    const isNone = type === 'none';
+    slider.disabled = isNone;
+    sliderGroup.style.opacity = isNone ? '0.4' : '1';
+    sliderGroup.style.pointerEvents = isNone ? 'none' : '';
+    // When "none", force fully opaque CSS bg
+    if (isNone) {
+      const hex = getSelectedAppColor();
+      const { r, g, b } = hexToRgb(hex);
+      document.documentElement.style.setProperty('--bg-primary', `rgba(${r},${g},${b},1)`);
+    } else {
+      previewTransparency(1 - slider.value / 100);
+    }
+  }
+
   panel.querySelectorAll('#settings-transparency-type .segment-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       panel.querySelectorAll('#settings-transparency-type .segment-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+      updateSliderState(btn.dataset.value);
     });
   });
+
+  // Set initial slider state based on current type
+  updateSliderState(transparencyType);
 
   // Revert to default
   const revertBtn = panel.querySelector('#settings-revert-btn');
@@ -327,7 +347,7 @@ async function render() {
       // Apply visual defaults immediately
       applyAppearance(APPEARANCE_DEFAULTS);
       if (window.trim.setBackgroundMaterial) {
-        window.trim.setBackgroundMaterial(APPEARANCE_DEFAULTS.transparencyType);
+        window.trim.setBackgroundMaterial(APPEARANCE_DEFAULTS.transparencyType, APPEARANCE_DEFAULTS.appColor);
       }
       // Persist defaults
       await window.trim.saveSettings({ ...APPEARANCE_DEFAULTS });
@@ -396,7 +416,9 @@ function hexToGlow(hex) {
 function applyAppearance(s) {
   const accent = s.accentColor || APPEARANCE_DEFAULTS.accentColor;
   const appColor = s.appColor || APPEARANCE_DEFAULTS.appColor;
-  const t = s.transparency ?? APPEARANCE_DEFAULTS.transparency;
+  const type = s.transparencyType || APPEARANCE_DEFAULTS.transparencyType;
+  // When "none", ignore transparency slider — force fully opaque
+  const t = type === 'none' ? 1 : (s.transparency ?? APPEARANCE_DEFAULTS.transparency);
   const { r, g, b } = hexToRgb(appColor);
 
   document.documentElement.style.setProperty('--accent', accent);
@@ -432,11 +454,11 @@ async function save() {
   });
 
   // Apply appearance immediately
-  applyAppearance({ accentColor, appColor, transparency });
+  applyAppearance({ accentColor, appColor, transparency, transparencyType });
 
   // Apply transparency type (acrylic/mica/none) via main process
   if (window.trim.setBackgroundMaterial) {
-    window.trim.setBackgroundMaterial(transparencyType);
+    window.trim.setBackgroundMaterial(transparencyType, appColor);
   }
 
   if (window._ui && window._ui.loadHotfixContext) await window._ui.loadHotfixContext();
@@ -461,8 +483,9 @@ async function applyOnBoot() {
     }
     // Apply saved transparency type
     const type = settings.transparencyType || APPEARANCE_DEFAULTS.transparencyType;
+    const appColor = settings.appColor || APPEARANCE_DEFAULTS.appColor;
     if (type !== 'acrylic' && window.trim.setBackgroundMaterial) {
-      window.trim.setBackgroundMaterial(type);
+      window.trim.setBackgroundMaterial(type, appColor);
     }
   } catch { /* defaults are fine from CSS */ }
 }

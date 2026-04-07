@@ -1372,15 +1372,21 @@ function registerHandlers(ipcMain) {
     return merged;
   });
 
-  ipcMain.handle(IPC.SET_BACKGROUND_MATERIAL, async (e, type) => {
+  ipcMain.handle(IPC.SET_BACKGROUND_MATERIAL, async (e, type, appColorHex) => {
     const win = require('electron').BrowserWindow.fromWebContents(e.sender);
     if (!win) return;
     const allowed = ['acrylic', 'mica', 'none'];
     if (!allowed.includes(type)) return;
     if (process.platform === 'win32') {
       win.setBackgroundMaterial(type);
+      // Opaque bg for 'none' so the window isn't see-through white;
+      // transparent bg for materials so the acrylic/mica effect shows.
+      if (type === 'none') {
+        win.setBackgroundColor(appColorHex ? `#FF${appColorHex.replace('#', '')}` : '#FF1E1E28');
+      } else {
+        win.setBackgroundColor('#00000000');
+      }
     } else if (process.platform === 'darwin') {
-      // macOS: acrylic/mica → vibrancy, none → remove vibrancy
       win.setVibrancy(type === 'none' ? null : 'under-window');
     }
   });

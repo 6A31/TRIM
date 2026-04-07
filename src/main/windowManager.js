@@ -21,9 +21,10 @@ function create() {
     resizable: false,
     maximizable: false,
     fullscreenable: false,
-    // Dark fallback background avoids bright acrylic flash during show transitions.
-    // Note: Electron uses #AARRGGBB (not CSS #RRGGBBAA). Omit alpha since transparent: false.
-    backgroundColor: '#1E1E28',
+    // Electron recommends transparent backgroundColor for background material windows.
+    // Format: #AARRGGBB. The acrylic/mica material renders behind; CSS alpha controls tint.
+    // No flash risk: window is shown only on ready-to-show after HTML renders.
+    backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(__dirname, '..', 'renderer', 'preload.js'),
       contextIsolation: true,
