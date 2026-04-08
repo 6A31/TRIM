@@ -7,4 +7,5 @@ Thumbs.db
 .trim-dev.pid
 .env
 .env.*
+.vscode/
 RELEASING.md

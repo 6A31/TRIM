@@ -38,6 +38,41 @@ function getVariables(expr) {
   return vars;
 }
 
+// --- Expression preprocessing for nerdamer compatibility ---
+// Nerdamer uses 'log' for natural logarithm. Our calculator convention:
+//   ln(x)  = natural log  → nerdamer: log(x)
+//   log(x) = base-10 log  → nerdamer: log(x)/log(10)
+function prepareForNerdamer(expr) {
+  let result = '';
+  let i = 0;
+  while (i < expr.length) {
+    const prevIsAlnum = i > 0 && /[a-zA-Z0-9_]/.test(expr[i - 1]);
+    if (!prevIsAlnum && expr.slice(i, i + 3) === 'ln(') {
+      result += 'log(';
+      i += 3;
+    } else if (!prevIsAlnum && expr.slice(i, i + 4) === 'log(') {
+      const closeIdx = findClosingParen(expr, i + 4);
+      if (closeIdx === -1) { result += expr[i]; i++; continue; }
+      const inner = expr.slice(i + 4, closeIdx);
+      result += `(log(${inner})/log(10))`;
+      i = closeIdx + 1;
+    } else {
+      result += expr[i];
+      i++;
+    }
+  }
+  return result;
+}
+
+function findClosingParen(str, start) {
+  let depth = 1;
+  for (let i = start; i < str.length; i++) {
+    if (str[i] === '(') depth++;
+    if (str[i] === ')') { depth--; if (depth === 0) return i; }
+  }
+  return -1;
+}
+
 // --- Internal debounce for heavy operations ---
 let heavyTimer = null;
 let lastHeavyResult = null;
@@ -133,13 +168,13 @@ function handleHeavy(detected) {
 
 function handleSolve(detected) {
   const expr = detected.expr;
-  // Nerdamer can handle equations with = sign
+  const nExpr = prepareForNerdamer(expr);
   const vars = getVariables(expr);
   const solveVar = vars[0] || 'x';
 
   let solutions;
   try {
-    solutions = nerdamer.solve(expr, solveVar);
+    solutions = nerdamer.solve(nExpr, solveVar);
   } catch {
     return [];
   }
@@ -161,7 +196,7 @@ function handleSolve(detected) {
   const mainHtml = renderKaTeX(mainTex, true);
 
   // Build steps
-  const steps = buildSolveSteps(expr, solveVar, solArray);
+  const steps = buildSolveSteps(nExpr, solveVar, solArray);
 
   const copyText = solTexParts.length === 1
     ? `${solveVar} = ${solArray[0]}`
@@ -177,22 +212,22 @@ function handleSolve(detected) {
   }];
 }
 
-function buildSolveSteps(expr, variable, solutions) {
+function buildSolveSteps(nExpr, variable, solutions) {
   const steps = [];
 
   // Step 1: Original equation
   try {
-    const origTex = expr.includes('=')
-      ? expr.split('=').map(s => { try { return nerdamer(s.trim()).toTeX(); } catch { return s.trim(); } }).join(' = ')
-      : nerdamer(expr).toTeX() + ' = 0';
+    const origTex = nExpr.includes('=')
+      ? nExpr.split('=').map(s => { try { return nerdamer(s.trim()).toTeX(); } catch { return s.trim(); } }).join(' = ')
+      : nerdamer(nExpr).toTeX() + ' = 0';
     steps.push({ label: 'Given', tex: origTex });
   } catch {
-    steps.push({ label: 'Given', tex: expr });
+    steps.push({ label: 'Given', tex: nExpr });
   }
 
   // Step 2: Simplify/rearrange if equation form
-  if (expr.includes('=')) {
-    const [lhs, rhs] = expr.split('=').map(s => s.trim());
+  if (nExpr.includes('=')) {
+    const [lhs, rhs] = nExpr.split('=').map(s => s.trim());
     try {
       const simplified = nerdamer(`${lhs}-(${rhs})`).toTeX();
       steps.push({ label: 'Rearranged', tex: `${simplified} = 0` });
@@ -218,24 +253,26 @@ function handleSymbolic(detected) {
   const { op, expr } = detected;
   const vars = getVariables(expr);
   const mainVar = vars[0] || 'x';
+  const nExpr = prepareForNerdamer(expr);
 
   let result;
   try {
     if (op === 'diff') {
-      result = nerdamer(`diff(${expr}, ${mainVar})`);
+      result = nerdamer(`diff(${nExpr}, ${mainVar})`);
     } else if (op === 'integrate') {
       // Strip trailing dx, dt, etc.
-      const cleanExpr = expr.replace(/\s+d[a-z]$/i, '').trim();
+      const cleanExpr = nExpr.replace(new RegExp(`\\s*d${mainVar}$`), '').trim();
       result = nerdamer(`integrate(${cleanExpr}, ${mainVar})`);
     } else {
-      result = nerdamer(`${op}(${expr})`);
+      result = nerdamer(`${op}(${nExpr})`);
     }
   } catch {
     return [];
   }
 
   const resultTex = result.toTeX();
-  const inputTex = nerdamer(expr).toTeX ? nerdamer(expr).toTeX() : expr;
+  let inputTex;
+  try { inputTex = nerdamer(nExpr).toTeX(); } catch { inputTex = expr; }
 
   // Build display with operation notation
   let displayTex;
@@ -295,6 +332,7 @@ function handlePlot(detected) {
 }
 
 function buildPlot2D(expr, variable) {
+  const nExpr = prepareForNerdamer(expr);
   // Generate data points
   const xMin = -10, xMax = 10, steps = 500;
   const xVals = [], yVals = [];
@@ -303,8 +341,7 @@ function buildPlot2D(expr, variable) {
   for (let i = 0; i <= steps; i++) {
     const xVal = xMin + i * step;
     try {
-      const y = nerdamer(expr, { [variable]: xVal }).valueOf();
-      const yNum = typeof y === 'object' ? parseFloat(y.toString()) : Number(y);
+      const yNum = Number(nerdamer(nExpr, { [variable]: xVal }).evaluate().valueOf());
       xVals.push(xVal);
       yVals.push(isFinite(yNum) ? yNum : null);
     } catch {
@@ -315,7 +352,7 @@ function buildPlot2D(expr, variable) {
 
   // Build LaTeX title
   let titleTex = '';
-  try { titleTex = nerdamer(expr).toTeX(); } catch { titleTex = expr; }
+  try { titleTex = nerdamer(nExpr).toTeX(); } catch { titleTex = expr; }
 
   const plotData = [{
     x: xVals,
@@ -339,6 +376,7 @@ function buildPlot2D(expr, variable) {
 }
 
 function buildPlot3D(expr, vars) {
+  const nExpr = prepareForNerdamer(expr);
   const xVar = vars[0], yVar = vars[1];
   const min = -5, max = 5, n = 60;
   const step = (max - min) / n;
@@ -353,8 +391,7 @@ function buildPlot3D(expr, vars) {
     const row = [];
     for (let i = 0; i <= n; i++) {
       try {
-        const z = nerdamer(expr, { [xVar]: xRange[i], [yVar]: yRange[j] }).valueOf();
-        const zNum = typeof z === 'object' ? parseFloat(z.toString()) : Number(z);
+        const zNum = Number(nerdamer(nExpr, { [xVar]: xRange[i], [yVar]: yRange[j] }).evaluate().valueOf());
         row.push(isFinite(zNum) ? zNum : null);
       } catch {
         row.push(null);
@@ -364,7 +401,7 @@ function buildPlot3D(expr, vars) {
   }
 
   let titleTex = '';
-  try { titleTex = nerdamer(expr).toTeX(); } catch { titleTex = expr; }
+  try { titleTex = nerdamer(nExpr).toTeX(); } catch { titleTex = expr; }
 
   const plotData = [{
     z: zData,
