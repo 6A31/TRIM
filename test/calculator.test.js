@@ -1,5 +1,5 @@
 // Calculator verification test suite
-// Uses node:test + node:assert — shows in VS Code Test Explorer
+// Uses node:test + node:assert - shows in VS Code Test Explorer
 // Run: npm test
 
 const { describe, it } = require('node:test');
@@ -10,7 +10,7 @@ require('nerdamer/Solve');
 require('nerdamer/Calculus');
 require('nerdamer/Algebra');
 
-// Import actual calculator code — tests the real implementation
+// Import actual calculator code - tests the real implementation
 const { evaluate, prepareForNerdamer } = require('../src/renderer/modules/calculator');
 
 // ── Test helpers that wrap calculator + nerdamer (like the real app does) ────
@@ -540,7 +540,7 @@ describe('Implicit Multiplication', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Correctness & Safety — must return undefined (not wrong answers)
+// Correctness & Safety - must return undefined (not wrong answers)
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('Error handling: must return undefined', () => {
@@ -596,7 +596,7 @@ describe('Error handling: must return undefined', () => {
     assert.equal(evaluate('10^-400'), 0);
   });
 
-  // Invalid syntax — must NOT produce a number
+  // Invalid syntax - must NOT produce a number
   it('1.2.3 → undefined (multi decimal)', () => {
     assert.equal(evaluate('1.2.3'), undefined);
   });

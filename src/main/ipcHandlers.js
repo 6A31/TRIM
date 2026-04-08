@@ -202,7 +202,7 @@ function getUsageCount(appName) {
 }
 
 function getScriptsPath() {
-  // Prefer extraResources path (real filesystem) — PowerShell can't read from asar archives.
+  // Prefer extraResources path (real filesystem) - PowerShell can't read from asar archives.
   const resourcesPath = path.join(process.resourcesPath, 'scripts');
   if (fs.existsSync(resourcesPath)) return resourcesPath;
   // Dev fallback
@@ -991,7 +991,7 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
         // Send function responses back
         contents.push({ role: 'user', parts: responseParts });
       } else {
-        // Final response — extract text, sources, and any codeExecution inline results
+        // Final response - extract text, sources, and any codeExecution inline results
         const text = response.text || '';
         const grounding = candidate?.groundingMetadata;
         const sources = grounding?.groundingChunks

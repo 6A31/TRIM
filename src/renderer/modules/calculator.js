@@ -97,7 +97,7 @@ function search(expression, onHeavyResult) {
     return handleEvaluate(trimmed);
   }
 
-  // Heavy operations — show loading, compute async
+  // Heavy operations - show loading, compute async
   clearTimeout(heavyTimer);
   const gen = ++heavyGeneration;
   heavyTimer = setTimeout(() => {
@@ -560,7 +560,7 @@ function evaluate(expr) {
     const ctx = { tokens, pos: 0 };
     const result = parseExpr(ctx);
     if (ctx.pos < ctx.tokens.length) return undefined;
-    // Never return NaN or Infinity — those are domain errors, not valid results
+    // Never return NaN or Infinity - those are domain errors, not valid results
     if (typeof result !== 'number' || !isFinite(result)) return undefined;
     return result;
   } catch {
@@ -579,7 +579,7 @@ function tokenize(expr) {
       let dots = 0;
       while (i < s.length && ((s[i] >= '0' && s[i] <= '9') || s[i] === '.')) {
         if (s[i] === '.') dots++;
-        if (dots > 1) return null; // e.g. "1.2.3" — invalid number
+        if (dots > 1) return null; // e.g. "1.2.3" - invalid number
         num += s[i++];
       }
       if (i < s.length && (s[i] === 'e' || s[i] === 'E')) {

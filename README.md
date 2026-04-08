@@ -4,9 +4,9 @@
 [![Windows](https://img.shields.io/badge/Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/6A31/TRIM/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/6A31/TRIM/releases/latest)
 
-A keyboard-first launcher for Windows and macOS. Think Spotlight, but with AI built in.
+A launcher for Windows and macOS - kind of like Spotlight, but with AI baked in.
 
-TRIM sits behind **Alt+Space** (customizable in Settings), gives you a single search bar with an acrylic glass UI, and gets out of your way.
+Hit **Alt+Space** (or whatever you remap it to), type what you need, done. Acrylic glass UI, stays out of your way.
 
 ![App Search](assets/screenshots/app-search.png)
 
@@ -14,43 +14,42 @@ TRIM sits behind **Alt+Space** (customizable in Settings), gives you a single se
 
 ### App Search
 
-Type anything to instantly search your installed apps. Results rank by launch frequency, so your most-used apps float to the top. Fuzzy matching means `vsc` finds Visual Studio Code.
+Just start typing to find your apps. Results are sorted by how often you use them, so the stuff you actually open ends up at the top. Fuzzy matching works too - `vsc` finds Visual Studio Code.
 
 - **Windows**: Start Menu shortcuts + Microsoft Store / UWP apps
 - **macOS**: `.app` bundles from `/Applications`, `/System/Applications`, and `~/Applications`
 
 ### AI Chat
 
-Prefix with `?` for Gemini Flash or `??` for Gemini Pro. Responses are grounded with live Google Search, render full Markdown with syntax highlighting, LaTeX math, and one-click copy on code blocks.
+Prefix your query with `?` for Gemini Flash or `??` for Gemini Pro. Answers pull from live Google Search and render Markdown with syntax highlighting, LaTeX math, and copy buttons on code blocks.
 
-Conversations persist between toggles - hide the window, bring it back, keep chatting. Backspace the prefix to start fresh.
+Conversations stick around when you hide the window - bring it back and keep going. Backspace the prefix to start a new chat.
 
 ![AI Chat](assets/screenshots/ai-chat.png)
 
 ### Python Execution
 
-More than just plotting - the AI installs packages, runs full scripts, and returns results inline. Toggle **Force Code** to make every query use deterministic Python instead of LLM reasoning, so math, data analysis, and logic get real answers, not approximations.
+The AI can install packages, run full scripts, and give you results inline - not just plots. There's a **Force Code** toggle that makes every query run actual Python instead of letting the LLM guess, which is great when you want real answers for math or data stuff.
 
-- **Windows builds** bundle a portable Python runtime, so local code execution works even if Python is not installed system-wide.
-- **macOS builds** bundle a portable Python runtime via [python-build-standalone](https://github.com/astral-sh/python-build-standalone).
+Both Windows and macOS builds ship with a portable Python runtime, so everything works out of the box even if you don't have Python installed.
 
 ![Python Execution](assets/screenshots/ai-python.png)
 
 ### File References
 
-Type `#` followed by a filename inside any AI query to attach it as context. Works with text files, PDFs, and images.
+Drop a `#` followed by a filename into any AI query to attach it as context. Text files, PDFs, and images all work.
 
 ![File References](assets/screenshots/file-references.png)
 
 ### File Automation
 
-The AI can read, create, edit, and delete files through tool calls. Every mutating operation shows a confirmation prompt with a diff preview before anything touches disk.
+The AI can read, create, edit, and delete files on your behalf. Anything that actually changes a file shows you a confirmation with a diff first - nothing happens without your say-so.
 
 ![File Automation](assets/screenshots/ai-textreplace.png)
 
 ### Math
 
-`c:` is a full-featured math tool. Type expressions for instant results, equations to solve, or functions to plot - all powered by a local symbolic engine (no AI required).
+`c:` gives you a proper math tool - evaluate, solve, plot. Runs locally on a symbolic engine, no API calls involved.
 
 - `c: 2+2` → instant evaluation
 - `c: x^2-4=0` → symbolic solving with steps
@@ -58,9 +57,9 @@ The AI can read, create, edit, and delete files through tool calls. Every mutati
 - `c: sin(x)` → interactive 2D plot with hover
 - `c: x^2+y^2` → 3D surface plot with rotation
 
-Results render in KaTeX with collapsible step-by-step breakdowns. An **AI Explain** chip is available for optional AI-powered explanations.
+Results render in KaTeX with collapsible step-by-step breakdowns, and there's an **AI Explain** chip if you want a plain-English walkthrough.
 
-When an expression contains variables, the detected variables are shown beneath the result so misspelled function names (e.g. `syn` instead of `sin`) are immediately visible.
+If your expression has variables, they're shown beneath the result - handy for catching typos like `syn` instead of `sin`.
 
 <details>
 <summary><strong>Calculator Function Reference</strong></summary>
@@ -104,8 +103,8 @@ Type any equation with `=` and variables: `c: x^2 - 5x + 6 = 0` → x = 2, x = 3
 
 #### Plotting
 Expressions with variables are plotted automatically:
-- **2D**: `c: sin(x)`, `c: x^2 - 4` — interactive line chart
-- **3D**: `c: x^2 + y^2` — rotatable surface plot
+- **2D**: `c: sin(x)`, `c: x^2 - 4` - interactive line chart
+- **3D**: `c: x^2 + y^2` - rotatable surface plot
 - **Explicit**: `c: plot sin(x)` / `c: graph x^2`
 
 </details>
@@ -116,7 +115,7 @@ Expressions with variables are plotted automatically:
 
 ### Folder Search
 
-`f: report` recursively searches Desktop, Documents, Downloads, and any custom paths from settings.
+`f: report` searches through Desktop, Documents, Downloads (and any extra paths you add in settings).
 
 ![Folder Search](assets/screenshots/folder-search.png)
 
@@ -133,7 +132,7 @@ Expressions with variables are plotted automatically:
 
 ## Install
 
-Grab the latest installer from [Releases](https://github.com/6A31/TRIM/releases/latest), or build from source:
+Download the latest installer from [Releases](https://github.com/6A31/TRIM/releases/latest), or build it yourself:
 
 ```bash
 git clone https://github.com/6A31/TRIM.git
@@ -142,7 +141,7 @@ npm install
 npm start
 ```
 
-Requires [Node.js LTS](https://nodejs.org/). Get a free [Gemini API key](https://aistudio.google.com/apikey), then type `/settings` to paste it in.
+You'll need [Node.js LTS](https://nodejs.org/). For AI features, grab a free [Gemini API key](https://aistudio.google.com/apikey) and paste it in via `/settings`.
 
 ## Building
 
@@ -153,7 +152,7 @@ npm run build:mac      # macOS (.dmg)
 
 ## Stack
 
-Electron 41, vanilla JS, [@google/genai](https://www.npmjs.com/package/@google/genai) (Gemini 3 Flash / 3.1 Pro), bundled Python on Windows / system Python 3 on macOS for local code execution. No frameworks.
+Electron 41, vanilla JS (no frameworks), [@google/genai](https://www.npmjs.com/package/@google/genai) for Gemini 3 Flash / 3.1 Pro, bundled Python for local code execution.
 
 ## License
 

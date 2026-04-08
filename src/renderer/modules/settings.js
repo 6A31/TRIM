@@ -486,7 +486,7 @@ function wireShortcutRecorder(panel, savedShortcut) {
   function showConfirm(accelerator) {
     display.textContent = prettyShortcut(accelerator);
     recorder.classList.add('confirming');
-    hint.innerHTML = `Captured <strong>${prettyShortcut(accelerator)}</strong> — press <strong>Enter</strong> to confirm or <strong>Escape</strong> to cancel.`;
+    hint.innerHTML = `Captured <strong>${prettyShortcut(accelerator)}</strong> - press <strong>Enter</strong> to confirm or <strong>Escape</strong> to cancel.`;
     document.addEventListener('keydown', onConfirmKey, true);
   }
 
@@ -632,7 +632,7 @@ async function save() {
     const ok = await window.trim.updateShortcut(pendingShortcut);
     if (!ok) {
       const hint = document.getElementById('shortcut-hint');
-      if (hint) hint.innerHTML = '<span style="color:#ff6b6b">Shortcut conflict — another app is using it. Try a different combo.</span>';
+      if (hint) hint.innerHTML = '<span style="color:#ff6b6b">Shortcut conflict - another app is using it. Try a different combo.</span>';
       return;
     }
     settingsData.shortcut = pendingShortcut;
