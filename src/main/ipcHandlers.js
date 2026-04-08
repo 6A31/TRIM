@@ -19,6 +19,12 @@ let folderSearchRequestSeq = 0;
 const activeFolderRequests = new Map(); // webContentsId -> requestId
 let platformAdapter = null;
 
+// macOS directories that are huge, contain no user files, and choke the
+// synchronous shallow scan (and slow the deep scan) when enumerated.
+const MACOS_SKIP_DIRS = new Set([
+  'Library', 'System', '.Trash', 'cores', 'private',
+]);
+
 // Common cacheable file types. Users can extend this from settings.
 const DEFAULT_CACHEABLE_FILE_TYPES = new Set([
   '.txt', '.md', '.rtf', '.log', '.csv', '.tsv', '.json', '.jsonl', '.yaml', '.yml', '.toml', '.ini', '.xml',
@@ -315,7 +321,7 @@ function saveSettingsWithEncryption(settings) {
 
 const PYTHON_TOOL = {
   name: 'run_python',
-  description: 'Execute a Python code snippet. Use for calculations, data processing, plotting charts, or any task that benefits from code execution. You can install pip packages first. For plots, use matplotlib and ALWAYS save to the path in the PLOT_PATH variable with plt.savefig(PLOT_PATH) - it will be displayed to the user automatically. NEVER save plots to any other filename or reference images in your response text - only use PLOT_PATH. Set show_output to true if the user should see the code and its output, false if you just need the result internally.',
+  description: 'Execute a Python code snippet. Use for calculations, data processing, plotting charts, or any task that benefits from code execution. You can install pip packages first. For plots, use matplotlib and ALWAYS save to the path in the PLOT_PATH variable with plt.savefig(PLOT_PATH) - it will be displayed to the user automatically. NEVER save plots to any other filename or reference images in your response text - only use PLOT_PATH. Set show_output to true if the user should see the code and its output, false if you just need the result internally. IMPORTANT: Every package listed in "packages" MUST have a corresponding import in "code", and every third-party module imported in "code" MUST be listed in "packages". Do not request a package install without actually using the import.',
   parameters: {
     type: 'OBJECT',
     properties: {
@@ -1156,30 +1162,47 @@ function quickExistenceCheck(entries, candidateMap, sender, requestId, query) {
 function collectShallowMatches(queryLower, roots, candidateMap, settings) {
   const MAX_DIRS = 180;
   const MAX_DEPTH = 1;
+  const BATCH = 12; // yield to event loop every N directories
   const queue = roots
     .filter(r => fs.existsSync(r))
     .map(r => ({ dir: r, depth: 0 }));
 
   let visited = 0;
-  while (queue.length > 0 && visited < MAX_DIRS) {
-    const { dir, depth } = queue.shift();
-    visited += 1;
-    let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
-    catch { continue; }
 
-    for (const e of entries) {
-      if (e.name.startsWith('.') || e.name === 'node_modules') continue;
-      const fullPath = path.join(dir, e.name);
-      const entry = createEntry(e.name, fullPath, e.isDirectory());
-      const score = computeFileSearchScore(entry, queryLower, depth);
-      if (score > 0) addOrUpgradeCandidate(candidateMap, entry, score);
-      if (!e.isDirectory()) upsertFileSearchCache(entry, depth, settings);
-      if (e.isDirectory() && depth < MAX_DEPTH) {
-        queue.push({ dir: fullPath, depth: depth + 1 });
+  return new Promise(resolve => {
+    const tick = () => {
+      let processed = 0;
+      while (queue.length > 0 && visited < MAX_DIRS && processed < BATCH) {
+        const { dir, depth } = queue.shift();
+        visited += 1;
+        processed += 1;
+        let entries;
+        try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+        catch { continue; }
+
+        for (const e of entries) {
+          if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+          // Skip macOS directories that are huge and rarely useful for search
+          if (process.platform === 'darwin' && MACOS_SKIP_DIRS.has(e.name)) continue;
+          const fullPath = path.join(dir, e.name);
+          const entry = createEntry(e.name, fullPath, e.isDirectory());
+          const score = computeFileSearchScore(entry, queryLower, depth);
+          if (score > 0) addOrUpgradeCandidate(candidateMap, entry, score);
+          if (!e.isDirectory()) upsertFileSearchCache(entry, depth, settings);
+          if (e.isDirectory() && depth < MAX_DEPTH) {
+            queue.push({ dir: fullPath, depth: depth + 1 });
+          }
+        }
       }
-    }
-  }
+
+      if (queue.length === 0 || visited >= MAX_DIRS) {
+        resolve();
+      } else {
+        setImmediate(tick);
+      }
+    };
+    tick();
+  });
 }
 
 function streamDeepMatches(queryLower, roots, candidateMap, settings, sender, requestId, query) {
@@ -1220,6 +1243,7 @@ function streamDeepMatches(queryLower, roots, candidateMap, settings, sender, re
 
       for (const e of entries) {
         if (e.name.startsWith('.') || e.name === 'node_modules') continue;
+        if (process.platform === 'darwin' && MACOS_SKIP_DIRS.has(e.name)) continue;
         const fullPath = path.join(dir, e.name);
         const entry = createEntry(e.name, fullPath, e.isDirectory());
         const score = computeFileSearchScore(entry, queryLower, depth);
@@ -1256,6 +1280,7 @@ function streamDeepMatches(queryLower, roots, candidateMap, settings, sender, re
 function registerHandlers(ipcMain) {
   ipcMainRef = ipcMain;
   platformAdapter = createPlatformAdapter({
+    app,
     fs,
     path,
     os,
@@ -1404,7 +1429,7 @@ function registerHandlers(ipcMain) {
 
       const candidates = new Map();
       collectFromCache(pattern, settings, candidates);
-      collectShallowMatches(pattern, uniqueRoots, candidates, settings);
+      await collectShallowMatches(pattern, uniqueRoots, candidates, settings);
 
       const initialResults = rankAndTrim(candidates, 20);
       quickExistenceCheck(initialResults, candidates, sender, requestId, cleanQuery);

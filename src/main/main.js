@@ -7,6 +7,12 @@ const { IPC } = require('../shared/constants');
 
 app.setName('TRIM');
 
+// On macOS, hide the dock icon so TRIM doesn't appear in the app switcher.
+// It's a utility launcher - it should behave like Spotlight, not a regular app.
+if (process.platform === 'darwin') {
+  app.dock.hide();
+}
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();

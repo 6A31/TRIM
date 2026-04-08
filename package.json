@@ -63,6 +63,9 @@
       "target": "dmg",
       "icon": "assets/Trim Logo.icns",
       "category": "public.app-category.utilities",
+      "extendInfo": {
+        "LSUIElement": true
+      },
       "extraResources": [
         {
           "from": "vendor/python/",

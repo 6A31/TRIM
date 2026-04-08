@@ -72,7 +72,7 @@ function findIcnsForBundle(fs, path, bundlePath) {
 }
 
 function createPlatformAdapter(deps) {
-  const { fs, path, os, shell, nativeImage, runPowerShell, getScriptsPath } = deps;
+  const { app, fs, path, os, shell, nativeImage, runPowerShell, getScriptsPath } = deps;
   const isWindows = process.platform === 'win32';
   const isMac = process.platform === 'darwin';
 
@@ -99,6 +99,14 @@ function createPlatformAdapter(deps) {
     }
 
     if (isMac) {
+      // Prefer Electron's native icon extraction which uses NSWorkspace and
+      // handles modern Asset Catalog (.car) icons that don't ship .icns files.
+      try {
+        const img = await app.getFileIcon(filePath, { size: 'large' });
+        if (img && !img.isEmpty()) return img.toDataURL();
+      } catch { /* fall through to manual .icns lookup */ }
+
+      // Fallback: manual .icns search for older bundles
       let iconPath = null;
       const lower = (filePath || '').toLowerCase();
 
