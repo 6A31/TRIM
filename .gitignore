@@ -9,3 +9,4 @@ Thumbs.db
 .env.*
 .vscode/
 RELEASING.md
+vendor/python/

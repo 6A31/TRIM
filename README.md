@@ -31,6 +31,9 @@ Conversations persist between toggles - hide the window, bring it back, keep cha
 
 More than just plotting - the AI installs packages, runs full scripts, and returns results inline. Toggle **Force Code** to make every query use deterministic Python instead of LLM reasoning, so math, data analysis, and logic get real answers, not approximations.
 
+- **Windows builds** bundle a portable Python runtime, so local code execution works even if Python is not installed system-wide.
+- **macOS builds** bundle a portable Python runtime via [python-build-standalone](https://github.com/astral-sh/python-build-standalone).
+
 ![Python Execution](assets/screenshots/ai-python.png)
 
 ### File References
@@ -150,7 +153,7 @@ npm run build:mac      # macOS (.dmg)
 
 ## Stack
 
-Electron 41, vanilla JS, [@google/genai](https://www.npmjs.com/package/@google/genai) (Gemini 3 Flash / 3.1 Pro), Python 3 for local code execution. No frameworks.
+Electron 41, vanilla JS, [@google/genai](https://www.npmjs.com/package/@google/genai) (Gemini 3 Flash / 3.1 Pro), bundled Python on Windows / system Python 3 on macOS for local code execution. No frameworks.
 
 ## License
 

@@ -7,10 +7,11 @@
     "start": "node launch.js",
     "dev": "electron .",
     "kill": "node scripts/kill.js",
+    "prepare:python:win": "node scripts/prepareBundledPython.js",
     "test": "node --test test/**/*.test.js",
     "build": "electron-builder",
-    "build:win": "set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder --win",
-    "build:mac": "electron-builder --mac"
+    "build:win": "node scripts/prepareBundledPython.js && set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder --win",
+    "build:mac": "node scripts/prepareBundledPython.js && electron-builder --mac"
   },
   "keywords": [],
   "author": "6A31",
@@ -47,12 +48,30 @@
     "win": {
       "target": "nsis",
       "icon": "assets/Trim Logo.ico",
+      "extraResources": [
+        {
+          "from": "vendor/python/",
+          "to": "python/",
+          "filter": [
+            "windows-*/**/*"
+          ]
+        }
+      ],
       "artifactName": "${productName}-${version}-Windows.${ext}"
     },
     "mac": {
       "target": "dmg",
       "icon": "assets/Trim Logo.icns",
       "category": "public.app-category.utilities",
+      "extraResources": [
+        {
+          "from": "vendor/python/",
+          "to": "python/",
+          "filter": [
+            "macos-*/**/*"
+          ]
+        }
+      ],
       "artifactName": "${productName}-${version}-macOS.${ext}"
     },
     "nsis": {

@@ -227,6 +227,35 @@ function runPowerShell(script, args = []) {
   });
 }
 
+function getBundledPythonExecutable() {
+  let resourceDir, exeRelPath;
+
+  if (process.platform === 'win32') {
+    const dirs = { x64: 'windows-x64', arm64: 'windows-arm64', ia32: 'windows-ia32' };
+    resourceDir = dirs[process.arch] || dirs.x64;
+    exeRelPath = path.join('tools', 'python.exe');
+  } else if (process.platform === 'darwin') {
+    const dirs = { arm64: 'macos-arm64', x64: 'macos-x64' };
+    resourceDir = dirs[process.arch] || dirs.arm64;
+    exeRelPath = path.join('bin', 'python3');
+  } else {
+    return null;
+  }
+
+  const candidates = [
+    path.join(process.resourcesPath, 'python', resourceDir, exeRelPath),
+    path.join(__dirname, '..', '..', 'vendor', 'python', resourceDir, exeRelPath),
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch {}
+  }
+
+  return null;
+}
+
 function getSettingsPath() {
   const { app } = require('electron');
   return path.join(app.getPath('userData'), 'settings.json');
@@ -366,6 +395,9 @@ const LIST_DIRECTORY_TOOL = {
 };
 
 function findPython() {
+  const bundled = getBundledPythonExecutable();
+  if (bundled) return bundled;
+
   const candidates = ['python', 'python3', 'py'];
   for (const cmd of candidates) {
     try {

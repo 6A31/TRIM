@@ -17,6 +17,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - run: node scripts/prepareBundledPython.js
       - run: npx electron-builder --win --publish always
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
@@ -30,6 +31,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - run: node scripts/prepareBundledPython.js
       - run: npx electron-builder --mac --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
