@@ -214,6 +214,14 @@ describe('Plot Evaluation (nerdamer)', () => {
     approx(nerdEval('log(x)', { x: 1000 }), 3, 1e-4);
   });
 
+  it('nested: log(log(x)) at x=100 = log10(log10(100))', () => {
+    approx(nerdEval('log(log(x))', { x: 100 }), Math.log10(Math.log10(100)));
+  });
+
+  it('nested: log(ln(x)) at x=e = 0', () => {
+    approx(nerdEval('log(ln(x))', { x: Math.E }), 0);
+  });
+
   it('x^2 - 4 at x=3 = 5', () => {
     approx(nerdEval('x^2 - 4', { x: 3 }), 5);
   });
@@ -444,6 +452,11 @@ describe('Combined & Edge Cases', () => {
     assert.equal(prepareForNerdamer('sin(log(x))'), 'sin((log(x)/log(10)))');
   });
 
+  it('prepareForNerdamer recursively rewrites nested logs', () => {
+    assert.equal(prepareForNerdamer('log(log(x))'), '(log((log(x)/log(10)))/log(10))');
+    assert.equal(prepareForNerdamer('log(ln(x))'), '(log(log(x))/log(10))');
+  });
+
   it('prepareForNerdamer aliases ggT→gcd and kgV→lcm', () => {
     assert.equal(prepareForNerdamer('ggT(12, 8)'), 'gcd(12, 8)');
     assert.equal(prepareForNerdamer('kgV(4, 6)'), 'lcm(4, 6)');
@@ -590,6 +603,12 @@ describe('Error handling: must return undefined', () => {
   it('1.2.3+4 → undefined (multi decimal in expression)', () => {
     assert.equal(evaluate('1.2.3+4'), undefined);
   });
+  it('1e3 → undefined (scientific notation is not supported)', () => {
+    assert.equal(evaluate('1e3'), undefined);
+  });
+  it('1e-3 → undefined (scientific notation is not supported)', () => {
+    assert.equal(evaluate('1e-3'), undefined);
+  });
   it('() → undefined (empty parens)', () => {
     assert.equal(evaluate('()'), undefined);
   });
@@ -625,6 +644,12 @@ describe('Error handling: must return undefined', () => {
   });
   it('gcd(12, 8, 4) → undefined (too many args)', () => {
     assert.equal(evaluate('gcd(12, 8, 4)'), undefined);
+  });
+  it('gcd(2.6, 1.2) → undefined (integer-only function)', () => {
+    assert.equal(evaluate('gcd(2.6, 1.2)'), undefined);
+  });
+  it('lcm(2.6, 1.2) → undefined (integer-only function)', () => {
+    assert.equal(evaluate('lcm(2.6, 1.2)'), undefined);
   });
   it('gcd(12,) → undefined (trailing comma)', () => {
     assert.equal(evaluate('gcd(12,)'), undefined);
@@ -835,8 +860,7 @@ describe('Edge cases: correct answers', () => {
   it('2*3^2 = 18 (exponent before mul)', () => {
     assert.equal(evaluate('2*3^2'), 18);
   });
-  it('-3^2 = 9 (unary binds tighter: (-3)^2)', () => {
-    // Unary minus binds tighter than exponent in our parser (matches most software calculators)
-    assert.equal(evaluate('-3^2'), 9);
+  it('-3^2 = -9 (exponent binds tighter than unary minus)', () => {
+    assert.equal(evaluate('-3^2'), -9);
   });
 });

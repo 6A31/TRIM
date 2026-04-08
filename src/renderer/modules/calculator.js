@@ -46,17 +46,21 @@ function getVariables(expr) {
 function prepareForNerdamer(expr) {
   // Alias German terms before other transformations
   expr = expr.replace(/\bggt\(/gi, 'gcd(').replace(/\bkgv\(/gi, 'lcm(');
+  const lower = expr.toLowerCase();
   let result = '';
   let i = 0;
   while (i < expr.length) {
     const prevIsAlnum = i > 0 && /[a-zA-Z0-9_]/.test(expr[i - 1]);
-    if (!prevIsAlnum && expr.slice(i, i + 3) === 'ln(') {
-      result += 'log(';
-      i += 3;
-    } else if (!prevIsAlnum && expr.slice(i, i + 4) === 'log(') {
+    if (!prevIsAlnum && lower.slice(i, i + 3) === 'ln(') {
+      const closeIdx = findClosingParen(expr, i + 3);
+      if (closeIdx === -1) { result += expr[i]; i++; continue; }
+      const inner = prepareForNerdamer(expr.slice(i + 3, closeIdx));
+      result += `log(${inner})`;
+      i = closeIdx + 1;
+    } else if (!prevIsAlnum && lower.slice(i, i + 4) === 'log(') {
       const closeIdx = findClosingParen(expr, i + 4);
       if (closeIdx === -1) { result += expr[i]; i++; continue; }
-      const inner = expr.slice(i + 4, closeIdx);
+      const inner = prepareForNerdamer(expr.slice(i + 4, closeIdx));
       result += `(log(${inner})/log(10))`;
       i = closeIdx + 1;
     } else {
@@ -524,8 +528,23 @@ const MATH_FUNCS = {
   round: Math.round, ceil: Math.ceil, floor: Math.floor,
 };
 
-function _gcd(a, b) { a = Math.abs(Math.round(a)); b = Math.abs(Math.round(b)); while (b) { [a, b] = [b, a % b]; } return a; }
-function _lcm(a, b) { a = Math.abs(Math.round(a)); b = Math.abs(Math.round(b)); return a && b ? (a / _gcd(a, b)) * b : 0; }
+function _gcd(a, b) {
+  if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isInteger(a) || !Number.isInteger(b)) return NaN;
+  a = Math.abs(a);
+  b = Math.abs(b);
+  while (b) {
+    [a, b] = [b, a % b];
+  }
+  return a;
+}
+
+function _lcm(a, b) {
+  if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isInteger(a) || !Number.isInteger(b)) return NaN;
+  a = Math.abs(a);
+  b = Math.abs(b);
+  if (!a || !b) return 0;
+  return (a / _gcd(a, b)) * b;
+}
 
 const MATH_FUNCS_2 = {
   gcd: _gcd, ggt: _gcd,
@@ -562,6 +581,14 @@ function tokenize(expr) {
         if (s[i] === '.') dots++;
         if (dots > 1) return null; // e.g. "1.2.3" — invalid number
         num += s[i++];
+      }
+      if (i < s.length && (s[i] === 'e' || s[i] === 'E')) {
+        const next = s[i + 1];
+        const sign = next === '+' || next === '-';
+        const digitIdx = sign ? i + 2 : i + 1;
+        if (digitIdx < s.length && s[digitIdx] >= '0' && s[digitIdx] <= '9') {
+          return null;
+        }
       }
       out.push({ type: 'num', value: parseFloat(num) });
     } else if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) {
@@ -630,20 +657,20 @@ function parseExpr(ctx) {
 }
 
 function parseTerm(ctx) {
-  let left = parseExponent(ctx);
+  let left = parseUnary(ctx);
   while (peek(ctx) && peek(ctx).type === 'op' && (peek(ctx).value === '*' || peek(ctx).value === '/')) {
     const op = consume(ctx).value;
-    const right = parseExponent(ctx);
+    const right = parseUnary(ctx);
     left = op === '*' ? left * right : left / right;
   }
   return left;
 }
 
 function parseExponent(ctx) {
-  const base = parseUnary(ctx);
+  const base = parsePostfix(ctx);
   if (peek(ctx) && peek(ctx).type === 'op' && peek(ctx).value === '^') {
     consume(ctx);
-    const exp = parseExponent(ctx);
+    const exp = parseUnary(ctx);
     return Math.pow(base, exp);
   }
   return base;
@@ -658,7 +685,7 @@ function parseUnary(ctx) {
     consume(ctx);
     return parseUnary(ctx);
   }
-  return parsePostfix(ctx);
+  return parseExponent(ctx);
 }
 
 function parsePostfix(ctx) {
