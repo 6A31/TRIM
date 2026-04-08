@@ -1,6 +1,6 @@
 {
   "name": "trim",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "A Spotlight-like launcher for Windows and macOS",
   "main": "src/main/main.js",
   "scripts": {
