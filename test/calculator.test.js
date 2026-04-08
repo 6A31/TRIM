@@ -146,6 +146,39 @@ describe('Numeric Evaluation', () => {
   it('round(3.5) = 4', () => {
     assert.equal(evaluate('round(3.5)'), 4);
   });
+
+  // GCD / LCM (and German aliases ggT / kgV)
+  it('gcd(12, 8) = 4', () => {
+    assert.equal(evaluate('gcd(12, 8)'), 4);
+  });
+
+  it('gcd(0, 5) = 5', () => {
+    assert.equal(evaluate('gcd(0, 5)'), 5);
+  });
+
+  it('gcd(17, 13) = 1 (coprime)', () => {
+    assert.equal(evaluate('gcd(17, 13)'), 1);
+  });
+
+  it('lcm(4, 6) = 12', () => {
+    assert.equal(evaluate('lcm(4, 6)'), 12);
+  });
+
+  it('lcm(7, 5) = 35', () => {
+    assert.equal(evaluate('lcm(7, 5)'), 35);
+  });
+
+  it('ggT(12, 8) = 4 (German alias)', () => {
+    assert.equal(evaluate('ggT(12, 8)'), 4);
+  });
+
+  it('kgV(4, 6) = 12 (German alias)', () => {
+    assert.equal(evaluate('kgV(4, 6)'), 12);
+  });
+
+  it('gcd with expression args: gcd(2+4, 9) = 3', () => {
+    assert.equal(evaluate('gcd(2+4, 9)'), 3);
+  });
 });
 
 describe('Plot Evaluation (nerdamer)', () => {
@@ -409,5 +442,30 @@ describe('Combined & Edge Cases', () => {
 
   it('prepareForNerdamer nested log: sin(log(x))', () => {
     assert.equal(prepareForNerdamer('sin(log(x))'), 'sin((log(x)/log(10)))');
+  });
+
+  it('prepareForNerdamer aliases ggT→gcd and kgV→lcm', () => {
+    assert.equal(prepareForNerdamer('ggT(12, 8)'), 'gcd(12, 8)');
+    assert.equal(prepareForNerdamer('kgV(4, 6)'), 'lcm(4, 6)');
+  });
+
+  it('nested: sin(gcd(4, 5)) ≈ sin(1)', () => {
+    approx(evaluate('sin(gcd(4, 5))'), Math.sin(1));
+  });
+
+  it('nested: 4*sin(ggt(4,5)) ≈ 4*sin(1)', () => {
+    approx(evaluate('4*sin(ggt(4,5))'), 4 * Math.sin(1));
+  });
+
+  it('nested: sqrt(gcd(16,64)) = 4', () => {
+    assert.equal(evaluate('sqrt(gcd(16,64))'), 4);
+  });
+
+  it('gcd+lcm arithmetic: gcd(12,8)+lcm(3,4) = 16', () => {
+    assert.equal(evaluate('gcd(12,8)+lcm(3,4)'), 16);
+  });
+
+  it('nested: lcm(gcd(6,9), 4) = 12', () => {
+    assert.equal(evaluate('lcm(gcd(6,9), 4)'), 12);
   });
 });

@@ -57,6 +57,56 @@ The AI can read, create, edit, and delete files through tool calls. Every mutati
 
 Results render in KaTeX with collapsible step-by-step breakdowns. An **AI Explain** chip is available for optional AI-powered explanations.
 
+When an expression contains variables, the detected variables are shown beneath the result so misspelled function names (e.g. `syn` instead of `sin`) are immediately visible.
+
+<details>
+<summary><strong>Calculator Function Reference</strong></summary>
+
+#### Arithmetic & Constants
+| Input | Description | Example |
+|-------|-------------|---------|
+| `+` `-` `*` `/` `^` | Basic operators | `c: 2^10` → 1024 |
+| `%` | Percentage | `c: 200 * 50%` → 100 |
+| `pi` | π ≈ 3.14159 | `c: 2*pi` |
+| `e` | Euler's number ≈ 2.71828 | `c: e^2` |
+
+#### Functions (Numeric)
+| Function | Description | Example |
+|----------|-------------|---------|
+| `sin` `cos` `tan` | Trigonometric | `c: sin(pi/2)` → 1 |
+| `asin` `acos` `atan` | Inverse trig | `c: asin(1)` → 1.5708 |
+| `sqrt` | Square root | `c: sqrt(144)` → 12 |
+| `cbrt` | Cube root | `c: cbrt(27)` → 3 |
+| `abs` | Absolute value | `c: abs(-42)` → 42 |
+| `log` | Base-10 logarithm | `c: log(100)` → 2 |
+| `ln` | Natural logarithm | `c: ln(e)` → 1 |
+| `exp` | Exponential (e^x) | `c: exp(1)` → 2.71828 |
+| `round` `ceil` `floor` | Rounding | `c: floor(3.7)` → 3 |
+| `gcd` / `ggT` | Greatest common divisor | `c: gcd(12, 8)` → 4 |
+| `lcm` / `kgV` | Least common multiple | `c: lcm(4, 6)` → 12 |
+
+Functions can be nested: `c: sin(gcd(4, 5))`, `c: sqrt(gcd(16, 64))` → 4
+
+#### Symbolic Operations
+| Prefix | Description | Example |
+|--------|-------------|---------|
+| `derive` / `diff` | Differentiation | `c: derive sin(x)` → cos(x) |
+| `integrate` | Integration | `c: integrate x^2` → x³/3 + C |
+| `factor` | Factorize | `c: factor x^2-4` → (x-2)(x+2) |
+| `expand` | Expand | `c: expand (x+1)^3` |
+| `simplify` | Simplify | `c: simplify sin(x)^2+cos(x)^2` → 1 |
+
+#### Solving
+Type any equation with `=` and variables: `c: x^2 - 5x + 6 = 0` → x = 2, x = 3
+
+#### Plotting
+Expressions with variables are plotted automatically:
+- **2D**: `c: sin(x)`, `c: x^2 - 4` — interactive line chart
+- **3D**: `c: x^2 + y^2` — rotatable surface plot
+- **Explicit**: `c: plot sin(x)` / `c: graph x^2`
+
+</details>
+
 ![Math](assets/screenshots/calculator-solver.png)
 
 ![3D Plot](assets/screenshots/calculator-3d-plot.png)

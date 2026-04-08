@@ -16,6 +16,7 @@ const FUNC_NAMES = new Set([
   'sin', 'cos', 'tan', 'asin', 'acos', 'atan',
   'sqrt', 'cbrt', 'abs', 'log', 'ln', 'exp',
   'round', 'ceil', 'floor', 'pi',
+  'gcd', 'lcm', 'ggt', 'kgv',
 ]);
 
 function hasVariables(expr) {
@@ -43,6 +44,8 @@ function getVariables(expr) {
 //   ln(x)  = natural log  → nerdamer: log(x)
 //   log(x) = base-10 log  → nerdamer: log(x)/log(10)
 function prepareForNerdamer(expr) {
+  // Alias German terms before other transformations
+  expr = expr.replace(/\bggt\(/gi, 'gcd(').replace(/\bkgv\(/gi, 'lcm(');
   let result = '';
   let i = 0;
   while (i < expr.length) {
@@ -209,6 +212,7 @@ function handleSolve(detected) {
     steps,
     copyText,
     subtitle: expr,
+    varsNote: vars.length > 0 ? `Variables: ${vars.join(', ')}` : null,
   }];
 }
 
@@ -364,6 +368,7 @@ function buildPlot2D(expr, variable) {
     connectgaps: false,
   }];
 
+  const vars = getVariables(expr);
   return [{
     type: 'calc-plot',
     icon: 'show_chart',
@@ -372,6 +377,7 @@ function buildPlot2D(expr, variable) {
     plotConfig: PLOT_CONFIG,
     titleTex,
     subtitle: expr,
+    varsNote: vars.length > 0 ? `Variables: ${vars.join(', ')}` : null,
   }];
 }
 
@@ -418,6 +424,7 @@ function buildPlot3D(expr, vars) {
     hovertemplate: `${xVar}: %{x:.2f}<br>${yVar}: %{y:.2f}<br>f: %{z:.2f}<extra></extra>`,
   }];
 
+  const allVars = getVariables(expr);
   return [{
     type: 'calc-plot',
     icon: 'show_chart',
@@ -426,6 +433,7 @@ function buildPlot3D(expr, vars) {
     plotConfig: PLOT_CONFIG,
     titleTex,
     subtitle: expr,
+    varsNote: allVars.length > 0 ? `Variables: ${allVars.join(', ')}` : null,
   }];
 }
 
@@ -507,6 +515,14 @@ const MATH_FUNCS = {
   round: Math.round, ceil: Math.ceil, floor: Math.floor,
 };
 
+function _gcd(a, b) { a = Math.abs(Math.round(a)); b = Math.abs(Math.round(b)); while (b) { [a, b] = [b, a % b]; } return a; }
+function _lcm(a, b) { a = Math.abs(Math.round(a)); b = Math.abs(Math.round(b)); return a && b ? (a / _gcd(a, b)) * b : 0; }
+
+const MATH_FUNCS_2 = {
+  gcd: _gcd, ggt: _gcd,
+  lcm: _lcm, kgv: _lcm,
+};
+
 const MATH_CONSTS = { pi: Math.PI, e: Math.E };
 
 function evaluate(expr) {
@@ -520,7 +536,7 @@ function evaluate(expr) {
 
 function tokenize(expr) {
   const out = [];
-  const s = expr.replace(/\s+/g, '').replace(/,/g, '');
+    const s = expr.replace(/\s+/g, '');
   let i = 0;
   while (i < s.length) {
     const ch = s[i];
@@ -534,12 +550,12 @@ function tokenize(expr) {
       const lower = id.toLowerCase();
       if (MATH_CONSTS[lower] !== undefined) {
         out.push({ type: 'num', value: MATH_CONSTS[lower] });
-      } else if (MATH_FUNCS[lower]) {
+      } else if (MATH_FUNCS[lower] || MATH_FUNCS_2[lower]) {
         out.push({ type: 'func', name: lower });
       } else {
         return null;
       }
-    } else if ('+-*/^%()'.includes(ch)) {
+    } else if ('+-*/^%(),'.includes(ch)) {
       out.push({ type: 'op', value: ch });
       i++;
     } else {
@@ -609,13 +625,21 @@ function parsePrimary(ctx) {
 
   if (tok.type === 'func') {
     consume(ctx);
+    const fn2 = MATH_FUNCS_2[tok.name];
     const fn = MATH_FUNCS[tok.name];
     if (!peek(ctx) || peek(ctx).value !== '(') throw new Error('expected ( after function');
     consume(ctx);
-    const arg = parseExpr(ctx);
+    const arg1 = parseExpr(ctx);
+    if (fn2 && peek(ctx) && peek(ctx).value === ',') {
+      consume(ctx);
+      const arg2 = parseExpr(ctx);
+      if (!peek(ctx) || peek(ctx).value !== ')') throw new Error('expected )');
+      consume(ctx);
+      return fn2(arg1, arg2);
+    }
     if (!peek(ctx) || peek(ctx).value !== ')') throw new Error('expected )');
     consume(ctx);
-    return fn(arg);
+    return fn(arg1);
   }
 
   if (tok.type === 'num') {

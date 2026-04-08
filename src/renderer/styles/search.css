@@ -761,6 +761,13 @@ pre:hover .code-copy-btn,
   border-radius: 8px;
 }
 
+.calc-vars-note {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  padding: 4px 12px 2px;
+  font-style: italic;
+}
+
 /* File operation confirmation */
 .confirm-action {
   padding: 4px 0;

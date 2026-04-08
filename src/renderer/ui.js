@@ -458,6 +458,14 @@ function createCalcSymbolicElement(result) {
   mainDiv.innerHTML = result.mainHtml;
   el.appendChild(mainDiv);
 
+  // Variable awareness note
+  if (result.varsNote) {
+    const varsDiv = document.createElement('div');
+    varsDiv.className = 'calc-vars-note';
+    varsDiv.textContent = result.varsNote;
+    el.appendChild(varsDiv);
+  }
+
   // Steps (collapsible)
   if (result.steps && result.steps.length > 0) {
     const stepsDiv = document.createElement('div');
@@ -544,6 +552,14 @@ function createCalcPlotElement(result) {
   plotDiv.dataset.plotLayout = JSON.stringify(result.plotLayout);
   plotDiv.dataset.plotConfig = JSON.stringify(result.plotConfig);
   el.appendChild(plotDiv);
+
+  // Variable awareness note
+  if (result.varsNote) {
+    const varsDiv = document.createElement('div');
+    varsDiv.className = 'calc-vars-note';
+    varsDiv.textContent = result.varsNote;
+    el.appendChild(varsDiv);
+  }
 
   return el;
 }
