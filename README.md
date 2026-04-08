@@ -59,6 +59,8 @@ Results render in KaTeX with collapsible step-by-step breakdowns. An **AI Explai
 
 ![Math](assets/screenshots/calculator-solver.png)
 
+![3D Plot](assets/screenshots/calculator-3d-plot.png)
+
 ### Folder Search
 
 `f: report` recursively searches Desktop, Documents, Downloads, and any custom paths from settings.

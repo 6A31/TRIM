@@ -437,13 +437,16 @@ function runPythonCode(py, code, packages, plotPath) {
       }
     }
 
-    // Prepend plot path + matplotlib config
-    const preamble = `import os
+    // Prepend plot path + matplotlib config + monkeypatch plt.show() to savefig
+    const preamble = `import os as _os, warnings as _w
 PLOT_PATH = ${JSON.stringify(plotPath)}
-os.environ['PLOT_PATH'] = PLOT_PATH
+_os.environ['PLOT_PATH'] = PLOT_PATH
+_w.filterwarnings('ignore', '.*non-interactive.*')
 try:
     import matplotlib
     matplotlib.use('Agg')
+    import matplotlib.pyplot as _plt
+    _plt.show = lambda *a, **k: _plt.savefig(PLOT_PATH, dpi=150, bbox_inches='tight')
 except ImportError:
     pass
 `;
@@ -663,6 +666,7 @@ const FORCE_CODE_ADDENDUM = `\n\nIMPORTANT - Force Code mode is ON:
 
 const AI_TOOLS = [
   { googleSearch: {} },
+  { codeExecution: {} },
   { functionDeclarations: [
     PYTHON_TOOL,
     READ_FILE_TOOL,
@@ -869,6 +873,14 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
                 error: pyResult.error || null,
                 plot: pyResult.plot || null,
               });
+            } else if (pyResult.plot) {
+              // Always show plots even if AI chose show_output=false
+              codeOutputs.push({
+                code: null,
+                stdout: null,
+                error: null,
+                plot: pyResult.plot,
+              });
             }
 
             sendStatus(event, 'Analyzing results...');
@@ -940,12 +952,40 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
         // Send function responses back
         contents.push({ role: 'user', parts: responseParts });
       } else {
-        // Final text response
+        // Final response — extract text, sources, and any codeExecution inline results
         const text = response.text || '';
         const grounding = candidate?.groundingMetadata;
         const sources = grounding?.groundingChunks
           ?.filter(c => c.web)
           .map(c => ({ title: c.web.title, uri: c.web.uri })) || [];
+
+        // Extract inline codeExecution results (server-side code + plots)
+        const parts = candidate?.content?.parts || [];
+        let currentCode = null;
+        let currentOutput = null;
+        for (const part of parts) {
+          if (part.executableCode && part.executableCode.code) {
+            // New code block - flush any previous one
+            if (currentCode) {
+              codeOutputs.push({ code: currentCode, stdout: currentOutput, error: null, plot: null });
+            }
+            currentCode = part.executableCode.code;
+            currentOutput = null;
+          }
+          if (part.codeExecutionResult) {
+            currentOutput = part.codeExecutionResult.output || null;
+          }
+          if (part.inlineData && part.inlineData.mimeType && part.inlineData.mimeType.startsWith('image/')) {
+            const plot = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+            codeOutputs.push({ code: currentCode, stdout: currentOutput, error: null, plot });
+            currentCode = null;
+            currentOutput = null;
+          }
+        }
+        // Flush remaining code block without a plot
+        if (currentCode || currentOutput) {
+          codeOutputs.push({ code: currentCode, stdout: currentOutput, error: null, plot: null });
+        }
 
         // Save conversation history for follow-ups
         contents.push(candidate.content);
