@@ -117,4 +117,12 @@ try {
     # Get-StartApps may not be available on all systems
 }
 
-$results | Sort-Object -Property name | ConvertTo-Json -Compress
+# Always output a valid JSON array (PS 5.1 omits brackets for 0 or 1 items)
+$sorted = @($results | Sort-Object -Property name)
+if ($sorted.Count -eq 0) {
+    Write-Output "[]"
+} elseif ($sorted.Count -eq 1) {
+    Write-Output ("[" + ($sorted[0] | ConvertTo-Json -Compress) + "]")
+} else {
+    $sorted | ConvertTo-Json -Compress
+}

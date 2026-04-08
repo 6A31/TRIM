@@ -202,9 +202,11 @@ function getUsageCount(appName) {
 }
 
 function getScriptsPath() {
-  const devPath = path.join(__dirname, '..', '..', 'scripts');
-  if (fs.existsSync(devPath)) return devPath;
-  return path.join(process.resourcesPath, 'scripts');
+  // Prefer extraResources path (real filesystem) — PowerShell can't read from asar archives.
+  const resourcesPath = path.join(process.resourcesPath, 'scripts');
+  if (fs.existsSync(resourcesPath)) return resourcesPath;
+  // Dev fallback
+  return path.join(__dirname, '..', '..', 'scripts');
 }
 
 function runPowerShell(script, args = []) {
@@ -214,7 +216,12 @@ function runPowerShell(script, args = []) {
       '-Command',
       `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; & '${script.replace(/'/g, "''")}' ${args.map(a => `'${a.replace(/'/g, "''")}'`).join(' ')}`,
     ], { maxBuffer: 10 * 1024 * 1024, encoding: 'utf-8' }, (err, stdout, stderr) => {
-      if (err) return reject(err);
+      if (err) {
+        console.error(`[PowerShell] script=${script} error:`, err.message);
+        if (stderr) console.error(`[PowerShell] stderr:`, stderr);
+        return reject(err);
+      }
+      if (stderr) console.warn(`[PowerShell] stderr:`, stderr);
       resolve(stdout.trim());
     });
   });
