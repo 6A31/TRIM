@@ -634,4 +634,11 @@ function parsePrimary(ctx) {
   throw new Error('unexpected token');
 }
 
-window._calculator = { search };
+if (typeof window !== 'undefined') {
+  window._calculator = { search };
+}
+
+// Allow tests to import internals directly
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { search, evaluate, prepareForNerdamer, findClosingParen, hasVariables, getVariables, detectMathMode };
+}
