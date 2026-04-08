@@ -23,6 +23,7 @@ let activeFolderRequestId = null;
 let activeFilePickRequestId = null;
 const aiFileRefs = new Map(); // label -> absolute path
 let inputOverlayEl = null;
+let calcSyntaxEnabled = true;
 
 function init() {
   const input = document.getElementById('search-input');
@@ -31,6 +32,11 @@ function init() {
   input.addEventListener('scroll', () => {
     syncOverlayScroll(input);
   });
+
+  // Load calcSyntax setting (default: on)
+  window.trim.loadSettings().then(s => {
+    calcSyntaxEnabled = s && s.calcSyntax === false ? false : true;
+  }).catch(() => {});
 
   window.trim.offFolderSearchUpdate();
   window.trim.onFolderSearchUpdate((data) => {
@@ -184,7 +190,14 @@ async function route(rawInput) {
   }
 
   if (mode === 'calc') {
-    const results = window._calculator.search(input.slice(2));
+    const results = window._calculator.search(input.slice(2), (heavyResults) => {
+      // Callback for heavy operations (plot, solve, symbolic)
+      // Only render if we're still in calc mode with the same input
+      const currentRaw = document.getElementById('search-input').value;
+      if (currentRaw === rawInput) {
+        window._ui.renderResults(heavyResults);
+      }
+    });
     window._ui.renderResults(results);
     return;
   }
@@ -304,6 +317,13 @@ function renderInputOverlay(inputEl) {
   const raw = inputEl.value || '';
   const hasRefs = /#\[[^\]]+\]/.test(raw);
 
+  // Calc syntax highlighting
+  const mode = detectMode(raw);
+  if (mode === 'calc' && calcSyntaxEnabled && raw.length > 2) {
+    renderCalcOverlay(inputEl, raw);
+    return;
+  }
+
   // Check for conversation follow-up hint: input is just the prefix (e.g. "? " or "?? ")
   const prefixOnly = /^(\?\??\s*)$/.test(raw);
   const inConversation = window._aiQuery && window._aiQuery.isFollowUp();
@@ -364,6 +384,65 @@ function renderInputOverlay(inputEl) {
   inputOverlayEl.innerHTML = html;
 }
 
+function renderCalcOverlay(inputEl, raw) {
+  // "c:" prefix is rendered as plain text, only highlight the expression part
+  const prefix = raw.slice(0, 2); // "c:"
+  const exprPart = raw.slice(2);
+
+  if (!exprPart.trim()) {
+    inputOverlayEl.innerHTML = '';
+    inputOverlayEl.style.display = 'none';
+    inputEl.style.color = '';
+    inputEl.style.webkitTextFillColor = '';
+    return;
+  }
+
+  const tokens = window._calculator.getCalcTokens(exprPart);
+  if (!tokens || tokens.length === 0) {
+    inputOverlayEl.innerHTML = '';
+    inputOverlayEl.style.display = 'none';
+    inputEl.style.color = '';
+    inputEl.style.webkitTextFillColor = '';
+    return;
+  }
+
+  inputOverlayEl.style.display = '';
+  inputEl.style.color = 'transparent';
+  inputEl.style.webkitTextFillColor = 'transparent';
+
+  // Render the prefix as plain text
+  let html = `<span class="input-overlay-text">${escapeHtml(prefix)}</span>`;
+  let cursor = 0;
+
+  for (const tok of tokens) {
+    // Preserve whitespace between tokens
+    if (tok.start > cursor) {
+      html += `<span class="input-overlay-text">${escapeHtml(exprPart.slice(cursor, tok.start))}</span>`;
+    }
+    const escaped = escapeHtml(tok.text);
+    if (tok.type === 'func') {
+      html += `<span class="calc-func">${escaped}</span>`;
+    } else if (tok.type === 'const') {
+      html += `<span class="calc-const">${escaped}</span>`;
+    } else if (tok.type === 'unknown') {
+      html += `<span class="input-overlay-text">${escaped}</span>`;
+    } else if (tok.type === 'op') {
+      html += `<span class="calc-op-text">${escaped}</span>`;
+    } else {
+      // numbers and other text
+      html += `<span class="calc-num-text">${escaped}</span>`;
+    }
+    cursor = tok.end;
+  }
+
+  // Any trailing text
+  if (cursor < exprPart.length) {
+    html += `<span class="input-overlay-text">${escapeHtml(exprPart.slice(cursor))}</span>`;
+  }
+
+  inputOverlayEl.innerHTML = html;
+}
+
 function syncOverlayScroll(inputEl) {
   if (!inputOverlayEl || inputOverlayEl.style.display === 'none') return;
   const containerW = inputOverlayEl.parentElement.clientWidth;
@@ -386,4 +465,4 @@ function isFilePickActive() {
   return filePickActive;
 }
 
-window._inputRouter = { init, route, detectMode, isFilePickActive, resolveAIFileRefsInQuery, refreshInputDecor };
+window._inputRouter = { init, route, detectMode, isFilePickActive, resolveAIFileRefsInQuery, refreshInputDecor, setCalcSyntax(v) { calcSyntaxEnabled = v; } };

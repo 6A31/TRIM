@@ -141,7 +141,7 @@ function executeSelected() {
   if (selectedIndex >= 0 && selectedIndex < currentResults.length) {
     const result = currentResults[selectedIndex];
     if (result.action) result.action();
-    if (result.type !== 'command' && result.type !== 'calc' && result.type !== 'calc-symbolic' && result.type !== 'calc-plot') {
+    if (result.type !== 'command' && result.type !== 'calc' && result.type !== 'calc-symbolic' && result.type !== 'calc-plot' && result.type !== 'calc-loading') {
       window.trim.hideWindow();
     }
     return true;
@@ -318,6 +318,23 @@ async function renderResults(results) {
 
   // Check for special calc result types that need custom rendering
   const firstResult = results[0];
+
+  // Loading spinner for heavy calc operations
+  if (firstResult.type === 'calc-loading') {
+    lastResultsKey = 'calc-loading';
+    const spinnerWrap = document.createElement('div');
+    spinnerWrap.className = 'calc-result';
+    spinnerWrap.style.padding = '16px 18px';
+    spinnerWrap.appendChild(createLoadingSpinner('Computing...'));
+    container.replaceChildren(spinnerWrap);
+    container.classList.remove('hidden');
+    document.getElementById('search-bar').classList.add('has-results');
+    requestAnimationFrame(() => {
+      window.trim.resizeWindow(getBarHeight() + container.scrollHeight + 2);
+    });
+    return;
+  }
+
   if (firstResult.type === 'calc-symbolic' || firstResult.type === 'calc-plot') {
     lastResultsKey = '';
     const frag = document.createDocumentFragment();
@@ -392,7 +409,7 @@ function createResultElement(result) {
   el.className = 'result-item';
   el.addEventListener('click', () => {
     if (result.action) result.action();
-    if (result.type !== 'command' && result.type !== 'calc' && result.type !== 'calc-symbolic' && result.type !== 'calc-plot') {
+    if (result.type !== 'command' && result.type !== 'calc' && result.type !== 'calc-symbolic' && result.type !== 'calc-plot' && result.type !== 'calc-loading') {
       window.trim.hideWindow();
     }
   });
@@ -584,6 +601,13 @@ async function loadAppIcon(result) {
   }
 }
 
+function createLoadingSpinner(statusText) {
+  const el = document.createElement('div');
+  el.className = 'ai-loading';
+  el.innerHTML = `<div class="spinner"></div><span>${escapeHtml(statusText || 'Loading...')}</span>`;
+  return el;
+}
+
 function showAILoading(statusText) {
   const container = document.getElementById('results-container');
   const aiContainer = document.getElementById('ai-response-container');
@@ -614,12 +638,7 @@ function showAILoading(statusText) {
   // Add loading spinner in a turn container
   const turnDiv = document.createElement('div');
   turnDiv.className = 'ai-current-turn';
-  turnDiv.innerHTML = `
-    <div class="ai-loading">
-      <div class="spinner"></div>
-      <span>${escapeHtml(statusText || 'Asking Gemini...')}</span>
-    </div>
-  `;
+  turnDiv.appendChild(createLoadingSpinner(statusText || 'Asking Gemini...'));
   aiContainer.appendChild(turnDiv);
 
   requestAnimationFrame(() => {
@@ -974,4 +993,4 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-window._ui = { init, renderResults, showAILoading, updateAIStatus, renderAIResponse, clearResults, restoreAIArea, showConfirmation, loadHotfixContext };
+window._ui = { init, renderResults, showAILoading, updateAIStatus, renderAIResponse, clearResults, restoreAIArea, showConfirmation, loadHotfixContext, createLoadingSpinner };

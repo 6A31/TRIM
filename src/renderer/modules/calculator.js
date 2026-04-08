@@ -79,8 +79,9 @@ function findClosingParen(str, start) {
 // --- Internal debounce for heavy operations ---
 let heavyTimer = null;
 let lastHeavyResult = null;
+let heavyGeneration = 0; // monotonic counter to discard stale results
 
-function search(expression) {
+function search(expression, onHeavyResult) {
   if (!expression.trim()) return [];
   const trimmed = expression.trim();
   const detected = detectMathMode(trimmed);
@@ -92,8 +93,16 @@ function search(expression) {
     return handleEvaluate(trimmed);
   }
 
-  // Heavy operations - debounce internally
-  return handleHeavy(detected);
+  // Heavy operations — show loading, compute async
+  clearTimeout(heavyTimer);
+  const gen = ++heavyGeneration;
+  heavyTimer = setTimeout(() => {
+    const results = handleHeavy(detected);
+    if (gen === heavyGeneration && typeof onHeavyResult === 'function') {
+      onHeavyResult(results);
+    }
+  }, 0);
+  return [{ type: 'calc-loading' }];
 }
 
 function detectMathMode(expr) {
@@ -526,23 +535,34 @@ const MATH_FUNCS_2 = {
 const MATH_CONSTS = { pi: Math.PI, e: Math.E };
 
 function evaluate(expr) {
-  const tokens = tokenize(expr);
-  if (!tokens || tokens.length === 0) return undefined;
-  const ctx = { tokens, pos: 0 };
-  const result = parseExpr(ctx);
-  if (ctx.pos < ctx.tokens.length) return undefined;
-  return result;
+  try {
+    const tokens = tokenize(expr);
+    if (!tokens || tokens.length === 0) return undefined;
+    const ctx = { tokens, pos: 0 };
+    const result = parseExpr(ctx);
+    if (ctx.pos < ctx.tokens.length) return undefined;
+    // Never return NaN or Infinity — those are domain errors, not valid results
+    if (typeof result !== 'number' || !isFinite(result)) return undefined;
+    return result;
+  } catch {
+    return undefined;
+  }
 }
 
 function tokenize(expr) {
   const out = [];
-    const s = expr.replace(/\s+/g, '');
+  const s = expr.replace(/\s+/g, '');
   let i = 0;
   while (i < s.length) {
     const ch = s[i];
     if ((ch >= '0' && ch <= '9') || (ch === '.' && i + 1 < s.length && s[i + 1] >= '0' && s[i + 1] <= '9')) {
       let num = '';
-      while (i < s.length && ((s[i] >= '0' && s[i] <= '9') || s[i] === '.')) { num += s[i++]; }
+      let dots = 0;
+      while (i < s.length && ((s[i] >= '0' && s[i] <= '9') || s[i] === '.')) {
+        if (s[i] === '.') dots++;
+        if (dots > 1) return null; // e.g. "1.2.3" — invalid number
+        num += s[i++];
+      }
       out.push({ type: 'num', value: parseFloat(num) });
     } else if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) {
       let id = '';
@@ -562,7 +582,38 @@ function tokenize(expr) {
       return null;
     }
   }
-  return out;
+  // Insert implicit multiplication tokens between adjacent value-producing tokens
+  return insertImplicitMul(out);
+}
+
+// Detect adjacencies that imply multiplication and insert * tokens
+function insertImplicitMul(tokens) {
+  if (!tokens || tokens.length < 2) return tokens;
+  const result = [tokens[0]];
+  for (let i = 1; i < tokens.length; i++) {
+    const prev = tokens[i - 1];
+    const cur = tokens[i];
+    const needsMul =
+      // num followed by func: 2sin(...)
+      (prev.type === 'num' && cur.type === 'func') ||
+      // num followed by (: 2(3+4)
+      (prev.type === 'num' && cur.type === 'op' && cur.value === '(') ||
+      // num followed by num (constant): 2pi
+      (prev.type === 'num' && cur.type === 'num') ||
+      // ) followed by (: (2+3)(4+5)
+      (prev.type === 'op' && prev.value === ')' && cur.type === 'op' && cur.value === '(') ||
+      // ) followed by func: (2)sin(pi)
+      (prev.type === 'op' && prev.value === ')' && cur.type === 'func') ||
+      // ) followed by num: (2+3)4
+      (prev.type === 'op' && prev.value === ')' && cur.type === 'num') ||
+      // % followed by num/func/(: 50%2 → 0.5*2
+      (prev.type === 'op' && prev.value === '%' && (cur.type === 'num' || cur.type === 'func' || (cur.type === 'op' && cur.value === '(')));
+    if (needsMul) {
+      result.push({ type: 'op', value: '*' });
+    }
+    result.push(cur);
+  }
+  return result;
 }
 
 function peek(ctx) { return ctx.pos < ctx.tokens.length ? ctx.tokens[ctx.pos] : null; }
@@ -658,11 +709,50 @@ function parsePrimary(ctx) {
   throw new Error('unexpected token');
 }
 
+// Return token info for syntax highlighting in the input overlay.
+// Each token: { text, type: 'func'|'const'|'number'|'op'|'unknown', start, end, name? }
+function getCalcTokens(expr) {
+  const tokens = [];
+  const s = expr;
+  let i = 0;
+  while (i < s.length) {
+    const ch = s[i];
+    if (ch === ' ' || ch === '\t') {
+      i++;
+      continue;
+    }
+    if ((ch >= '0' && ch <= '9') || (ch === '.' && i + 1 < s.length && s[i + 1] >= '0' && s[i + 1] <= '9')) {
+      const start = i;
+      while (i < s.length && ((s[i] >= '0' && s[i] <= '9') || s[i] === '.')) i++;
+      tokens.push({ text: s.slice(start, i), type: 'number', start, end: i });
+    } else if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) {
+      const start = i;
+      while (i < s.length && ((s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z'))) i++;
+      const word = s.slice(start, i);
+      const lower = word.toLowerCase();
+      if (MATH_CONSTS[lower] !== undefined) {
+        tokens.push({ text: word, type: 'const', start, end: i, name: lower });
+      } else if (MATH_FUNCS[lower] || MATH_FUNCS_2[lower]) {
+        tokens.push({ text: word, type: 'func', start, end: i, name: lower });
+      } else {
+        tokens.push({ text: word, type: 'unknown', start, end: i });
+      }
+    } else if ('+-*/^%(),'.includes(ch)) {
+      tokens.push({ text: ch, type: 'op', start: i, end: i + 1 });
+      i++;
+    } else {
+      tokens.push({ text: ch, type: 'unknown', start: i, end: i + 1 });
+      i++;
+    }
+  }
+  return tokens;
+}
+
 if (typeof window !== 'undefined') {
-  window._calculator = { search };
+  window._calculator = { search, getCalcTokens };
 }
 
 // Allow tests to import internals directly
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { search, evaluate, prepareForNerdamer, findClosingParen, hasVariables, getVariables, detectMathMode };
+  module.exports = { search, evaluate, prepareForNerdamer, findClosingParen, hasVariables, getVariables, detectMathMode, tokenize };
 }

@@ -937,3 +937,23 @@ pre:hover .code-copy-btn,
   color: var(--text-muted);
   font-size: 13px;
 }
+
+/* ─── Calculator syntax highlighting ─── */
+
+.calc-func {
+  color: #4ad4c6;
+  font-style: italic;
+}
+
+.calc-const {
+  color: #f0c850;
+  font-style: italic;
+}
+
+.calc-op-text {
+  color: var(--text-secondary);
+}
+
+.calc-num-text {
+  color: var(--text-primary);
+}

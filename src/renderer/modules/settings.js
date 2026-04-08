@@ -128,6 +128,7 @@ async function render() {
   const transparency = settings.transparency ?? APPEARANCE_DEFAULTS.transparency;
   const transparencyType = settings.transparencyType || APPEARANCE_DEFAULTS.transparencyType;
   const showHints = Boolean(settings.showHints);
+  const calcSyntax = settings.calcSyntax !== false;
   const showRevert = isAppearanceDirty(settings);
 
   panel.innerHTML = `
@@ -263,6 +264,15 @@ async function render() {
         <span class="settings-toggle-slider"></span>
       </label>
       <div class="settings-description">If disabled, you'll need to reopen TRIM manually to re-enable this.</div>
+    </div>
+
+    <div class="settings-group settings-toggle-group">
+      <label class="settings-toggle-label" for="settings-calc-syntax">
+        <span>Calculator Syntax</span>
+        <input type="checkbox" id="settings-calc-syntax" class="settings-toggle" ${calcSyntax ? 'checked' : ''}>
+        <span class="settings-toggle-slider"></span>
+      </label>
+      <div class="settings-description">Highlight functions and constants in calculator expressions. Mistyped names stay unformatted.</div>
     </div>
 
     <!-- ─── Save ─── -->
@@ -597,6 +607,7 @@ async function save() {
   const rawTypes = document.getElementById('settings-cached-file-types').value.trim();
   const autoStart = document.getElementById('settings-autostart').checked;
   const showHints = document.getElementById('settings-show-hints').checked;
+  const calcSyntax = document.getElementById('settings-calc-syntax').checked;
 
   const accentColor = getSelectedAccent();
   const appColor = getSelectedAppColor();
@@ -612,7 +623,7 @@ async function save() {
 
   const settingsData = {
     apiKey, model, modelPro, cachedFileTypes, autoStart,
-    showHints, accentColor, appColor, transparency, transparencyType,
+    showHints, calcSyntax, accentColor, appColor, transparency, transparencyType,
   };
 
   // Include shortcut if it was changed
@@ -631,6 +642,11 @@ async function save() {
 
   // Apply appearance immediately
   applyAppearance({ accentColor, appColor, transparency, transparencyType });
+
+  // Update calc syntax overlay setting
+  if (window._inputRouter && window._inputRouter.setCalcSyntax) {
+    window._inputRouter.setCalcSyntax(calcSyntax);
+  }
 
   // Apply transparency type (acrylic/mica/none) via main process
   if (window.trim.setBackgroundMaterial) {

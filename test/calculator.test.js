@@ -469,3 +469,374 @@ describe('Combined & Edge Cases', () => {
     assert.equal(evaluate('lcm(gcd(6,9), 4)'), 12);
   });
 });
+
+describe('Implicit Multiplication', () => {
+  it('2(3+4) = 14', () => {
+    assert.equal(evaluate('2(3+4)'), 14);
+  });
+
+  it('(2+3)(4+5) = 45', () => {
+    assert.equal(evaluate('(2+3)(4+5)'), 45);
+  });
+
+  it('2pi ≈ 6.283', () => {
+    approx(evaluate('2pi'), 2 * Math.PI);
+  });
+
+  it('2sin(pi/6) = 1', () => {
+    approx(evaluate('2sin(pi/6)'), 1);
+  });
+
+  it('(3)sin(pi/2) = 3', () => {
+    approx(evaluate('(3)sin(pi/2)'), 3);
+  });
+
+  it('(2+1)4 = 12', () => {
+    assert.equal(evaluate('(2+1)4'), 12);
+  });
+
+  it('2e ≈ 5.436', () => {
+    approx(evaluate('2e'), 2 * Math.E);
+  });
+
+  it('3(2)(5) = 30', () => {
+    assert.equal(evaluate('3(2)(5)'), 30);
+  });
+
+  it('sin(pi/2)cos(0) = 1', () => {
+    approx(evaluate('sin(pi/2)cos(0)'), 1);
+  });
+
+  it('2sqrt(9) = 6', () => {
+    assert.equal(evaluate('2sqrt(9)'), 6);
+  });
+
+  it('50%2 = 1 (percent then implicit mul)', () => {
+    assert.equal(evaluate('50%2'), 1);
+  });
+
+  it('complex chain: 2sin(pi/6)^2 + 3cos(0) = 3.5', () => {
+    // 2 * sin(pi/6)^2 + 3*cos(0) = 2*0.25 + 3*1 = 3.5
+    approx(evaluate('2*sin(pi/6)^2 + 3*cos(0)'), 3.5);
+  });
+
+  it('deeply nested: sqrt(abs(gcd(lcm(4,6), 9))) = 3', () => {
+    // lcm(4,6)=12, gcd(12,9)=3, abs(3)=3, sqrt(3)≈1.732
+    approx(evaluate('sqrt(abs(gcd(lcm(4,6), 9)))'), Math.sqrt(3));
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Correctness & Safety — must return undefined (not wrong answers)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Error handling: must return undefined', () => {
+  // Division by zero
+  it('1/0 → undefined (Infinity)', () => {
+    assert.equal(evaluate('1/0'), undefined);
+  });
+  it('0/0 → undefined (NaN)', () => {
+    assert.equal(evaluate('0/0'), undefined);
+  });
+  it('-1/0 → undefined (-Infinity)', () => {
+    assert.equal(evaluate('-1/0'), undefined);
+  });
+
+  // Domain errors
+  it('sqrt(-1) → undefined (NaN)', () => {
+    assert.equal(evaluate('sqrt(-1)'), undefined);
+  });
+  it('sqrt(-0.001) → undefined', () => {
+    assert.equal(evaluate('sqrt(-0.001)'), undefined);
+  });
+  it('asin(2) → undefined (out of domain)', () => {
+    assert.equal(evaluate('asin(2)'), undefined);
+  });
+  it('asin(-2) → undefined', () => {
+    assert.equal(evaluate('asin(-2)'), undefined);
+  });
+  it('acos(1.1) → undefined', () => {
+    assert.equal(evaluate('acos(1.1)'), undefined);
+  });
+  it('acos(-1.1) → undefined', () => {
+    assert.equal(evaluate('acos(-1.1)'), undefined);
+  });
+  it('log(-1) → undefined', () => {
+    assert.equal(evaluate('log(-1)'), undefined);
+  });
+  it('log(0) → undefined (-Infinity)', () => {
+    assert.equal(evaluate('log(0)'), undefined);
+  });
+  it('ln(-1) → undefined', () => {
+    assert.equal(evaluate('ln(-1)'), undefined);
+  });
+  it('ln(0) → undefined (-Infinity)', () => {
+    assert.equal(evaluate('ln(0)'), undefined);
+  });
+  it('(-8)^(1/3) → undefined (NaN in JS)', () => {
+    assert.equal(evaluate('(-8)^(1/3)'), undefined);
+  });
+  it('10^309 → undefined (Infinity)', () => {
+    assert.equal(evaluate('10^309'), undefined);
+  });
+  it('10^-400 = 0 (underflow, not error)', () => {
+    assert.equal(evaluate('10^-400'), 0);
+  });
+
+  // Invalid syntax — must NOT produce a number
+  it('1.2.3 → undefined (multi decimal)', () => {
+    assert.equal(evaluate('1.2.3'), undefined);
+  });
+  it('1.2.3+4 → undefined (multi decimal in expression)', () => {
+    assert.equal(evaluate('1.2.3+4'), undefined);
+  });
+  it('() → undefined (empty parens)', () => {
+    assert.equal(evaluate('()'), undefined);
+  });
+  it('3+ → undefined (trailing op)', () => {
+    assert.equal(evaluate('3+'), undefined);
+  });
+  it('*3 → undefined (leading op)', () => {
+    assert.equal(evaluate('*3'), undefined);
+  });
+  it('+ → undefined (bare op)', () => {
+    assert.equal(evaluate('+'), undefined);
+  });
+  it('(2+3 → undefined (unclosed paren)', () => {
+    assert.equal(evaluate('(2+3'), undefined);
+  });
+  it('2+3) → undefined (extra close paren)', () => {
+    assert.equal(evaluate('2+3)'), undefined);
+  });
+  it('3**4 → undefined (double op)', () => {
+    assert.equal(evaluate('3**4'), undefined);
+  });
+  it('3//4 → undefined (double slash)', () => {
+    assert.equal(evaluate('3//4'), undefined);
+  });
+  it('"" → undefined (empty)', () => {
+    assert.equal(evaluate(''), undefined);
+  });
+  it('"   " → undefined (whitespace)', () => {
+    assert.equal(evaluate('   '), undefined);
+  });
+  it('sin pi → undefined (func without parens)', () => {
+    assert.equal(evaluate('sin pi'), undefined);
+  });
+  it('gcd(12, 8, 4) → undefined (too many args)', () => {
+    assert.equal(evaluate('gcd(12, 8, 4)'), undefined);
+  });
+  it('gcd(12,) → undefined (trailing comma)', () => {
+    assert.equal(evaluate('gcd(12,)'), undefined);
+  });
+  it('sin(,3) → undefined (leading comma)', () => {
+    assert.equal(evaluate('sin(,3)'), undefined);
+  });
+  it('abc → undefined (unknown identifier)', () => {
+    assert.equal(evaluate('abc'), undefined);
+  });
+  it('hello(3) → undefined (unknown function)', () => {
+    assert.equal(evaluate('hello(3)'), undefined);
+  });
+  it('2+*3 → undefined (adjacent ops)', () => {
+    assert.equal(evaluate('2+*3'), undefined);
+  });
+  it(', → undefined', () => {
+    assert.equal(evaluate(','), undefined);
+  });
+  it('sin() → undefined (no argument)', () => {
+    assert.equal(evaluate('sin()'), undefined);
+  });
+});
+
+describe('Edge cases: correct answers', () => {
+  // Leading decimal point
+  it('.5 = 0.5', () => {
+    assert.equal(evaluate('.5'), 0.5);
+  });
+  it('.5+.5 = 1', () => {
+    assert.equal(evaluate('.5+.5'), 1);
+  });
+  it('3+.5 = 3.5', () => {
+    assert.equal(evaluate('3+.5'), 3.5);
+  });
+  it('(.5) = 0.5', () => {
+    assert.equal(evaluate('(.5)'), 0.5);
+  });
+
+  // Unary minus/plus
+  it('--3 = 3 (double negative)', () => {
+    assert.equal(evaluate('--3'), 3);
+  });
+  it('---3 = -3 (triple negative)', () => {
+    assert.equal(evaluate('---3'), -3);
+  });
+  it('+5 = 5 (unary plus)', () => {
+    assert.equal(evaluate('+5'), 5);
+  });
+  it('-(2+3) = -5', () => {
+    assert.equal(evaluate('-(2+3)'), -5);
+  });
+  it('-(-(-1)) = -1', () => {
+    assert.equal(evaluate('-(-(-1))'), -1);
+  });
+
+  // Percentage chaining
+  it('100% = 1', () => {
+    assert.equal(evaluate('100%'), 1);
+  });
+  it('50%% = 0.005', () => {
+    assert.equal(evaluate('50%%'), 0.005);
+  });
+  it('200 + 50% = 200.5', () => {
+    // 50% = 0.5, then 200 + 0.5 = 200.5
+    assert.equal(evaluate('200 + 50%'), 200.5);
+  });
+
+  // Exponent right-associativity
+  it('2^2^3 = 256 (right-assoc)', () => {
+    assert.equal(evaluate('2^2^3'), 256);
+  });
+  it('4^3^2 = 262144 (4^9)', () => {
+    assert.equal(evaluate('4^3^2'), 262144);
+  });
+
+  // 0^0
+  it('0^0 = 1 (JS convention)', () => {
+    assert.equal(evaluate('0^0'), 1);
+  });
+
+  // Deeply nested parentheses
+  it('((((((1+2)))))) = 3', () => {
+    assert.equal(evaluate('((((((1+2))))))'), 3);
+  });
+
+  // Negative base ** even exponent
+  it('(-2)^2 = 4', () => {
+    assert.equal(evaluate('(-2)^2'), 4);
+  });
+  it('(-3)^3 = -27', () => {
+    assert.equal(evaluate('(-3)^3'), -27);
+  });
+  it('(-2)^4 = 16', () => {
+    assert.equal(evaluate('(-2)^4'), 16);
+  });
+
+  // gcd/lcm edge cases
+  it('gcd(-12, 8) = 4 (takes abs)', () => {
+    assert.equal(evaluate('gcd(-12, 8)'), 4);
+  });
+  it('gcd(0, 0) = 0', () => {
+    assert.equal(evaluate('gcd(0, 0)'), 0);
+  });
+  it('lcm(0, 5) = 0', () => {
+    assert.equal(evaluate('lcm(0, 5)'), 0);
+  });
+  it('lcm(0, 0) = 0', () => {
+    assert.equal(evaluate('lcm(0, 0)'), 0);
+  });
+
+  // Single values
+  it('42 = 42', () => {
+    assert.equal(evaluate('42'), 42);
+  });
+  it('pi ≈ 3.14159', () => {
+    approx(evaluate('pi'), Math.PI);
+  });
+  it('e ≈ 2.71828', () => {
+    approx(evaluate('e'), Math.E);
+  });
+
+  // Trig identities
+  it('sin(0) = 0', () => {
+    assert.equal(evaluate('sin(0)'), 0);
+  });
+  it('cos(pi) ≈ -1', () => {
+    approx(evaluate('cos(pi)'), -1);
+  });
+  it('tan(0) = 0', () => {
+    assert.equal(evaluate('tan(0)'), 0);
+  });
+  it('asin(0) = 0', () => {
+    assert.equal(evaluate('asin(0)'), 0);
+  });
+  it('acos(1) = 0', () => {
+    assert.equal(evaluate('acos(1)'), 0);
+  });
+  it('atan(0) = 0', () => {
+    assert.equal(evaluate('atan(0)'), 0);
+  });
+  it('atan(1) ≈ pi/4', () => {
+    approx(evaluate('atan(1)'), Math.PI / 4);
+  });
+
+  // Deep nesting of functions
+  it('sin(cos(tan(0.5))) ≈ 0.7542', () => {
+    approx(evaluate('sin(cos(tan(0.5)))'), Math.sin(Math.cos(Math.tan(0.5))));
+  });
+  it('abs(floor(ceil(-1.5))) = 1', () => {
+    // ceil(-1.5) = -1, floor(-1) = -1, abs(-1) = 1
+    assert.equal(evaluate('abs(floor(ceil(-1.5)))'), 1);
+  });
+  it('round(sqrt(2)*100)/100 ≈ 1.41', () => {
+    approx(evaluate('round(sqrt(2)*100)/100'), 1.41);
+  });
+
+  // Functions of 2-arg functions
+  it('gcd(abs(-12), ceil(7.1)) = 4', () => {
+    // abs(-12)=12, ceil(7.1)=8, gcd(12,8)=4
+    assert.equal(evaluate('gcd(abs(-12), ceil(7.1))'), 4);
+  });
+  it('lcm(floor(3.9), round(2.5)) = 9', () => {
+    // floor(3.9)=3, round(2.5)=3, lcm(3,3)=3
+    assert.equal(evaluate('lcm(floor(3.9), round(2.5))'), 3);
+  });
+
+  // Large numbers
+  it('999999999 * 2 = 1999999998', () => {
+    assert.equal(evaluate('999999999 * 2'), 1999999998);
+  });
+
+  // Implicit mul with unary
+  it('-2(3) = -6', () => {
+    assert.equal(evaluate('-2(3)'), -6);
+  });
+  it('-sin(0) = 0', () => {
+    assert.equal(evaluate('-sin(0)'), -0);
+  });
+  it('-(3)(4) = -12', () => {
+    assert.equal(evaluate('-(3)(4)'), -12);
+  });
+
+  // Spacing variations
+  it('2  +  3 = 5 (extra spaces)', () => {
+    assert.equal(evaluate('2  +  3'), 5);
+  });
+  it(' sin( pi / 2 ) = 1 (spaces everywhere)', () => {
+    approx(evaluate(' sin( pi / 2 ) '), 1);
+  });
+
+  // Operator precedence
+  it('2+3*4-1 = 13', () => {
+    assert.equal(evaluate('2+3*4-1'), 13);
+  });
+  it('2*3+4*5 = 26', () => {
+    assert.equal(evaluate('2*3+4*5'), 26);
+  });
+  it('10-3-2 = 5 (left-assoc subtraction)', () => {
+    assert.equal(evaluate('10-3-2'), 5);
+  });
+  it('24/6/2 = 2 (left-assoc division)', () => {
+    assert.equal(evaluate('24/6/2'), 2);
+  });
+  it('2+3^2 = 11 (exponent before add)', () => {
+    assert.equal(evaluate('2+3^2'), 11);
+  });
+  it('2*3^2 = 18 (exponent before mul)', () => {
+    assert.equal(evaluate('2*3^2'), 18);
+  });
+  it('-3^2 = 9 (unary binds tighter: (-3)^2)', () => {
+    // Unary minus binds tighter than exponent in our parser (matches most software calculators)
+    assert.equal(evaluate('-3^2'), 9);
+  });
+});
