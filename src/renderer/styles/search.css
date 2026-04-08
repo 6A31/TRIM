@@ -650,6 +650,117 @@ pre:hover .code-copy-btn,
   border-radius: 6px;
 }
 
+/* Calculator symbolic results and plots */
+.calc-result {
+  padding: 12px 16px;
+}
+
+.calc-main-result {
+  padding: 8px 0;
+}
+
+.calc-main-result .katex {
+  color: var(--text-primary);
+  font-size: 1.35em;
+}
+
+.calc-main-result .katex-display {
+  margin: 0;
+  padding: 0;
+}
+
+.calc-steps {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 6px;
+  padding-top: 4px;
+}
+
+.calc-steps.collapsed .calc-steps-content {
+  display: none;
+}
+
+.calc-steps-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 0;
+  font-family: inherit;
+}
+
+.calc-steps-toggle:hover {
+  color: var(--text-primary);
+}
+
+.calc-steps-content {
+  padding: 6px 0 2px;
+}
+
+.calc-step {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 0;
+}
+
+.calc-step-label {
+  color: var(--text-secondary);
+  font-size: 11px;
+  min-width: 60px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.calc-step-tex .katex {
+  font-size: 1.1em;
+  color: var(--text-primary);
+}
+
+.calc-copy-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 3px 10px;
+  border-radius: 6px;
+  margin-top: 8px;
+  font-family: inherit;
+}
+
+.calc-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
+.calc-plot-title {
+  padding-bottom: 6px;
+}
+
+.calc-plot-title .katex {
+  color: var(--text-secondary);
+  font-size: 1.05em;
+}
+
+.calc-plot-container {
+  width: 100%;
+  height: 280px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.calc-plot-container .js-plotly-plot,
+.calc-plot-container .plotly {
+  border-radius: 8px;
+}
+
 /* File operation confirmation */
 .confirm-action {
   padding: 4px 0;

@@ -67,9 +67,7 @@ function boot() {
     const hasChat = window._aiQuery && window._aiQuery.isFollowUp();
     if (hasChat) {
       const mode = window._aiQuery.getConversationPrefix ? window._aiQuery.getConversationPrefix() : 'ai';
-      const prefix = mode === 'ai_pro' ? '?? '
-        : mode === 'solve' ? 'cs: '
-          : '? ';
+      const prefix = mode === 'ai_pro' ? '?? ' : '? ';
       input.value = prefix;
       if (window._inputRouter) window._inputRouter.refreshInputDecor(input);
       input.setSelectionRange(prefix.length, prefix.length);

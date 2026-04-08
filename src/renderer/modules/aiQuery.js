@@ -1,6 +1,6 @@
 let isQuerying = false;
 let hasConversation = false;
-let conversationPrefix = null; // 'ai', 'ai_pro', or 'solve'
+let conversationPrefix = null; // 'ai' or 'ai_pro'
 
 async function search(query) {
   if (!query.trim()) return [];

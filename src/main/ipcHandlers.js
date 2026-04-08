@@ -259,13 +259,13 @@ function applyAutoStart(enabled) {
 
 function saveSettingsWithEncryption(settings) {
   const toWrite = { ...settings };
-  // Never write plaintext apiKey to disk — encrypt or omit
+  // Never write plaintext apiKey to disk - encrypt or omit
   if (toWrite.apiKey) {
     try {
       if (safeStorage.isEncryptionAvailable()) {
         toWrite.apiKeyEncrypted = safeStorage.encryptString(toWrite.apiKey).toString('base64');
       } else {
-        console.warn('safeStorage not available — API key will not be persisted.');
+        console.warn('safeStorage not available - API key will not be persisted.');
       }
     } catch (err) {
       console.warn('Failed to encrypt API key:', err.message);
@@ -371,7 +371,7 @@ function findPython() {
 
 let pythonCmd = null;
 
-// All Python execution uses a temp venv — no global pip installs.
+// All Python execution uses a temp venv - no global pip installs.
 function needsVenv(packages) {
   return packages && packages.length > 0;
 }
@@ -1338,7 +1338,7 @@ function registerHandlers(ipcMain) {
   });
 
   ipcMain.handle(IPC.OPEN_FOLDER, async (_e, folderPath) => {
-    // Only open actual directories — refuse files to prevent executing binaries.
+    // Only open actual directories - refuse files to prevent executing binaries.
     try {
       const stat = fs.statSync(folderPath);
       if (!stat.isDirectory()) return;

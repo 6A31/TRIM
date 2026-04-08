@@ -23,13 +23,13 @@ Type anything to instantly search your installed apps. Results rank by launch fr
 
 Prefix with `?` for Gemini Flash or `??` for Gemini Pro. Responses are grounded with live Google Search, render full Markdown with syntax highlighting, LaTeX math, and one-click copy on code blocks.
 
-Conversations persist between toggles — hide the window, bring it back, keep chatting. Backspace the prefix to start fresh.
+Conversations persist between toggles - hide the window, bring it back, keep chatting. Backspace the prefix to start fresh.
 
 ![AI Chat](assets/screenshots/ai-chat.png)
 
 ### Python Execution
 
-More than just plotting — the AI installs packages, runs full scripts, and returns results inline. Toggle **Force Code** to make every query use deterministic Python instead of LLM reasoning, so math, data analysis, and logic get real answers, not approximations.
+More than just plotting - the AI installs packages, runs full scripts, and returns results inline. Toggle **Force Code** to make every query use deterministic Python instead of LLM reasoning, so math, data analysis, and logic get real answers, not approximations.
 
 ![Python Execution](assets/screenshots/ai-python.png)
 
@@ -45,9 +45,19 @@ The AI can read, create, edit, and delete files through tool calls. Every mutati
 
 ![File Automation](assets/screenshots/ai-textreplace.png)
 
-### Calculator
+### Math
 
-`c: 2+2` gives you `4` instantly. Supports trig, roots, logarithms, constants, percentages, and exponentiation.
+`c:` is a full-featured math tool. Type expressions for instant results, equations to solve, or functions to plot - all powered by a local symbolic engine (no AI required).
+
+- `c: 2+2` → instant evaluation
+- `c: x^2-4=0` → symbolic solving with steps
+- `c: derive x^3` → differentiation, integration, factoring
+- `c: sin(x)` → interactive 2D plot with hover
+- `c: x^2+y^2` → 3D surface plot with rotation
+
+Results render in KaTeX with collapsible step-by-step breakdowns. An **AI Explain** chip is available for optional AI-powered explanations.
+
+![Math](assets/screenshots/calculator-solver.png)
 
 ### Folder Search
 
@@ -62,9 +72,9 @@ The AI can read, create, edit, and delete files through tool calls. Every mutati
 | *(none)* | App search | | **Ctrl+Space** | Toggle TRIM |
 | `?` | AI Flash | | **Escape** | Hide |
 | `??` | AI Pro | | **Up/Down** | Navigate |
-| `c:` | Calculator | | **Enter** | Execute |
+| `c:` | Math | | **Enter** | Execute |
 | `f:` | Folders | | **Tab** | Autocomplete |
-| `cs:` | Solver | | `/` | Commands |
+| | | | `/` | Commands |
 
 ## Install
 

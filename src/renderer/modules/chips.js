@@ -25,7 +25,7 @@ register('force_code', {
   label: 'Force Code',
   icon: 'code',
   default: false,
-  modes: ['ai', 'ai_pro', 'solve'],
+  modes: ['ai', 'ai_pro'],
 });
 
 register('switch_ai', {
@@ -36,7 +36,7 @@ register('switch_ai', {
   visibleWhen: (ctx) => {
     const raw = (ctx.rawInput || '').trim();
     if (!raw) return false;
-    if (raw.startsWith('/') || raw.startsWith('?') || raw.startsWith('c:') || raw.startsWith('f:') || raw.startsWith('cs:')) return false;
+    if (raw.startsWith('/') || raw.startsWith('?') || raw.startsWith('c:') || raw.startsWith('f:')) return false;
     if ((ctx.resultsCount || 0) > 0) return false;
     const whitespaceCount = (raw.match(/\s+/g) || []).length;
     return whitespaceCount >= 2;
@@ -53,7 +53,29 @@ register('switch_ai', {
   },
 });
 
-// Auto-update chip — shown when a new version has been downloaded
+register('ai_explain', {
+  label: 'AI Explain',
+  icon: 'auto_awesome',
+  default: false,
+  modes: ['calc'],
+  action: () => {
+    if (!inputEl) return;
+    const raw = (inputEl.value || '').trim();
+    const expr = raw.replace(/^c:\s*/, '').trim();
+    if (!expr) return;
+    inputEl.value = `? Explain this math step by step, use LaTeX notation ($$...$$ for display, $...$ for inline): ${expr}`;
+    if (window._inputRouter) window._inputRouter.refreshInputDecor(inputEl);
+    inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
+    inputEl.focus();
+    inputEl.dispatchEvent(new Event('input'));
+    // Fire the query
+    setTimeout(() => {
+      inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    }, 0);
+  },
+});
+
+// Auto-update chip - shown when a new version has been downloaded
 let updateReady = false;
 
 register('update_available', {
@@ -107,8 +129,8 @@ function deactivate(id) {
 
 function updateMode(mode) {
   if (mode === chipMode) return; // skip rebuild if unchanged - preserves CSS transitions
-  // Leaving an AI/solve mode - deactivate force_code
-  const aiModes = ['ai', 'ai_pro', 'solve'];
+  // Leaving an AI mode - deactivate force_code
+  const aiModes = ['ai', 'ai_pro'];
   if (aiModes.includes(chipMode) && !aiModes.includes(mode)) {
     activeToggles['force_code'] = false;
   }

@@ -2,7 +2,6 @@ const MODE_ICONS = {
   app: 'search',
   ai: 'auto_awesome',
   ai_pro: 'auto_awesome',
-  solve: 'function',
   folder: 'folder_open',
   calc: 'calculate',
   command: 'terminal',
@@ -12,7 +11,6 @@ const MODE_HINTS = {
   app: '',
   ai: 'AI',
   ai_pro: 'AI PRO',
-  solve: 'SOLVE',
   folder: 'FOLDERS',
   calc: 'CALC',
   command: 'CMD',
@@ -55,7 +53,7 @@ function init() {
       return;
     }
 
-    if ((mode === 'ai' || mode === 'ai_pro' || mode === 'solve') && filePickActive) {
+    if ((mode === 'ai' || mode === 'ai_pro') && filePickActive) {
       const hashMatch = currentRaw.match(/#([^#\\\/\s][^#\\\/]*)$/);
       const searchTerm = hashMatch && hashMatch[1] ? hashMatch[1].trim() : '';
       if (!searchTerm) return;
@@ -89,8 +87,8 @@ function init() {
       return;
     }
 
-    // AI and solve only fire on Enter, not on typing
-    if (mode === 'ai' || mode === 'ai_pro' || mode === 'solve') {
+    // AI modes only fire on Enter, not on typing
+    if (mode === 'ai' || mode === 'ai_pro') {
       clearTimeout(debounceTimer);
 
       // Check for #file references - show file picker
@@ -141,7 +139,7 @@ function init() {
 }
 
 function getDebounceDelay(raw) {
-  if (raw.startsWith('c:')) return 0;
+  if (raw.startsWith('c:')) return 150;
   if (raw.startsWith('?')) return 300;
   return 120;
 }
@@ -150,7 +148,6 @@ function detectMode(raw) {
   if (raw.startsWith('/')) return 'command';
   if (raw.startsWith('??')) return 'ai_pro';
   if (raw.startsWith('?')) return 'ai';
-  if (raw.startsWith('cs:')) return 'solve';
   if (raw.startsWith('f:')) return 'folder';
   if (raw.startsWith('c:')) return 'calc';
   return 'app';
@@ -208,7 +205,7 @@ async function route(rawInput) {
 
   activeFolderRequestId = null;
 
-  if (mode === 'ai' || mode === 'ai_pro' || mode === 'solve') {
+  if (mode === 'ai' || mode === 'ai_pro') {
     return;
   }
 
@@ -308,7 +305,7 @@ function renderInputOverlay(inputEl) {
   const hasRefs = /#\[[^\]]+\]/.test(raw);
 
   // Check for conversation follow-up hint: input is just the prefix (e.g. "? " or "?? ")
-  const prefixOnly = /^(\?\??\s*|cs:\s*)$/.test(raw);
+  const prefixOnly = /^(\?\??\s*)$/.test(raw);
   const inConversation = window._aiQuery && window._aiQuery.isFollowUp();
 
   if (!hasRefs && !prefixOnly) {
@@ -322,7 +319,7 @@ function renderInputOverlay(inputEl) {
   // Show conversation hint when input is just the prefix
   if (!hasRefs && prefixOnly && inConversation) {
     inputOverlayEl.style.display = '';
-    // Keep native text visible (the prefix) — don't hide it
+    // Keep native text visible (the prefix) - don't hide it
     inputEl.style.color = '';
     inputEl.style.webkitTextFillColor = '';
     // Invisible spacer matching the prefix width, then muted hint
@@ -339,7 +336,7 @@ function renderInputOverlay(inputEl) {
     return;
   }
 
-  // Has file ref pills — show overlay, hide native input text
+  // Has file ref pills - show overlay, hide native input text
   inputOverlayEl.style.display = '';
   inputEl.style.color = 'transparent';
   inputEl.style.webkitTextFillColor = 'transparent';

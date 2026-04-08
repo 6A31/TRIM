@@ -10,7 +10,7 @@ function register() {
   if (!ok) {
     console.error(`Failed to register global shortcut: ${shortcut}`);
     const key = process.platform === 'darwin' ? 'Option+Space' : 'Ctrl+Space';
-    dialog.showErrorBox('TRIM — Shortcut Conflict', `Could not register ${key}. Another app may be using it.\n\nClose the conflicting app and restart TRIM.`);
+    dialog.showErrorBox('TRIM - Shortcut Conflict', `Could not register ${key}. Another app may be using it.\n\nClose the conflicting app and restart TRIM.`);
   }
 }
 

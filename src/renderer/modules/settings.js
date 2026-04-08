@@ -54,7 +54,7 @@ async function open() {
   isOpen = true;
 
   await render();
-  // Settings panel is tall — use full available height (main process caps at 60%)
+  // Settings panel is tall - use full available height (main process caps at 60%)
   requestAnimationFrame(() => {
     const barH = document.getElementById('search-bar').offsetHeight;
     const panelH = document.getElementById('settings-panel').scrollHeight;
@@ -375,7 +375,7 @@ function getSelectedAppColor() {
   return document.getElementById('settings-appcolor-custom').value;
 }
 
-// Live previews — apply CSS vars without saving
+// Live previews - apply CSS vars without saving
 function previewAccent(color) {
   document.documentElement.style.setProperty('--accent', color);
   document.documentElement.style.setProperty('--accent-glow', hexToGlow(color));
@@ -412,7 +412,7 @@ function applyAppearance(s) {
   const accent = s.accentColor || APPEARANCE_DEFAULTS.accentColor;
   const appColor = s.appColor || APPEARANCE_DEFAULTS.appColor;
   const type = s.transparencyType || APPEARANCE_DEFAULTS.transparencyType;
-  // When "none", ignore transparency slider — force fully opaque
+  // When "none", ignore transparency slider - force fully opaque
   const t = type === 'none' ? 1 : (s.transparency ?? APPEARANCE_DEFAULTS.transparency);
   const { r, g, b } = hexToRgb(appColor);
 

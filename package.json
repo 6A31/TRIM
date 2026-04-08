@@ -21,7 +21,9 @@
   "type": "commonjs",
   "dependencies": {
     "@google/genai": "^1.48.0",
-    "electron-updater": "^6.8.3"
+    "electron-updater": "^6.8.3",
+    "nerdamer": "^1.1.13",
+    "plotly.js-dist-min": "^3.5.0"
   },
   "devDependencies": {
     "@highlightjs/cdn-assets": "^11.11.1",

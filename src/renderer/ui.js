@@ -89,19 +89,6 @@ function handleKeyboard(e) {
             renderAIResponse(response);
           });
         }
-      } else if (input.startsWith('cs:')) {
-        const expr = input.slice(3).trim();
-        const resolvedExpr = window._inputRouter.resolveAIFileRefsInQuery(expr);
-        if (expr) {
-          window._aiQuery.prepareForQuery('solve');
-          showAILoading('Solving...');
-          // Only wrap with solve instructions on first query, not follow-ups
-          const isFollowUp = window._aiQuery.isFollowUp();
-          const solvePrompt = isFollowUp ? resolvedExpr : `Solve this math problem step by step. Use LaTeX notation ($$...$$ for display, $...$ for inline) for all math expressions. Use the run_python tool to compute and verify your answer. Show clear, concise steps.\n\nProblem: ${resolvedExpr}`;
-          window._aiQuery.execute(solvePrompt, 'solve', true, (response) => {
-            renderAIResponse(response);
-          });
-        }
       } else {
         const didExecute = executeSelected();
         if (!didExecute && window._chips && window._chips.triggerVisibleAction) {
@@ -154,7 +141,7 @@ function executeSelected() {
   if (selectedIndex >= 0 && selectedIndex < currentResults.length) {
     const result = currentResults[selectedIndex];
     if (result.action) result.action();
-    if (result.type !== 'command' && result.type !== 'calc') {
+    if (result.type !== 'command' && result.type !== 'calc' && result.type !== 'calc-symbolic' && result.type !== 'calc-plot') {
       window.trim.hideWindow();
     }
     return true;
@@ -201,16 +188,7 @@ function getPlaceholderResult(mode, kind) {
         type: 'placeholder',
         icon: 'calculate',
         title: 'Enter an expression',
-        subtitle: 'Try c: 2+2, c: sqrt(81), or c: sin(pi/2)',
-      };
-    }
-
-    if (mode === 'solve') {
-      return {
-        type: 'placeholder',
-        icon: 'function',
-        title: 'Solve a math problem',
-        subtitle: 'Type the problem after cs:, then press Enter',
+        subtitle: 'Try c: 2+2, c: x^2-4=0, c: derive x^3, or c: plot sin(x)',
       };
     }
 
@@ -264,15 +242,6 @@ function getPlaceholderResult(mode, kind) {
       icon: 'calculate',
       title: 'Expression not ready',
       subtitle: 'Check for missing operators, brackets, or function arguments',
-    };
-  }
-
-  if (mode === 'solve') {
-    return {
-      type: 'placeholder',
-      icon: 'function',
-      title: 'Press Enter to solve',
-      subtitle: 'Finish the problem statement, then send it to AI',
     };
   }
 
@@ -347,6 +316,44 @@ async function renderResults(results) {
     return;
   }
 
+  // Check for special calc result types that need custom rendering
+  const firstResult = results[0];
+  if (firstResult.type === 'calc-symbolic' || firstResult.type === 'calc-plot') {
+    lastResultsKey = '';
+    const frag = document.createDocumentFragment();
+    for (const result of results) {
+      if (result.type === 'calc-symbolic') {
+        frag.appendChild(createCalcSymbolicElement(result));
+      } else if (result.type === 'calc-plot') {
+        frag.appendChild(createCalcPlotElement(result));
+      } else {
+        frag.appendChild(createResultElement(result));
+      }
+    }
+    container.replaceChildren(frag);
+    container.classList.remove('hidden');
+    document.getElementById('search-bar').classList.add('has-results');
+
+    // Render Plotly charts after DOM insertion
+    container.querySelectorAll('.calc-plot-container').forEach(el => {
+      try {
+        const data = JSON.parse(el.dataset.plotData);
+        const layout = JSON.parse(el.dataset.plotLayout);
+        const config = JSON.parse(el.dataset.plotConfig);
+        if (typeof Plotly !== 'undefined') {
+          Plotly.newPlot(el, data, layout, config);
+        }
+      } catch { /* ignore */ }
+    });
+
+    requestAnimationFrame(() => {
+      const barH = getBarHeight();
+      const resultsH = container.scrollHeight;
+      window.trim.resizeWindow(Math.min(barH + resultsH + 2, 500));
+    });
+    return;
+  }
+
   const key = getResultsKey(results);
   const unchanged = key === lastResultsKey;
   lastResultsKey = key;
@@ -385,7 +392,7 @@ function createResultElement(result) {
   el.className = 'result-item';
   el.addEventListener('click', () => {
     if (result.action) result.action();
-    if (result.type !== 'command' && result.type !== 'calc') {
+    if (result.type !== 'command' && result.type !== 'calc' && result.type !== 'calc-symbolic' && result.type !== 'calc-plot') {
       window.trim.hideWindow();
     }
   });
@@ -441,6 +448,106 @@ function createResultElement(result) {
   return el;
 }
 
+function createCalcSymbolicElement(result) {
+  const el = document.createElement('div');
+  el.className = 'calc-result';
+
+  // Main result in KaTeX
+  const mainDiv = document.createElement('div');
+  mainDiv.className = 'calc-main-result';
+  mainDiv.innerHTML = result.mainHtml;
+  el.appendChild(mainDiv);
+
+  // Steps (collapsible)
+  if (result.steps && result.steps.length > 0) {
+    const stepsDiv = document.createElement('div');
+    stepsDiv.className = 'calc-steps collapsed';
+
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'calc-steps-toggle';
+    toggleBtn.innerHTML = '<span class="material-symbols-rounded" style="font-size:14px">expand_more</span> <span>Steps</span>';
+    toggleBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    toggleBtn.addEventListener('click', () => {
+      stepsDiv.classList.toggle('collapsed');
+      const chevron = toggleBtn.querySelector('.material-symbols-rounded');
+      chevron.textContent = stepsDiv.classList.contains('collapsed') ? 'expand_more' : 'expand_less';
+      requestAnimationFrame(() => {
+        const container = document.getElementById('results-container');
+        const barH = getBarHeight();
+        window.trim.resizeWindow(Math.min(barH + container.scrollHeight + 2, 500));
+      });
+    });
+    stepsDiv.appendChild(toggleBtn);
+
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'calc-steps-content';
+    for (const step of result.steps) {
+      const stepEl = document.createElement('div');
+      stepEl.className = 'calc-step';
+      const labelEl = document.createElement('span');
+      labelEl.className = 'calc-step-label';
+      labelEl.textContent = step.label;
+      const texEl = document.createElement('span');
+      texEl.className = 'calc-step-tex';
+      try {
+        texEl.innerHTML = katex.renderToString(step.tex, { displayMode: false, throwOnError: false });
+      } catch {
+        texEl.textContent = step.tex;
+      }
+      stepEl.appendChild(labelEl);
+      stepEl.appendChild(texEl);
+      contentDiv.appendChild(stepEl);
+    }
+    stepsDiv.appendChild(contentDiv);
+    el.appendChild(stepsDiv);
+  }
+
+  // Copy button
+  if (result.copyText) {
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'calc-copy-btn';
+    copyBtn.innerHTML = '<span class="material-symbols-rounded" style="font-size:14px">content_copy</span> <span>Copy</span>';
+    copyBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(result.copyText).then(() => {
+        const icon = copyBtn.querySelector('.material-symbols-rounded');
+        icon.textContent = 'check';
+        setTimeout(() => { icon.textContent = 'content_copy'; }, 1500);
+      });
+    });
+    el.appendChild(copyBtn);
+  }
+
+  return el;
+}
+
+function createCalcPlotElement(result) {
+  const el = document.createElement('div');
+  el.className = 'calc-result';
+
+  // Title in KaTeX
+  if (result.titleTex) {
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'calc-plot-title';
+    try {
+      titleDiv.innerHTML = katex.renderToString(result.titleTex, { displayMode: false, throwOnError: false });
+    } catch {
+      titleDiv.textContent = result.subtitle;
+    }
+    el.appendChild(titleDiv);
+  }
+
+  // Plotly container
+  const plotDiv = document.createElement('div');
+  plotDiv.className = 'calc-plot-container';
+  plotDiv.dataset.plotData = JSON.stringify(result.plotData);
+  plotDiv.dataset.plotLayout = JSON.stringify(result.plotLayout);
+  plotDiv.dataset.plotConfig = JSON.stringify(result.plotConfig);
+  el.appendChild(plotDiv);
+
+  return el;
+}
+
 async function loadAppIcon(result) {
   try {
     const icon = await window._appSearch.loadIcon(result.iconPath);
@@ -480,8 +587,7 @@ function showAILoading(statusText) {
   // Show the user's query as a header for follow-ups
   if (isFollowUp) {
     const input = document.getElementById('search-input').value;
-    const queryText = input.startsWith('cs:') ? input.slice(3).trim()
-      : input.startsWith('??') ? input.slice(2).trim()
+    const queryText = input.startsWith('??') ? input.slice(2).trim()
       : input.startsWith('?') ? input.slice(1).trim() : input;
     const queryDiv = document.createElement('div');
     queryDiv.className = 'ai-follow-up-query';
@@ -530,7 +636,7 @@ function sanitizeHTML(html) {
       ALLOW_DATA_ATTR: false,
     });
   }
-  // DOMPurify failed to load — strip all HTML tags as a safe fallback.
+  // DOMPurify failed to load - strip all HTML tags as a safe fallback.
   return html.replace(/<[^>]*>/g, '');
 }
 
@@ -641,8 +747,7 @@ function renderAIResponse(response) {
   // Prep input for follow-up: clear to just the prefix
   const searchInput = document.getElementById('search-input');
   const val = searchInput.value;
-  const prefix = val.startsWith('cs:') ? 'cs: '
-    : val.startsWith('??') ? '?? '
+  const prefix = val.startsWith('??') ? '?? '
     : val.startsWith('?') ? '? ' : '';
   if (prefix) {
     searchInput.value = prefix;
