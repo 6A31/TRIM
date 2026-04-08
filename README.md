@@ -6,7 +6,7 @@
 
 A keyboard-first launcher for Windows and macOS. Think Spotlight, but with AI built in.
 
-TRIM sits behind **Ctrl+Space** (Option+Space on Mac), gives you a single search bar with an acrylic glass UI, and gets out of your way.
+TRIM sits behind **Alt+Space** (customizable in Settings), gives you a single search bar with an acrylic glass UI, and gets out of your way.
 
 ![App Search](assets/screenshots/app-search.png)
 
@@ -71,7 +71,7 @@ Results render in KaTeX with collapsible step-by-step breakdowns. An **AI Explai
 
 | Prefix | Mode | | Key | Action |
 |--------|------|-|-----|--------|
-| *(none)* | App search | | **Ctrl+Space** | Toggle TRIM |
+| *(none)* | App search | | **Alt+Space** | Toggle TRIM |
 | `?` | AI Flash | | **Escape** | Hide |
 | `??` | AI Pro | | **Up/Down** | Navigate |
 | `c:` | Math | | **Enter** | Execute |

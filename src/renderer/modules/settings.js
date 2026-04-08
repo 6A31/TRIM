@@ -63,6 +63,7 @@ async function open() {
 }
 
 function close() {
+  cleanupShortcutRecorder();
   const panel = document.getElementById('settings-panel');
   panel.classList.add('hidden');
   panel.innerHTML = '';
@@ -85,6 +86,7 @@ function close() {
 
 // Light dismiss: hides the settings panel without clearing the search input.
 function dismiss() {
+  cleanupShortcutRecorder();
   const panel = document.getElementById('settings-panel');
   panel.classList.add('hidden');
   panel.innerHTML = '';
@@ -232,6 +234,22 @@ async function render() {
     </div>
 
     <div class="settings-group">
+      <label class="settings-label">Shortcut</label>
+      <div class="shortcut-recorder" id="shortcut-recorder">
+        <span class="shortcut-display" id="shortcut-display">${escapeAttr(settings.shortcut || 'Alt+Space')}</span>
+        <button class="shortcut-record-btn" id="shortcut-record-btn" title="Record new shortcut">
+          <span class="material-symbols-rounded" style="font-size:14px">keyboard</span>
+          Change
+        </button>
+        <button class="settings-revert-btn shortcut-default-btn" id="shortcut-default-btn" title="Restore default shortcut">
+          <span class="material-symbols-rounded" style="font-size:14px">restart_alt</span>
+          Default
+        </button>
+      </div>
+      <div class="settings-description" id="shortcut-hint">Global keyboard shortcut to toggle TRIM.</div>
+    </div>
+
+    <div class="settings-group">
       <label class="settings-label">Extra Cached File Types</label>
       <input type="text" class="settings-input" id="settings-cached-file-types"
         placeholder=".blend, .psd, .step"
@@ -272,6 +290,9 @@ async function render() {
   // ── Wire events ──
   panel.querySelector('#settings-close-btn').addEventListener('click', close);
   panel.querySelector('#settings-save-btn').addEventListener('click', save);
+
+  // ── Shortcut recorder ──
+  wireShortcutRecorder(panel, settings.shortcut || 'Alt+Space');
 
   // Accent swatches
   panel.querySelectorAll('[data-accent]').forEach(btn => {
@@ -363,6 +384,153 @@ async function render() {
   panel.scrollTop = 0;
 }
 
+// ── Shortcut recorder ──
+let pendingShortcut = null;
+let _recorderCleanup = null;
+
+function cleanupShortcutRecorder() {
+  if (_recorderCleanup) _recorderCleanup();
+  pendingShortcut = null;
+}
+
+const MODIFIER_KEYS = new Set([
+  'Control', 'Shift', 'Alt', 'Meta',
+]);
+
+const KEY_MAP = {
+  ' ': 'Space', 'ArrowUp': 'Up', 'ArrowDown': 'Down',
+  'ArrowLeft': 'Left', 'ArrowRight': 'Right',
+  '+': 'Plus', '=': 'Plus',
+};
+
+function keyEventToAccelerator(e) {
+  const parts = [];
+  if (e.ctrlKey || e.metaKey) parts.push('CommandOrControl');
+  if (e.altKey) parts.push('Alt');
+  if (e.shiftKey) parts.push('Shift');
+  if (MODIFIER_KEYS.has(e.key)) return null; // modifier only, not a valid combo
+  let key = KEY_MAP[e.key] || e.key;
+  // Capitalise single letters
+  if (key.length === 1) key = key.toUpperCase();
+  parts.push(key);
+  // Require at least one modifier
+  if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) return null;
+  return parts.join('+');
+}
+
+function prettyShortcut(accel) {
+  if (!accel) return '';
+  const ctrlLabel = navigator.platform?.startsWith('Mac') ? 'Cmd' : 'Ctrl';
+  return accel.replace('CommandOrControl', ctrlLabel);
+}
+
+function wireShortcutRecorder(panel, savedShortcut) {
+  const display = panel.querySelector('#shortcut-display');
+  const recordBtn = panel.querySelector('#shortcut-record-btn');
+  const defaultBtn = panel.querySelector('#shortcut-default-btn');
+  const hint = panel.querySelector('#shortcut-hint');
+  const recorder = panel.querySelector('#shortcut-recorder');
+
+  let recording = false;
+  let captured = null;
+  pendingShortcut = null;
+
+  function onKey(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Escape') {
+      stopRecording();
+      display.textContent = prettyShortcut(pendingShortcut || savedShortcut);
+      hint.textContent = 'Global keyboard shortcut to toggle TRIM.';
+      return;
+    }
+    const accel = keyEventToAccelerator(e);
+    if (!accel) return; // modifier-only press, keep waiting
+    stopRecording();
+    captured = accel;
+    showConfirm(accel);
+  }
+
+  function onConfirmKey(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      pendingShortcut = captured;
+      display.textContent = prettyShortcut(captured);
+      clearConfirm();
+      recorder.classList.add('changed');
+      hint.innerHTML = `Shortcut changed. Click <strong>Save</strong> to apply.`;
+    } else if (e.key === 'Escape') {
+      display.textContent = prettyShortcut(pendingShortcut || savedShortcut);
+      clearConfirm();
+    }
+  }
+
+  function stopRecording() {
+    recording = false;
+    recorder.classList.remove('recording');
+    recordBtn.innerHTML = '<span class="material-symbols-rounded" style="font-size:14px">keyboard</span> Change';
+    document.removeEventListener('keydown', onKey, true);
+  }
+
+  function showConfirm(accelerator) {
+    display.textContent = prettyShortcut(accelerator);
+    recorder.classList.add('confirming');
+    hint.innerHTML = `Captured <strong>${prettyShortcut(accelerator)}</strong> — press <strong>Enter</strong> to confirm or <strong>Escape</strong> to cancel.`;
+    document.addEventListener('keydown', onConfirmKey, true);
+  }
+
+  function clearConfirm() {
+    recorder.classList.remove('confirming');
+    hint.textContent = 'Global keyboard shortcut to toggle TRIM.';
+    document.removeEventListener('keydown', onConfirmKey, true);
+    captured = null;
+  }
+
+  // Expose cleanup so close/dismiss can tear down listeners
+  _recorderCleanup = () => {
+    stopRecording();
+    clearConfirm();
+    _recorderCleanup = null;
+  };
+
+  recordBtn.addEventListener('click', () => {
+    if (recording) {
+      stopRecording();
+      display.textContent = prettyShortcut(pendingShortcut || savedShortcut);
+      hint.textContent = 'Global keyboard shortcut to toggle TRIM.';
+      return;
+    }
+    recording = true;
+    recorder.classList.add('recording');
+    clearConfirm();
+    display.textContent = 'Press a key combo...';
+    recordBtn.innerHTML = '<span class="material-symbols-rounded" style="font-size:14px">close</span> Cancel';
+    hint.textContent = 'Press a modifier + key (e.g. Alt+Space, Ctrl+Space).';
+    document.addEventListener('keydown', onKey, true);
+  });
+
+  defaultBtn.addEventListener('click', () => {
+    stopRecording();
+    clearConfirm();
+    pendingShortcut = 'Alt+Space';
+    display.textContent = prettyShortcut('Alt+Space');
+    recorder.classList.remove('changed');
+    if (savedShortcut !== 'Alt+Space') {
+      recorder.classList.add('changed');
+      hint.innerHTML = `Shortcut reset to default. Click <strong>Save</strong> to apply.`;
+    } else {
+      // Brief flash to confirm the click was received
+      recorder.classList.add('confirming');
+      hint.textContent = 'Already using the default shortcut.';
+      setTimeout(() => {
+        recorder.classList.remove('confirming');
+        hint.textContent = 'Global keyboard shortcut to toggle TRIM.';
+      }, 1200);
+    }
+  });
+}
+
 function getSelectedAccent() {
   const active = document.querySelector('[data-accent].active');
   if (active) return active.dataset.accent;
@@ -442,10 +610,24 @@ async function save() {
     .map(t => (t.startsWith('.') ? t : `.${t}`))
     .filter((t, i, arr) => arr.indexOf(t) === i);
 
-  await window.trim.saveSettings({
+  const settingsData = {
     apiKey, model, modelPro, cachedFileTypes, autoStart,
     showHints, accentColor, appColor, transparency, transparencyType,
-  });
+  };
+
+  // Include shortcut if it was changed
+  if (pendingShortcut) {
+    // Test-register the shortcut first
+    const ok = await window.trim.updateShortcut(pendingShortcut);
+    if (!ok) {
+      const hint = document.getElementById('shortcut-hint');
+      if (hint) hint.innerHTML = '<span style="color:#ff6b6b">Shortcut conflict — another app is using it. Try a different combo.</span>';
+      return;
+    }
+    settingsData.shortcut = pendingShortcut;
+  }
+
+  await window.trim.saveSettings(settingsData);
 
   // Apply appearance immediately
   applyAppearance({ accentColor, appColor, transparency, transparencyType });
@@ -456,6 +638,8 @@ async function save() {
   }
 
   if (window._ui && window._ui.loadHotfixContext) await window._ui.loadHotfixContext();
+
+  pendingShortcut = null;
 
   // Save button feedback
   const btn = document.getElementById('settings-save-btn');

@@ -2,7 +2,7 @@ const { app, ipcMain, screen } = require('electron');
 const windowManager = require('./windowManager');
 const globalHotkey = require('./globalHotkey');
 const updater = require('./updater');
-const { registerHandlers } = require('./ipcHandlers');
+const { registerHandlers, loadSettingsSync } = require('./ipcHandlers');
 const { IPC } = require('../shared/constants');
 
 app.setName('TRIM');
@@ -17,7 +17,8 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     windowManager.create();
-    globalHotkey.register();
+    const settings = loadSettingsSync();
+    globalHotkey.register(settings.shortcut);
     registerHandlers(ipcMain);
 
     ipcMain.on(IPC.HIDE_WINDOW, () => {

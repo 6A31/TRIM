@@ -44,6 +44,12 @@ function create() {
     hide();
   });
 
+  // Prevent Alt+Space from opening the system menu on Windows (frameless window).
+  // Without this, the renderer can't capture Alt+Space as a keybind.
+  mainWindow.on('system-context-menu', (e) => {
+    e.preventDefault();
+  });
+
   mainWindow.on('ready-to-show', () => {
     mainWindow.setContentSize(WIN_W, BAR_H);
     // Use the same code path as hotkey toggles so animation/timing matches.

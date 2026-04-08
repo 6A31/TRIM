@@ -26,9 +26,12 @@ const IPC = {
   CONFIRM_ACTION: 'trim:confirm-action',
   CONFIRM_ACTION_RESPONSE: 'trim:confirm-action-response',
   SET_BACKGROUND_MATERIAL: 'trim:set-background-material',
+  UPDATE_SHORTCUT: 'trim:update-shortcut',
   UPDATE_READY: 'trim:update-ready',
   QUIT_AND_INSTALL: 'trim:quit-and-install',
 };
+
+const DEFAULT_SHORTCUT = 'Alt+Space';
 
 const DEFAULTS = {
   theme: 'dark',
@@ -39,6 +42,7 @@ const DEFAULTS = {
   cachedFileTypes: [],
   autoStart: true,
   showHints: false,
+  shortcut: DEFAULT_SHORTCUT,
   // Appearance
   accentColor: '#7c8aff',
   appColor: '#1e1e28',
@@ -46,4 +50,4 @@ const DEFAULTS = {
   transparencyType: 'acrylic', // 'acrylic' | 'mica' | 'none'
 };
 
-module.exports = { PREFIXES, IPC, DEFAULTS };
+module.exports = { PREFIXES, IPC, DEFAULTS, DEFAULT_SHORTCUT };

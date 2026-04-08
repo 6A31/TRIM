@@ -381,3 +381,72 @@
   transform: translateX(16px);
   background: #fff;
 }
+
+/* ── Shortcut recorder ── */
+.shortcut-recorder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shortcut-display {
+  display: inline-flex;
+  align-items: center;
+  min-width: 80px;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.shortcut-recorder.recording .shortcut-display {
+  border-color: var(--accent);
+  color: var(--accent);
+  animation: shortcut-pulse 1.2s ease-in-out infinite;
+}
+
+.shortcut-recorder.confirming .shortcut-display {
+  border-color: #f0c850;
+  color: #f0c850;
+}
+
+.shortcut-recorder.changed .shortcut-display {
+  border-color: var(--accent);
+}
+
+@keyframes shortcut-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.shortcut-record-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.shortcut-record-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.shortcut-default-btn {
+  margin-left: 0;
+}

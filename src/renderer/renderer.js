@@ -47,6 +47,11 @@ function boot() {
 
   // Clean up on hide (not on show, to avoid old content blinking)
   window.trim.onWindowHidden(() => {
+    // Tear down settings panel + shortcut recorder listeners if open
+    if (window._settings && window._settings.isOpen()) {
+      window._settings.dismiss();
+    }
+
     const hasChat = window._aiQuery && window._aiQuery.isFollowUp();
     input.value = '';
     if (window._inputRouter) window._inputRouter.refreshInputDecor(input);

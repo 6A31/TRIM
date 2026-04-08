@@ -1408,8 +1408,23 @@ function registerHandlers(ipcMain) {
     saveSettingsWithEncryption(merged);
     if (data.apiKey !== undefined) initAI(data.apiKey);
     if (data.autoStart !== undefined) applyAutoStart(data.autoStart);
+    if (data.shortcut !== undefined) {
+      const globalHotkey = require('./globalHotkey');
+      globalHotkey.register(data.shortcut);
+    }
     appCache = null;
     return merged;
+  });
+
+  ipcMain.handle(IPC.UPDATE_SHORTCUT, async (_e, accelerator) => {
+    const globalHotkey = require('./globalHotkey');
+    const ok = globalHotkey.register(accelerator);
+    if (!ok) {
+      // Re-register the saved shortcut on failure
+      const settings = loadSettingsSync();
+      globalHotkey.register(settings.shortcut);
+    }
+    return ok;
   });
 
   ipcMain.handle(IPC.SET_BACKGROUND_MATERIAL, async (e, type, appColorHex) => {
@@ -1461,4 +1476,4 @@ function registerHandlers(ipcMain) {
   });
 }
 
-module.exports = { registerHandlers };
+module.exports = { registerHandlers, loadSettingsSync };
