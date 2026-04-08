@@ -84,6 +84,19 @@ function findClosingParen(str, start) {
 let heavyTimer = null;
 let lastHeavyResult = null;
 let heavyGeneration = 0; // monotonic counter to discard stale results
+const HEAVY_DEBOUNCE_MS = 300;
+const MAX_EXPONENT = 1000;
+
+// Quick pre-check: reject expressions with obviously huge literal exponents
+// that would choke the symbolic engine before it even starts plotting.
+function hasHugeExponent(expr) {
+  const matches = expr.match(/\^\s*(\d+)/g);
+  if (!matches) return false;
+  return matches.some(m => {
+    const n = parseInt(m.replace(/^\^\s*/, ''), 10);
+    return n > MAX_EXPONENT;
+  });
+}
 
 function search(expression, onHeavyResult) {
   if (!expression.trim()) return [];
@@ -105,7 +118,7 @@ function search(expression, onHeavyResult) {
     if (gen === heavyGeneration && typeof onHeavyResult === 'function') {
       onHeavyResult(results);
     }
-  }, 0);
+  }, HEAVY_DEBOUNCE_MS);
   return [{ type: 'calc-loading' }];
 }
 
@@ -167,6 +180,9 @@ function handleEvaluate(expression) {
 
 function handleHeavy(detected) {
   if (typeof nerdamer === 'undefined') return [];
+
+  // Bail early on expressions with exponents too large for the symbolic engine
+  if (hasHugeExponent(detected.expr)) return [];
 
   try {
     switch (detected.mode) {
@@ -348,6 +364,18 @@ function handlePlot(detected) {
   return buildPlot2D(expr, vars[0] || 'x');
 }
 
+function safeBuildFunction(nExpr, vars) {
+  try {
+    const fn = nerdamer(nExpr).buildFunction(vars);
+    // Smoke-test with a safe value to make sure it returns a number
+    const test = fn(...vars.map(() => 1));
+    if (typeof test !== 'number') return null;
+    return fn;
+  } catch {
+    return null;
+  }
+}
+
 function buildPlot2D(expr, variable) {
   const nExpr = prepareForNerdamer(expr);
   // Generate data points
@@ -355,10 +383,23 @@ function buildPlot2D(expr, variable) {
   const xVals = [], yVals = [];
   const step = (xMax - xMin) / steps;
 
+  // Prefer a compiled native function (orders of magnitude faster than
+  // calling nerdamer().evaluate() per point)
+  const fastFn = safeBuildFunction(nExpr, [variable]);
+  const TIME_BUDGET = 2000; // ms – bail if nerdamer fallback is too slow
+  const startTime = Date.now();
+
   for (let i = 0; i <= steps; i++) {
     const xVal = xMin + i * step;
     try {
-      const yNum = Number(nerdamer(nExpr, { [variable]: xVal }).evaluate().valueOf());
+      let yNum;
+      if (fastFn) {
+        yNum = fastFn(xVal);
+      } else {
+        // Slow path – check time budget
+        if (Date.now() - startTime > TIME_BUDGET) break;
+        yNum = Number(nerdamer(nExpr, { [variable]: xVal }).evaluate().valueOf());
+      }
       xVals.push(xVal);
       yVals.push(isFinite(yNum) ? yNum : null);
     } catch {
@@ -366,6 +407,9 @@ function buildPlot2D(expr, variable) {
       yVals.push(null);
     }
   }
+
+  // If too few points were generated the expression is too heavy to plot
+  if (xVals.length < 10) return [];
 
   // Build LaTeX title
   let titleTex = '';
@@ -406,11 +450,23 @@ function buildPlot3D(expr, vars) {
   for (let i = 0; i <= n; i++) xRange.push(min + i * step);
   for (let j = 0; j <= n; j++) yRange.push(min + j * step);
 
+  const fastFn = safeBuildFunction(nExpr, [xVar, yVar]);
+  const TIME_BUDGET = 4000; // ms – 3D grid is larger, allow a bit more
+  const startTime = Date.now();
+  let timedOut = false;
+
   for (let j = 0; j <= n; j++) {
     const row = [];
     for (let i = 0; i <= n; i++) {
       try {
-        const zNum = Number(nerdamer(nExpr, { [xVar]: xRange[i], [yVar]: yRange[j] }).evaluate().valueOf());
+        let zNum;
+        if (fastFn) {
+          zNum = fastFn(xRange[i], yRange[j]);
+        } else {
+          if (timedOut) { row.push(null); continue; }
+          if (Date.now() - startTime > TIME_BUDGET) { timedOut = true; row.push(null); continue; }
+          zNum = Number(nerdamer(nExpr, { [xVar]: xRange[i], [yVar]: yRange[j] }).evaluate().valueOf());
+        }
         row.push(isFinite(zNum) ? zNum : null);
       } catch {
         row.push(null);
@@ -418,6 +474,9 @@ function buildPlot3D(expr, vars) {
     }
     zData.push(row);
   }
+
+  // If the computation was too slow and everything is null, bail
+  if (timedOut && zData.every(row => row.every(v => v === null))) return [];
 
   let titleTex = '';
   try { titleTex = nerdamer(nExpr).toTeX(); } catch { titleTex = expr; }
