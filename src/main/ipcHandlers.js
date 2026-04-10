@@ -18,6 +18,8 @@ let fileSearchCacheSaveTimer = null;
 let folderSearchRequestSeq = 0;
 const activeFolderRequests = new Map(); // webContentsId -> requestId
 let platformAdapter = null;
+const isDevMode = !app.isPackaged;
+function dbg(...args) { if (isDevMode) console.log(...args); }
 
 // macOS directories that are huge, contain no user files, and choke the
 // synchronous shallow scan (and slow the deep scan) when enumerated.
@@ -772,7 +774,7 @@ function resolveFileReferences(query) {
     if (!filePath) continue;
     files.push({ ref: match[0], filePath });
   }
-  console.log(`[#REF RESOLVE] Found ${files.length} file refs:`, files.map(f => f.filePath));
+  dbg(`[#REF RESOLVE] Found ${files.length} file refs:`, files.map(f => f.filePath));
   if (files.length === 0) return { text: query, extraParts: [] };
 
   let processedText = query;
@@ -780,13 +782,13 @@ function resolveFileReferences(query) {
 
   for (const file of files) {
     if (isPathBlocked(file.filePath)) {
-      console.log(`[#REF RESOLVE] Blocked: "${file.filePath}"`);
+      dbg(`[#REF RESOLVE] Blocked: "${file.filePath}"`);
       processedText = processedText.replace(file.ref, `[Access denied: ${path.basename(file.filePath)}]`);
       continue;
     }
     const ext = path.extname(file.filePath).toLowerCase();
     try {
-      console.log(`[#REF RESOLVE] Reading "${file.filePath}" (ext=${ext})`);
+      dbg(`[#REF RESOLVE] Reading "${file.filePath}" (ext=${ext})`);
       const MAX_BINARY_SIZE = 20 * 1024 * 1024; // 20 MB
       if (ext === '.pdf') {
         const stat = fs.statSync(file.filePath);
@@ -818,7 +820,7 @@ function resolveFileReferences(query) {
         processedText += `\n\n--- Contents of ${file.filePath} ---\n${content.slice(0, 50000)}\n--- End of file ---`;
       }
     } catch (err) {
-      console.log(`[#REF RESOLVE] Error reading "${file.filePath}":`, err.message);
+      dbg(`[#REF RESOLVE] Error reading "${file.filePath}":`, err.message);
       processedText = processedText.replace(file.ref, `[File not found: ${file.filePath}]`);
     }
   }
@@ -1310,7 +1312,7 @@ function streamDeepMatches(queryLower, roots, candidateMap, settings, sender, re
     if (fingerprint === lastFingerprint) return;
     lastFingerprint = fingerprint;
     if (!sender.isDestroyed()) {
-      console.log(`[SEARCH_FOLDERS DEEP] Emitting update: ${top.length} results, scanned=${scanned}`);
+      dbg(`[SEARCH_FOLDERS DEEP] Emitting update: ${top.length} results, scanned=${scanned}`);
       sender.send(IPC.SEARCH_FOLDERS_UPDATE, { requestId, query, results: top });
     }
   };
@@ -1494,7 +1496,7 @@ function registerHandlers(ipcMain) {
       activeFolderRequests.set(sender.id, requestId);
 
       const cleanQuery = (query || '').trim();
-      console.log(`[SEARCH_FOLDERS] query="${cleanQuery}", reqId=${requestId}`);
+      dbg(`[SEARCH_FOLDERS] query="${cleanQuery}", reqId=${requestId}`);
       if (!cleanQuery) {
         return { requestId, results: [] };
       }
@@ -1506,13 +1508,13 @@ function registerHandlers(ipcMain) {
 
       if (hasPathSep || hasDrive) {
         // Direct path mode: list specific directory
-        console.log(`[SEARCH_FOLDERS] Direct path mode (pathSep=${hasPathSep}, drive=${hasDrive})`);
+        dbg(`[SEARCH_FOLDERS] Direct path mode (pathSep=${hasPathSep}, drive=${hasDrive})`);
         const searchPath = hasDrive ? cleanQuery : path.join(os.homedir(), cleanQuery);
         const dir = path.dirname(searchPath);
         const pattern = path.basename(searchPath).toLowerCase();
 
         if (!fs.existsSync(dir)) {
-          console.log(`[SEARCH_FOLDERS] Dir not found: "${dir}"`);
+          dbg(`[SEARCH_FOLDERS] Dir not found: "${dir}"`);
           return { requestId, results: [] };
         }
 
@@ -1527,7 +1529,7 @@ function registerHandlers(ipcMain) {
           }));
 
         for (const entry of results) upsertFileSearchCache(entry, 0, settings);
-        console.log(`[SEARCH_FOLDERS] Direct path: ${results.length} results in "${dir}"`);
+        dbg(`[SEARCH_FOLDERS] Direct path: ${results.length} results in "${dir}"`);
         return { requestId, results };
       }
 
@@ -1547,12 +1549,12 @@ function registerHandlers(ipcMain) {
 
       const candidates = new Map();
       collectFromCache(pattern, settings, candidates);
-      console.log(`[SEARCH_FOLDERS] From cache: ${candidates.size} candidates`);
+      dbg(`[SEARCH_FOLDERS] From cache: ${candidates.size} candidates`);
       await collectShallowMatches(pattern, uniqueRoots, candidates, settings);
-      console.log(`[SEARCH_FOLDERS] After shallow scan: ${candidates.size} candidates`);
+      dbg(`[SEARCH_FOLDERS] After shallow scan: ${candidates.size} candidates`);
 
       const initialResults = rankAndTrim(candidates, 20);
-      console.log(`[SEARCH_FOLDERS] Returning ${initialResults.length} initial results, starting deep scan...`);
+      dbg(`[SEARCH_FOLDERS] Returning ${initialResults.length} initial results, starting deep scan...`);
       quickExistenceCheck(initialResults, candidates, sender, requestId, cleanQuery);
       streamDeepMatches(pattern, uniqueRoots, candidates, settings, sender, requestId, cleanQuery);
 
@@ -1671,6 +1673,8 @@ function registerHandlers(ipcMain) {
     try { fs.unlinkSync(getFileSearchCachePath()); } catch {}
     return true;
   });
+
+  ipcMain.handle(IPC.IS_DEV_MODE, () => !app.isPackaged);
 }
 
 module.exports = { registerHandlers, loadSettingsSync };

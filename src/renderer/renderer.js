@@ -71,7 +71,7 @@ function boot() {
   });
 
   // Re-focus input when window is shown
-  window.trim.onWindowShown(() => {
+  window.trim.onWindowShown(async () => {
     const hasChat = window._aiQuery && window._aiQuery.isFollowUp();
     if (hasChat) {
       const mode = window._aiQuery.getConversationPrefix ? window._aiQuery.getConversationPrefix() : 'ai';
@@ -92,6 +92,14 @@ function boot() {
         }
       });
     } else {
+      // Apply default mode prefix from settings
+      const settings = await window.trim.loadSettings();
+      const defaultMode = settings.defaultMode || 'app';
+      const MODE_PREFIXES = { app: '', ai: '? ', ai_pro: '?? ', calc: 'c: ', folder: 'f: ' };
+      const prefix = MODE_PREFIXES[defaultMode] || '';
+      input.value = prefix;
+      if (window._inputRouter) window._inputRouter.refreshInputDecor(input);
+      if (prefix) input.setSelectionRange(prefix.length, prefix.length);
       window._ui.clearResults();
     }
     input.focus();

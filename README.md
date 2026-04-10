@@ -47,6 +47,12 @@ The AI can read, create, edit, and delete files on your behalf. Anything that ac
 
 ![File Automation](assets/screenshots/ai-textreplace.png)
 
+### Image Generation
+
+Ask the AI to generate an image and it'll create one inline - just describe what you want. You can copy the result to your clipboard or save it straight to disk from the hover buttons.
+
+![Image Generation](assets/screenshots/ai-image-gen.png)
+
 ### Math
 
 `c:` gives you a proper math tool - evaluate, solve, plot. Runs locally on a symbolic engine, no API calls involved.

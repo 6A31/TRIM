@@ -17,7 +17,7 @@ const MODE_HINTS = {
 };
 
 let debounceTimer = null;
-const DEBUG_SEARCH = true; // Set to false to silence f: and # debug logs
+let DEBUG_SEARCH = false;
 function dbg(...args) { if (DEBUG_SEARCH) console.log(...args); }
 
 let currentMode = 'app';
@@ -40,6 +40,11 @@ function init() {
   // Load calcSyntax setting (default: on)
   window.trim.loadSettings().then(s => {
     calcSyntaxEnabled = s && s.calcSyntax === false ? false : true;
+  }).catch(() => {});
+
+  // Enable debug logging only in dev mode
+  window.trim.isDevMode().then(isDev => {
+    DEBUG_SEARCH = isDev;
   }).catch(() => {});
 
   // Handle image paste - use Electron's native clipboard via IPC (sandbox-safe)

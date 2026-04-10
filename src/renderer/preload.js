@@ -34,4 +34,5 @@ contextBridge.exposeInMainWorld('trim', {
   quitAndInstall: () => ipcRenderer.send('trim:quit-and-install'),
   copyImageToClipboard: (dataUri) => ipcRenderer.invoke('trim:copy-image', dataUri),
   readClipboardImage: () => ipcRenderer.invoke('trim:read-clipboard-image'),
+  isDevMode: () => ipcRenderer.invoke('trim:is-dev-mode'),
 });

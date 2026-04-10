@@ -32,6 +32,7 @@ const IPC = {
   SYSTEM_KEY: 'trim:system-key',
   UPDATE_READY: 'trim:update-ready',
   QUIT_AND_INSTALL: 'trim:quit-and-install',
+  IS_DEV_MODE: 'trim:is-dev-mode',
 };
 
 const DEFAULT_SHORTCUT = 'Alt+Space';
@@ -46,6 +47,7 @@ const DEFAULTS = {
   autoStart: true,
   showHints: false,
   shortcut: DEFAULT_SHORTCUT,
+  defaultMode: 'app',
   // Appearance
   accentColor: '#7c8aff',
   appColor: '#1e1e28',

@@ -115,6 +115,37 @@ function isAppearanceDirty(settings) {
   );
 }
 
+function wireDropdown(container) {
+  const trigger = container.querySelector('.settings-dropdown-trigger');
+  const menu = container.querySelector('.settings-dropdown-menu');
+  const textEl = container.querySelector('.settings-dropdown-text');
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = menu.classList.toggle('open');
+    container.classList.toggle('open', open);
+  });
+
+  menu.querySelectorAll('li').forEach(li => {
+    li.addEventListener('click', (e) => {
+      e.stopPropagation();
+      container.dataset.value = li.dataset.value;
+      // Clone text without the hint span
+      const icon = li.querySelector('.material-symbols-rounded');
+      const label = li.childNodes[1]?.textContent?.trim() || li.textContent.trim();
+      textEl.textContent = label;
+      menu.classList.remove('open');
+      container.classList.remove('open');
+    });
+  });
+
+  // Close on outside click
+  document.addEventListener('click', () => {
+    menu.classList.remove('open');
+    container.classList.remove('open');
+  });
+}
+
 async function render() {
   const panel = document.getElementById('settings-panel');
   const [settings, cacheInfo] = await Promise.all([
@@ -251,6 +282,24 @@ async function render() {
     </div>
 
     <div class="settings-group">
+      <label class="settings-label">Default Mode</label>
+      <div class="settings-dropdown" id="settings-default-mode" data-value="${escapeAttr(settings.defaultMode || 'app')}">
+        <button class="settings-dropdown-trigger" type="button">
+          <span class="settings-dropdown-text">${({ app: 'Launcher', ai: 'AI', ai_pro: 'AI Pro', calc: 'Calculator', folder: 'File Search' })[settings.defaultMode || 'app']}</span>
+          <span class="material-symbols-rounded settings-dropdown-arrow" style="font-size:18px">expand_more</span>
+        </button>
+        <ul class="settings-dropdown-menu">
+          <li data-value="app"><span class="material-symbols-rounded" style="font-size:16px">search</span> Launcher</li>
+          <li data-value="ai"><span class="material-symbols-rounded" style="font-size:16px">auto_awesome</span> AI <span class="settings-dropdown-hint">?</span></li>
+          <li data-value="ai_pro"><span class="material-symbols-rounded" style="font-size:16px">auto_awesome</span> AI Pro <span class="settings-dropdown-hint">??</span></li>
+          <li data-value="calc"><span class="material-symbols-rounded" style="font-size:16px">calculate</span> Calculator <span class="settings-dropdown-hint">c:</span></li>
+          <li data-value="folder"><span class="material-symbols-rounded" style="font-size:16px">folder_open</span> File Search <span class="settings-dropdown-hint">f:</span></li>
+        </ul>
+      </div>
+      <div class="settings-description">Which mode TRIM opens in by default when toggled.</div>
+    </div>
+
+    <div class="settings-group">
       <label class="settings-label">Extra Cached File Types</label>
       <input type="text" class="settings-input" id="settings-cached-file-types"
         placeholder=".blend, .psd, .step"
@@ -300,6 +349,9 @@ async function render() {
   // ── Wire events ──
   panel.querySelector('#settings-close-btn').addEventListener('click', close);
   panel.querySelector('#settings-save-btn').addEventListener('click', save);
+
+  // Default-mode custom dropdown
+  wireDropdown(panel.querySelector('#settings-default-mode'));
 
   // ── Shortcut recorder ──
   wireShortcutRecorder(panel, settings.shortcut || 'Alt+Space', settings.shortcutLabel);
@@ -673,6 +725,7 @@ async function save() {
   const autoStart = document.getElementById('settings-autostart').checked;
   const showHints = document.getElementById('settings-show-hints').checked;
   const calcSyntax = document.getElementById('settings-calc-syntax').checked;
+  const defaultMode = document.getElementById('settings-default-mode').dataset.value;
 
   const accentColor = getSelectedAccent();
   const appColor = getSelectedAppColor();
@@ -688,7 +741,7 @@ async function save() {
 
   const settingsData = {
     apiKey, model, modelPro, cachedFileTypes, autoStart,
-    showHints, calcSyntax, accentColor, appColor, transparency, transparencyType,
+    showHints, calcSyntax, defaultMode, accentColor, appColor, transparency, transparencyType,
   };
 
   // Include shortcut if it was changed
