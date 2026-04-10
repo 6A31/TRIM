@@ -892,4 +892,10 @@ describe('hasHugeExponent', () => {
   // No exponents at all
   it('allows x+2', () => assert.equal(hasHugeExponent('x+2'), false));
   it('allows sin(x)', () => assert.equal(hasHugeExponent('sin(x)'), false));
+
+  // Nested function exponents
+  it('allows x^ggt(sin(10000),200) — gcd result is small', () => assert.equal(hasHugeExponent('x^ggt(sin(10000),200)'), false));
+  it('allows x^lcm(sin(10000),200000) — sin is non-integer, lcm=NaN, skipped', () => assert.equal(hasHugeExponent('x^lcm(sin(10000),200000)'), false));
+  it('catches x^lcm(ceil(sin(1)*100000),200000) — large integer lcm', () => assert.equal(hasHugeExponent('x^lcm(ceil(sin(1)*100000),200000)'), true));
+  it('allows x^gcd(ceil(999),1000)', () => assert.equal(hasHugeExponent('x^gcd(ceil(999),1000)'), false));
 });

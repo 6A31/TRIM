@@ -12,9 +12,15 @@ function register(shortcut) {
     try { globalShortcut.unregister(currentShortcut); } catch {}
   }
 
-  const ok = globalShortcut.register(shortcut, () => {
-    windowManager.toggle();
-  });
+  let ok;
+  try {
+    ok = globalShortcut.register(shortcut, () => {
+      windowManager.toggle();
+    });
+  } catch (err) {
+    console.error(`Failed to register global shortcut: ${shortcut}`, err.message);
+    return false;
+  }
   if (!ok) {
     console.error(`Failed to register global shortcut: ${shortcut}`);
     dialog.showErrorBox(

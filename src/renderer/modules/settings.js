@@ -237,7 +237,7 @@ async function render() {
     <div class="settings-group">
       <label class="settings-label">Shortcut</label>
       <div class="shortcut-recorder" id="shortcut-recorder">
-        <span class="shortcut-display" id="shortcut-display">${escapeAttr(prettyShortcut(settings.shortcut || 'Alt+Space'))}</span>
+        <span class="shortcut-display" id="shortcut-display">${escapeAttr(prettyShortcut(settings.shortcutLabel || settings.shortcut || 'Alt+Space'))}</span>
         <button class="shortcut-record-btn" id="shortcut-record-btn" title="Record new shortcut">
           <span class="material-symbols-rounded" style="font-size:14px">keyboard</span>
           Change
@@ -302,7 +302,7 @@ async function render() {
   panel.querySelector('#settings-save-btn').addEventListener('click', save);
 
   // ── Shortcut recorder ──
-  wireShortcutRecorder(panel, settings.shortcut || 'Alt+Space');
+  wireShortcutRecorder(panel, settings.shortcut || 'Alt+Space', settings.shortcutLabel);
 
   // Accent swatches
   panel.querySelectorAll('[data-accent]').forEach(btn => {
@@ -395,7 +395,7 @@ async function render() {
 }
 
 // ── Shortcut recorder ──
-let pendingShortcut = null;
+let pendingShortcut = null;  // { accel, label } or null
 let _recorderCleanup = null;
 
 function cleanupShortcutRecorder() {
@@ -413,52 +413,105 @@ const KEY_MAP = {
   '+': 'Plus', '=': 'Plus',
 };
 
+// Map physical key codes (e.code) to Electron accelerator key names.
+// This uses the US-layout equivalent so globalShortcut.register() always
+// receives ASCII, while we display the actual character (e.key) to the user.
+const CODE_TO_ACCEL = {
+  Space: 'Space', Minus: '-', Equal: '=',
+  BracketLeft: '[', BracketRight: ']', Backslash: '\\',
+  Semicolon: ';', Quote: "'", Backquote: '`',
+  Comma: ',', Period: '.', Slash: '/',
+  Enter: 'Return', Backspace: 'Backspace', Tab: 'Tab',
+  Delete: 'Delete', Insert: 'Insert',
+  Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown',
+  ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+  Escape: 'Escape',
+};
+
+function codeToAcceleratorKey(code) {
+  if (!code) return null;
+  // Letters: KeyA → A
+  const letter = code.match(/^Key([A-Z])$/);
+  if (letter) return letter[1];
+  // Digits: Digit0 → 0
+  const digit = code.match(/^Digit(\d)$/);
+  if (digit) return digit[1];
+  // F-keys: F1 → F1
+  if (/^F\d{1,2}$/.test(code)) return code;
+  // Numpad
+  const numpad = code.match(/^Numpad(\d)$/);
+  if (numpad) return `num${numpad[1]}`;
+  // Named keys
+  return CODE_TO_ACCEL[code] || null;
+}
+
+// Build the Electron accelerator string from a keyboard event (uses physical key code).
 function keyEventToAccelerator(e) {
   const parts = [];
   if (e.ctrlKey || e.metaKey) parts.push('CommandOrControl');
   if (e.altKey) parts.push('Alt');
   if (e.shiftKey) parts.push('Shift');
-  if (MODIFIER_KEYS.has(e.key)) return null; // modifier only, not a valid combo
-  let key = KEY_MAP[e.key] || e.key;
-  // Capitalise single letters
-  if (key.length === 1) key = key.toUpperCase();
+  if (MODIFIER_KEYS.has(e.key)) return null;
+  const key = codeToAcceleratorKey(e.code);
+  if (!key) return null;
   parts.push(key);
-  // Require at least one modifier
   if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) return null;
   return parts.join('+');
 }
 
-function prettyShortcut(accel) {
-  if (!accel) return '';
-  const ctrlLabel = navigator.platform?.startsWith('Mac') ? 'Cmd' : 'Ctrl';
-  return accel.replace('CommandOrControl', ctrlLabel);
+// Build a human-readable label from a keyboard event (uses actual character).
+function keyEventToLabel(e) {
+  const parts = [];
+  if (e.ctrlKey || e.metaKey) parts.push('CommandOrControl');
+  if (e.altKey) parts.push('Alt');
+  if (e.shiftKey) parts.push('Shift');
+  if (MODIFIER_KEYS.has(e.key)) return null;
+  let key = KEY_MAP[e.key] || e.key;
+  if (key.length === 1) key = key.toUpperCase();
+  parts.push(key);
+  return parts.join('+');
 }
 
-function wireShortcutRecorder(panel, savedShortcut) {
+function prettyShortcut(labelOrAccel) {
+  if (!labelOrAccel) return '';
+  const ctrlLabel = navigator.platform?.startsWith('Mac') ? 'Cmd' : 'Ctrl';
+  return labelOrAccel.replace('CommandOrControl', ctrlLabel);
+}
+
+function wireShortcutRecorder(panel, savedShortcut, savedLabel) {
   const display = panel.querySelector('#shortcut-display');
   const recordBtn = panel.querySelector('#shortcut-record-btn');
   const defaultBtn = panel.querySelector('#shortcut-default-btn');
   const hint = panel.querySelector('#shortcut-hint');
   const recorder = panel.querySelector('#shortcut-recorder');
 
+  // savedLabel falls back to savedShortcut for old settings that don't have a label
+  if (!savedLabel) savedLabel = savedShortcut;
+
   let recording = false;
-  let captured = null;
-  pendingShortcut = null;
+  let captured = null; // { accel, label }
+  pendingShortcut = null; // { accel, label } or null
+
+  function displayLabel() {
+    const src = pendingShortcut || { label: savedLabel };
+    return prettyShortcut(src.label);
+  }
 
   function onKey(e) {
     e.preventDefault();
     e.stopPropagation();
     if (e.key === 'Escape') {
       stopRecording();
-      display.textContent = prettyShortcut(pendingShortcut || savedShortcut);
+      display.textContent = displayLabel();
       hint.textContent = 'Global keyboard shortcut to toggle TRIM.';
       return;
     }
     const accel = keyEventToAccelerator(e);
-    if (!accel) return; // modifier-only press, keep waiting
+    if (!accel) return; // modifier-only or unmappable key — keep waiting
+    const label = keyEventToLabel(e) || accel;
     stopRecording();
-    captured = accel;
-    showConfirm(accel);
+    captured = { accel, label };
+    showConfirm(label);
   }
 
   function onConfirmKey(e) {
@@ -466,12 +519,12 @@ function wireShortcutRecorder(panel, savedShortcut) {
     e.stopPropagation();
     if (e.key === 'Enter') {
       pendingShortcut = captured;
-      display.textContent = prettyShortcut(captured);
+      display.textContent = prettyShortcut(captured.label);
       clearConfirm();
       recorder.classList.add('changed');
       hint.innerHTML = `Shortcut changed. Click <strong>Save</strong> to apply.`;
     } else if (e.key === 'Escape') {
-      display.textContent = prettyShortcut(pendingShortcut || savedShortcut);
+      display.textContent = displayLabel();
       clearConfirm();
     }
   }
@@ -479,7 +532,8 @@ function wireShortcutRecorder(panel, savedShortcut) {
   function onSystemKey(accel) {
     if (!recording) return;
     stopRecording();
-    captured = accel;
+    // System key (Alt+Space) — accel and label are the same
+    captured = { accel, label: accel };
     showConfirm(accel);
   }
 
@@ -492,10 +546,10 @@ function wireShortcutRecorder(panel, savedShortcut) {
     window.trim.resumeShortcut();
   }
 
-  function showConfirm(accelerator) {
-    display.textContent = prettyShortcut(accelerator);
+  function showConfirm(label) {
+    display.textContent = prettyShortcut(label);
     recorder.classList.add('confirming');
-    hint.innerHTML = `Captured <strong>${prettyShortcut(accelerator)}</strong> - press <strong>Enter</strong> to confirm or <strong>Escape</strong> to cancel.`;
+    hint.innerHTML = `Captured <strong>${prettyShortcut(label)}</strong> - press <strong>Enter</strong> to confirm or <strong>Escape</strong> to cancel.`;
     document.addEventListener('keydown', onConfirmKey, true);
   }
 
@@ -516,7 +570,7 @@ function wireShortcutRecorder(panel, savedShortcut) {
   recordBtn.addEventListener('click', () => {
     if (recording) {
       stopRecording();
-      display.textContent = prettyShortcut(pendingShortcut || savedShortcut);
+      display.textContent = displayLabel();
       hint.textContent = 'Global keyboard shortcut to toggle TRIM.';
       return;
     }
@@ -525,7 +579,7 @@ function wireShortcutRecorder(panel, savedShortcut) {
     clearConfirm();
     display.textContent = 'Press a key combo...';
     recordBtn.innerHTML = '<span class="material-symbols-rounded" style="font-size:14px">close</span> Cancel';
-    hint.textContent = 'Press a modifier + key (e.g. Alt+Space, Ctrl+Space).';
+    hint.textContent = 'Press a modifier + key (e.g. Alt+Space, Ctrl+Ö).';
     window.trim.suspendShortcut();
     window.trim.onSystemKey(onSystemKey);
     document.addEventListener('keydown', onKey, true);
@@ -534,7 +588,7 @@ function wireShortcutRecorder(panel, savedShortcut) {
   defaultBtn.addEventListener('click', () => {
     stopRecording();
     clearConfirm();
-    pendingShortcut = 'Alt+Space';
+    pendingShortcut = { accel: 'Alt+Space', label: 'Alt+Space' };
     display.textContent = prettyShortcut('Alt+Space');
     recorder.classList.remove('changed');
     if (savedShortcut !== 'Alt+Space') {
@@ -640,13 +694,14 @@ async function save() {
   // Include shortcut if it was changed
   if (pendingShortcut) {
     // Test-register the shortcut first
-    const ok = await window.trim.updateShortcut(pendingShortcut);
+    const ok = await window.trim.updateShortcut(pendingShortcut.accel);
     if (!ok) {
       const hint = document.getElementById('shortcut-hint');
       if (hint) hint.innerHTML = '<span style="color:#ff6b6b">Shortcut conflict - another app is using it. Try a different combo.</span>';
       return;
     }
-    settingsData.shortcut = pendingShortcut;
+    settingsData.shortcut = pendingShortcut.accel;
+    settingsData.shortcutLabel = pendingShortcut.label;
   }
 
   await window.trim.saveSettings(settingsData);
