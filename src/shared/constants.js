@@ -27,6 +27,9 @@ const IPC = {
   CONFIRM_ACTION_RESPONSE: 'trim:confirm-action-response',
   SET_BACKGROUND_MATERIAL: 'trim:set-background-material',
   UPDATE_SHORTCUT: 'trim:update-shortcut',
+  SUSPEND_SHORTCUT: 'trim:suspend-shortcut',
+  RESUME_SHORTCUT: 'trim:resume-shortcut',
+  SYSTEM_KEY: 'trim:system-key',
   UPDATE_READY: 'trim:update-ready',
   QUIT_AND_INSTALL: 'trim:quit-and-install',
 };

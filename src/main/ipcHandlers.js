@@ -1598,6 +1598,17 @@ function registerHandlers(ipcMain) {
     return ok;
   });
 
+  ipcMain.handle(IPC.SUSPEND_SHORTCUT, async () => {
+    const globalHotkey = require('./globalHotkey');
+    globalHotkey.unregister();
+  });
+
+  ipcMain.handle(IPC.RESUME_SHORTCUT, async () => {
+    const globalHotkey = require('./globalHotkey');
+    const settings = loadSettingsSync();
+    globalHotkey.register(settings.shortcut);
+  });
+
   ipcMain.handle(IPC.SET_BACKGROUND_MATERIAL, async (e, type, appColorHex) => {
     const win = require('electron').BrowserWindow.fromWebContents(e.sender);
     if (!win) return;

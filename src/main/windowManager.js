@@ -46,8 +46,10 @@ function create() {
 
   // Prevent Alt+Space from opening the system menu on Windows (frameless window).
   // Without this, the renderer can't capture Alt+Space as a keybind.
+  // Also forward the event to the renderer so the shortcut recorder can capture it.
   mainWindow.on('system-context-menu', (e) => {
     e.preventDefault();
+    mainWindow.webContents.send('trim:system-key', 'Alt+Space');
   });
 
   mainWindow.on('ready-to-show', () => {

@@ -237,7 +237,7 @@ async function render() {
     <div class="settings-group">
       <label class="settings-label">Shortcut</label>
       <div class="shortcut-recorder" id="shortcut-recorder">
-        <span class="shortcut-display" id="shortcut-display">${escapeAttr(settings.shortcut || 'Alt+Space')}</span>
+        <span class="shortcut-display" id="shortcut-display">${escapeAttr(prettyShortcut(settings.shortcut || 'Alt+Space'))}</span>
         <button class="shortcut-record-btn" id="shortcut-record-btn" title="Record new shortcut">
           <span class="material-symbols-rounded" style="font-size:14px">keyboard</span>
           Change
@@ -476,11 +476,20 @@ function wireShortcutRecorder(panel, savedShortcut) {
     }
   }
 
+  function onSystemKey(accel) {
+    if (!recording) return;
+    stopRecording();
+    captured = accel;
+    showConfirm(accel);
+  }
+
   function stopRecording() {
     recording = false;
     recorder.classList.remove('recording');
     recordBtn.innerHTML = '<span class="material-symbols-rounded" style="font-size:14px">keyboard</span> Change';
     document.removeEventListener('keydown', onKey, true);
+    window.trim.offSystemKey();
+    window.trim.resumeShortcut();
   }
 
   function showConfirm(accelerator) {
@@ -517,6 +526,8 @@ function wireShortcutRecorder(panel, savedShortcut) {
     display.textContent = 'Press a key combo...';
     recordBtn.innerHTML = '<span class="material-symbols-rounded" style="font-size:14px">close</span> Cancel';
     hint.textContent = 'Press a modifier + key (e.g. Alt+Space, Ctrl+Space).';
+    window.trim.suspendShortcut();
+    window.trim.onSystemKey(onSystemKey);
     document.addEventListener('keydown', onKey, true);
   });
 

@@ -6,7 +6,7 @@
 
 A launcher for Windows and macOS - kind of like Spotlight, but with AI baked in.
 
-Hit **Alt+Space** (or whatever you remap it to), type what you need, done. Acrylic glass UI, stays out of your way.
+Hit **Alt+Space** (Option+Space on macOS) to toggle, type what you need, done. Remappable in `/settings`. Acrylic glass UI, stays out of your way.
 
 ![App Search](assets/screenshots/app-search.png)
 
