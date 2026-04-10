@@ -87,15 +87,66 @@ let heavyGeneration = 0; // monotonic counter to discard stale results
 const HEAVY_DEBOUNCE_MS = 300;
 const MAX_EXPONENT = 1000;
 
-// Quick pre-check: reject expressions with obviously huge literal exponents
-// that would choke the symbolic engine before it even starts plotting.
+// Extract the sub-expression immediately after a '^' operator.
+// Handles: ^123, ^pi, ^(expr), ^func(expr)
+function extractExponentAfterCaret(expr, caretIdx) {
+  let i = caretIdx + 1;
+  while (i < expr.length && expr[i] === ' ') i++; // skip whitespace
+  if (i >= expr.length) return null;
+
+  // Parenthesised group: ^(...)
+  if (expr[i] === '(') {
+    const close = findClosingParen(expr, i + 1);
+    if (close === -1) return null;
+    return expr.slice(i + 1, close);
+  }
+
+  // Identifier (possibly followed by parens): ^pi, ^kgv(...)
+  if (/[a-zA-Z]/.test(expr[i])) {
+    let end = i;
+    while (end < expr.length && /[a-zA-Z]/.test(expr[end])) end++;
+    // Function call: ^lcm(...)
+    if (end < expr.length && expr[end] === '(') {
+      const close = findClosingParen(expr, end + 1);
+      if (close === -1) return null;
+      return expr.slice(i, close + 1);
+    }
+    return expr.slice(i, end); // constant like pi, e
+  }
+
+  // Bare number: ^1234
+  if (/[0-9.]/.test(expr[i])) {
+    let end = i;
+    while (end < expr.length && /[0-9.]/.test(expr[end])) end++;
+    return expr.slice(i, end);
+  }
+
+  return null;
+}
+
+// Quick pre-check: reject expressions with exponents that would choke
+// the symbolic engine. Catches literal numbers, constants (pi, e), and
+// constant function calls like kgv(1900000,123945).
 function hasHugeExponent(expr) {
-  const matches = expr.match(/\^\s*(\d+)/g);
-  if (!matches) return false;
-  return matches.some(m => {
-    const n = parseInt(m.replace(/^\^\s*/, ''), 10);
-    return n > MAX_EXPONENT;
-  });
+  for (let i = 0; i < expr.length; i++) {
+    if (expr[i] !== '^') continue;
+    const sub = extractExponentAfterCaret(expr, i);
+    if (sub === null) continue;
+
+    // Fast path: pure digits
+    const asInt = parseInt(sub, 10);
+    if (/^\d+$/.test(sub)) {
+      if (asInt > MAX_EXPONENT) return true;
+      continue;
+    }
+
+    // Try to numerically evaluate the exponent sub-expression
+    try {
+      const val = evaluate(sub);
+      if (val !== undefined && Math.abs(val) > MAX_EXPONENT) return true;
+    } catch { /* ignore - might contain variables, let nerdamer handle it */ }
+  }
+  return false;
 }
 
 function search(expression, onHeavyResult) {
@@ -840,5 +891,5 @@ if (typeof window !== 'undefined') {
 
 // Allow tests to import internals directly
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { search, evaluate, prepareForNerdamer, findClosingParen, hasVariables, getVariables, detectMathMode, tokenize };
+  module.exports = { search, evaluate, prepareForNerdamer, findClosingParen, hasVariables, getVariables, detectMathMode, tokenize, hasHugeExponent };
 }

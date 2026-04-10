@@ -11,7 +11,7 @@ require('nerdamer/Calculus');
 require('nerdamer/Algebra');
 
 // Import actual calculator code - tests the real implementation
-const { evaluate, prepareForNerdamer } = require('../src/renderer/modules/calculator');
+const { evaluate, prepareForNerdamer, hasHugeExponent } = require('../src/renderer/modules/calculator');
 
 // ── Test helpers that wrap calculator + nerdamer (like the real app does) ────
 
@@ -863,4 +863,33 @@ describe('Edge cases: correct answers', () => {
   it('-3^2 = -9 (exponent binds tighter than unary minus)', () => {
     assert.equal(evaluate('-3^2'), -9);
   });
+});
+
+// ── Huge exponent guard ──
+
+describe('hasHugeExponent', () => {
+  // Literal exponents
+  it('catches x^7000', () => assert.equal(hasHugeExponent('x^7000'), true));
+  it('catches x^2000', () => assert.equal(hasHugeExponent('x^2000'), true));
+  it('allows x^500', () => assert.equal(hasHugeExponent('x^500'), false));
+  it('catches nested x^10^20', () => assert.equal(hasHugeExponent('x^10^20'), false)); // 10 and 20 are both small
+
+  // Constant exponents
+  it('allows x^pi (≈3.14)', () => assert.equal(hasHugeExponent('x^pi'), false));
+  it('allows x^e (≈2.72)', () => assert.equal(hasHugeExponent('x^e'), false));
+
+  // Parenthesised exponents
+  it('catches x^(10000)', () => assert.equal(hasHugeExponent('x^(10000)'), true));
+  it('catches x^(500*500)', () => assert.equal(hasHugeExponent('x^(500*500)'), true));
+  it('allows x^(2+3)', () => assert.equal(hasHugeExponent('x^(2+3)'), false));
+
+  // Function exponents
+  it('catches x^lcm(1900000,123945)', () => assert.equal(hasHugeExponent('x^lcm(1900000,123945)'), true));
+  it('catches x^kgv(1900000,123945)', () => assert.equal(hasHugeExponent('x^kgv(1900000,123945)'), true));
+  it('allows x^gcd(1900000,123945)', () => assert.equal(hasHugeExponent('x^gcd(1900000,123945)'), false));
+  it('allows x^sqrt(100)', () => assert.equal(hasHugeExponent('x^sqrt(100)'), false));
+
+  // No exponents at all
+  it('allows x+2', () => assert.equal(hasHugeExponent('x+2'), false));
+  it('allows sin(x)', () => assert.equal(hasHugeExponent('sin(x)'), false));
 });
