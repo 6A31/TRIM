@@ -58,13 +58,15 @@
 
 #search-input-overlay {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  bottom: 0;
   pointer-events: none;
   z-index: 1;
   display: flex;
   align-items: center;
   white-space: pre;
-  overflow: hidden;
+  width: max-content;
   font-family: var(--font);
   font-size: 16px;
   font-weight: 400;
@@ -92,16 +94,13 @@
 }
 
 .file-ref-pill {
-  display: inline-flex;
-  align-items: center;
-  margin: 0 1px;
-  padding: 1px 7px;
+  display: inline;
   border-radius: 6px;
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: color-mix(in srgb, var(--accent) 85%, #ffffff);
-  font-size: 0.82em;
-  font-weight: 500;
-  line-height: 1.35;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
 }
 
 .file-ref-hidden-brackets {
@@ -188,6 +187,16 @@
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+}
+
+.chip-dismiss {
+  opacity: 0.5;
+  margin-left: -2px;
+  transition: opacity 0.15s ease;
+}
+
+.input-chip:hover .chip-dismiss {
+  opacity: 1;
 }
 
 /* Results list */

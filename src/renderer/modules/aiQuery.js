@@ -8,7 +8,7 @@ async function search(query) {
   return [{ type: 'ai-loading' }];
 }
 
-async function execute(query, mode, forceShow, renderFn) {
+async function execute(query, mode, forceShow, renderFn, pastedImages) {
   if (isQuerying) return; // Prevent concurrent queries
   isQuerying = true;
 
@@ -22,7 +22,7 @@ async function execute(query, mode, forceShow, renderFn) {
   });
 
   try {
-    const result = await window.trim.aiQuery(query, usePro, forceShow, followUp);
+    const result = await window.trim.aiQuery(query, usePro, forceShow, followUp, pastedImages || []);
 
     // Silently ignore aborted queries
     if (result.error === '__aborted__') return;

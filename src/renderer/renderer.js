@@ -52,6 +52,9 @@ function boot() {
       window._settings.dismiss();
     }
 
+    // Always clear pasted images on hide
+    if (window._inputRouter) window._inputRouter.clearPastedImage();
+
     const hasChat = window._aiQuery && window._aiQuery.isFollowUp();
     input.value = '';
     if (window._inputRouter) window._inputRouter.refreshInputDecor(input);

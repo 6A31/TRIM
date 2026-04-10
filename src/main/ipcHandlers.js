@@ -824,7 +824,7 @@ function resolveFileReferences(query) {
 
 let activeQueryId = 0;
 
-async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
+async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pastedImages) {
   const queryId = ++activeQueryId;
 
   if (!ai) {
@@ -846,6 +846,17 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
 
     // Build contents: continue existing conversation or start fresh
     const userParts = [{ text: resolvedQuery }, ...extraParts];
+
+    // Add pasted images
+    if (Array.isArray(pastedImages) && pastedImages.length > 0) {
+      for (const img of pastedImages) {
+        if (img.dataUri && img.mimeType) {
+          const base64 = img.dataUri.replace(/^data:[^;]+;base64,/, '');
+          userParts.push({ inlineData: { mimeType: img.mimeType, data: base64 } });
+        }
+      }
+      userParts[0] = { text: resolvedQuery + '\n\n[Pasted image attached]' };
+    }
     let contents;
     if (followUp && chatHistory && chatHistory.model === modelName) {
       contents = [...chatHistory.contents, { role: 'user', parts: userParts }];
@@ -1443,8 +1454,8 @@ function registerHandlers(ipcMain) {
     }
   });
 
-  ipcMain.handle(IPC.AI_QUERY, async (event, query, usePro, forceShowOutput, followUp) => {
-    return handleAIQuery(event, query, usePro, forceShowOutput, followUp);
+  ipcMain.handle(IPC.AI_QUERY, async (event, query, usePro, forceShowOutput, followUp, pastedImages) => {
+    return handleAIQuery(event, query, usePro, forceShowOutput, followUp, pastedImages);
   });
 
   ipcMain.handle('trim:copy-image', async (_e, dataUri) => {
@@ -1455,6 +1466,19 @@ function registerHandlers(ipcMain) {
       return true;
     } catch {
       return false;
+    }
+  });
+
+  ipcMain.handle('trim:read-clipboard-image', async () => {
+    try {
+      const { nativeImage, clipboard } = require('electron');
+      const img = clipboard.readImage();
+      if (img.isEmpty()) return null;
+      const pngBuffer = img.toPNG();
+      const dataUri = `data:image/png;base64,${pngBuffer.toString('base64')}`;
+      return { dataUri, mimeType: 'image/png' };
+    } catch {
+      return null;
     }
   });
 

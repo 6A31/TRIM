@@ -16,6 +16,7 @@ function register(id, opts) {
     modes: opts.modes || [], // which input modes show this chip
     action: typeof opts.action === 'function' ? opts.action : null,
     visibleWhen: typeof opts.visibleWhen === 'function' ? opts.visibleWhen : null,
+    dismissable: opts.dismissable || false,
   });
   activeToggles[id] = opts.default || false;
 }
@@ -85,6 +86,16 @@ register('update_available', {
   modes: ['app'],
   visibleWhen: () => updateReady,
   action: () => { window.trim.quitAndInstall(); },
+});
+
+register('pasted_image', {
+  label: 'Clipboard image',
+  icon: 'image',
+  default: false,
+  modes: ['ai', 'ai_pro'],
+  dismissable: true,
+  visibleWhen: () => window._inputRouter && !!window._inputRouter.getPastedImage(),
+  action: () => { if (window._inputRouter) window._inputRouter.clearPastedImage(); },
 });
 
 if (window.trim.onUpdateReady) {
@@ -164,6 +175,14 @@ function renderChips(mode) {
     label.textContent = chip.label;
     el.appendChild(label);
 
+    if (chip.dismissable) {
+      const dismiss = document.createElement('span');
+      dismiss.className = 'material-symbols-rounded chip-dismiss';
+      dismiss.style.fontSize = '14px';
+      dismiss.textContent = 'close';
+      el.appendChild(dismiss);
+    }
+
     // Prevent chip from stealing focus from the input
     el.addEventListener('mousedown', (e) => e.preventDefault());
 
@@ -198,4 +217,4 @@ function triggerVisibleAction() {
   return false;
 }
 
-window._chips = { init, updateMode, isActive, register, toggle, deactivate, setResultsCount, triggerVisibleAction };
+window._chips = { init, updateMode, isActive, register, toggle, deactivate, setResultsCount, triggerVisibleAction, renderChips() { renderChips(chipMode); } };

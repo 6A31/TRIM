@@ -6,7 +6,7 @@ contextBridge.exposeInMainWorld('trim', {
   getUsage:      ()           => ipcRenderer.invoke('trim:get-usage'),
   getDisplayScale: ()         => ipcRenderer.invoke('trim:get-display-scale'),
   openApp:       (appPath, appName) => ipcRenderer.invoke('trim:open-app', appPath, appName),
-  aiQuery:       (query, usePro, forceShow, followUp) => ipcRenderer.invoke('trim:ai-query', query, usePro, forceShow, followUp),
+  aiQuery:       (query, usePro, forceShow, followUp, pastedImages) => ipcRenderer.invoke('trim:ai-query', query, usePro, forceShow, followUp, pastedImages),
   searchFolders: (query)      => ipcRenderer.invoke('trim:search-folders', query),
   onFolderSearchUpdate: (cb)  => ipcRenderer.on('trim:folder-search-update', (_e, data) => cb(data)),
   offFolderSearchUpdate: ()   => ipcRenderer.removeAllListeners('trim:folder-search-update'),
@@ -29,4 +29,5 @@ contextBridge.exposeInMainWorld('trim', {
   onUpdateReady: (cb) => ipcRenderer.on('trim:update-ready', cb),
   quitAndInstall: () => ipcRenderer.send('trim:quit-and-install'),
   copyImageToClipboard: (dataUri) => ipcRenderer.invoke('trim:copy-image', dataUri),
+  readClipboardImage: () => ipcRenderer.invoke('trim:read-clipboard-image'),
 });

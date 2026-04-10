@@ -73,21 +73,23 @@ function handleKeyboard(e) {
         const query = input.slice(2).trim();
         const resolvedQuery = window._inputRouter.resolveAIFileRefsInQuery(query);
         if (query) {
+          const pastedImages = collectPastedImages();
           window._aiQuery.prepareForQuery('ai_pro');
           showAILoading('Asking Gemini Pro...');
           window._aiQuery.execute(resolvedQuery, 'ai_pro', forceShow, (response) => {
             renderAIResponse(response);
-          });
+          }, pastedImages);
         }
       } else if (input.startsWith('?')) {
         const query = input.slice(1).trim();
         const resolvedQuery = window._inputRouter.resolveAIFileRefsInQuery(query);
         if (query) {
+          const pastedImages = collectPastedImages();
           window._aiQuery.prepareForQuery('ai');
           showAILoading();
           window._aiQuery.execute(resolvedQuery, 'ai', forceShow, (response) => {
             renderAIResponse(response);
-          });
+          }, pastedImages);
         }
       } else {
         const didExecute = executeSelected();
@@ -947,6 +949,8 @@ function clearResults() {
   renderPlaceholderState('empty', rawInput);
   // Clear conversation history
   if (window._aiQuery) window._aiQuery.clearConversation();
+  // Clear any pasted image
+  if (window._inputRouter) window._inputRouter.clearPastedImage();
 }
 
 function smartScroll(aiContainer) {
@@ -1070,6 +1074,14 @@ function restoreAIArea() {
     const rawInput = document.getElementById('search-input').value || '';
     renderPlaceholderState(rawInput.trim() ? 'no-results' : 'empty', rawInput);
   }
+}
+
+function collectPastedImages() {
+  if (!window._inputRouter) return [];
+  const img = window._inputRouter.getPastedImage();
+  if (!img) return [];
+  window._inputRouter.clearPastedImage();
+  return [img];
 }
 
 function escapeHtml(str) {

@@ -24,6 +24,7 @@ let activeFilePickRequestId = null;
 const aiFileRefs = new Map(); // label -> absolute path
 let inputOverlayEl = null;
 let calcSyntaxEnabled = true;
+let pastedImageData = null; // { dataUri, mimeType } or null
 
 function init() {
   const input = document.getElementById('search-input');
@@ -37,6 +38,23 @@ function init() {
   window.trim.loadSettings().then(s => {
     calcSyntaxEnabled = s && s.calcSyntax === false ? false : true;
   }).catch(() => {});
+
+  // Handle image paste - use Electron's native clipboard via IPC (sandbox-safe)
+  input.addEventListener('paste', async (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    let hasImage = false;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) { hasImage = true; break; }
+    }
+    if (!hasImage) return;
+    e.preventDefault();
+    const result = await window.trim.readClipboardImage();
+    if (result && result.dataUri) {
+      pastedImageData = { dataUri: result.dataUri, mimeType: result.mimeType };
+      if (window._chips) window._chips.renderChips();
+    }
+  });
 
   window.trim.offFolderSearchUpdate();
   window.trim.onFolderSearchUpdate((data) => {
@@ -445,24 +463,25 @@ function renderCalcOverlay(inputEl, raw) {
 
 function syncOverlayScroll(inputEl) {
   if (!inputOverlayEl || inputOverlayEl.style.display === 'none') return;
-  const containerW = inputOverlayEl.parentElement.clientWidth;
-  const contentW = inputOverlayEl.scrollWidth;
-  if (contentW > containerW) {
-    inputOverlayEl.style.transform = `translateX(${containerW - contentW}px)`;
-  } else {
-    inputOverlayEl.style.transform = '';
-  }
+  inputOverlayEl.style.transform = `translateX(${-inputEl.scrollLeft}px)`;
 }
 
 function refreshInputDecor(inputEl) {
   pruneStaleFileRefs(inputEl.value || '');
   updateFileRefTooltip(inputEl);
   renderInputOverlay(inputEl);
-  requestAnimationFrame(() => syncOverlayScroll(inputEl));
+  requestAnimationFrame(() => {
+    syncOverlayScroll(inputEl);
+    // Double-rAF: input.scrollLeft may update after layout
+    requestAnimationFrame(() => syncOverlayScroll(inputEl));
+  });
 }
 
 function isFilePickActive() {
   return filePickActive;
 }
 
-window._inputRouter = { init, route, detectMode, isFilePickActive, resolveAIFileRefsInQuery, refreshInputDecor, setCalcSyntax(v) { calcSyntaxEnabled = v; } };
+window._inputRouter = { init, route, detectMode, isFilePickActive, resolveAIFileRefsInQuery, refreshInputDecor, setCalcSyntax(v) { calcSyntaxEnabled = v; },
+  getPastedImage() { return pastedImageData; },
+  clearPastedImage() { pastedImageData = null; if (window._chips) window._chips.renderChips(); },
+};
