@@ -17,6 +17,9 @@ const MODE_HINTS = {
 };
 
 let debounceTimer = null;
+const DEBUG_SEARCH = true; // Set to false to silence f: and # debug logs
+function dbg(...args) { if (DEBUG_SEARCH) console.log(...args); }
+
 let currentMode = 'app';
 let filePickActive = false;
 let activeFolderRequestId = null;
@@ -61,11 +64,18 @@ function init() {
     const currentRaw = input.value;
     const mode = detectMode(currentRaw);
 
-    if (!data || !Array.isArray(data.results)) return;
+    if (!data || !Array.isArray(data.results)) {
+      dbg('[F: UPDATE] Ignored — no data or empty results');
+      return;
+    }
 
     if (mode === 'folder') {
       const q = currentRaw.trim().slice(2).trim();
-      if (data.requestId !== activeFolderRequestId || data.query !== q) return;
+      if (data.requestId !== activeFolderRequestId || data.query !== q) {
+        dbg(`[F: UPDATE] Stale — reqId ${data.requestId} vs ${activeFolderRequestId}, query "${data.query}" vs "${q}"`);
+        return;
+      }
+      dbg(`[F: UPDATE] Rendering ${data.results.length} streamed results for "${q}"`);
       const mapped = data.results.map(entry => ({
         type: 'folder',
         icon: entry.isDirectory ? 'folder' : 'description',
@@ -81,7 +91,11 @@ function init() {
       const hashMatch = currentRaw.match(/#([^#\\\/\s][^#\\\/]*)$/);
       const searchTerm = hashMatch && hashMatch[1] ? hashMatch[1].trim() : '';
       if (!searchTerm) return;
-      if (data.requestId !== activeFilePickRequestId || data.query !== searchTerm) return;
+      if (data.requestId !== activeFilePickRequestId || data.query !== searchTerm) {
+        dbg(`[#REF UPDATE] Stale — reqId ${data.requestId} vs ${activeFilePickRequestId}, query "${data.query}" vs "${searchTerm}"`);
+        return;
+      }
+      dbg(`[#REF UPDATE] Rendering ${data.results.length} streamed results for "${searchTerm}"`);
       const mapped = data.results.map(entry => ({
         type: 'file-ref',
         icon: entry.isDirectory ? 'folder' : 'description',
@@ -119,11 +133,14 @@ function init() {
       const hashMatch = raw.match(/#([^#\\\/\s][^#\\\/]*)$/);
       if (hashMatch && hashMatch[1].trim()) {
         const searchTerm = hashMatch[1].trim();
+        dbg(`[#REF] Hash detected, searching for "${searchTerm}"`);
         filePickActive = true;
         debounceTimer = setTimeout(async () => {
+          dbg(`[#REF] IPC searchFolders("${searchTerm}")`);
           const payload = await window.trim.searchFolders(searchTerm);
           const results = Array.isArray(payload) ? payload : (payload?.results || []);
           activeFilePickRequestId = payload?.requestId || null;
+          dbg(`[#REF] Got ${results.length} results, reqId=${activeFilePickRequestId}`);
           const mapped = results.map(entry => ({
             type: 'file-ref',
             icon: entry.isDirectory ? 'folder' : 'description',
@@ -221,7 +238,9 @@ async function route(rawInput) {
   }
 
   if (mode === 'folder') {
-    const payload = await window.trim.searchFolders(input.slice(2));
+    const folderQuery = input.slice(2);
+    dbg(`[F:] Searching for "${folderQuery}"`);
+    const payload = await window.trim.searchFolders(folderQuery);
     const results = (Array.isArray(payload) ? payload : (payload?.results || [])).map(entry => ({
       type: 'folder',
       icon: entry.isDirectory ? 'folder' : 'description',
@@ -230,6 +249,7 @@ async function route(rawInput) {
       action: () => window.trim.openFolder(entry.path),
     }));
     activeFolderRequestId = payload?.requestId || null;
+    dbg(`[F:] Got ${results.length} initial results, reqId=${activeFolderRequestId}`);
     window._ui.renderResults(results);
     return;
   }
@@ -246,11 +266,13 @@ async function route(rawInput) {
 }
 
 function insertFileRef(inputEl, filePath) {
+  dbg(`[#REF] insertFileRef: "${filePath}"`);
   const val = inputEl.value;
   const hashMatch = val.match(/#([^#\\\/]*)$/);
-  const base = filePath.split(/[/\\]/).pop() || filePath;
+  const base = filePath.split(/[\/\\]/).pop() || filePath;
   const label = makeUniqueRefLabel(base, inputEl.value, filePath);
   aiFileRefs.set(label, filePath);
+  dbg(`[#REF] Label: "${label}", refs:`, Object.fromEntries(aiFileRefs));
   const token = `#[${label}]`;
 
   if (hashMatch) {
@@ -300,6 +322,7 @@ function pruneStaleFileRefs(rawValue) {
 }
 
 function resolveAIFileRefsInQuery(query) {
+  dbg(`[#REF] resolveAIFileRefsInQuery: "${query}", refs:`, Object.fromEntries(aiFileRefs));
   let out = query;
   for (const [label, fullPath] of aiFileRefs.entries()) {
     const token = `#[${label}]`;
@@ -307,6 +330,7 @@ function resolveAIFileRefsInQuery(query) {
       out = out.split(token).join(`#"${fullPath}"`);
     }
   }
+  dbg(`[#REF] Resolved: "${out}"`);
   return out;
 }
 
