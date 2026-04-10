@@ -38,6 +38,7 @@ async function execute(query, mode, forceShow, renderFn) {
         text: result.text,
         sources: result.sources || [],
         codeOutputs: result.codeOutputs || [],
+        generatedImages: result.generatedImages || [],
       });
     }
   } catch (err) {

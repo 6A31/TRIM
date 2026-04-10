@@ -639,6 +639,7 @@ pre:hover .code-copy-btn,
 }
 
 .ai-plot {
+  position: relative;
   padding: 8px;
   display: flex;
   justify-content: center;
@@ -648,6 +649,60 @@ pre:hover .code-copy-btn,
 .ai-plot img {
   max-width: 100%;
   border-radius: 6px;
+}
+
+/* Generated images (native model image generation) */
+.ai-generated-image {
+  position: relative;
+  margin: 10px 0;
+  padding: 8px;
+  border-radius: 8px;
+  display: flex;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+}
+
+.ai-generated-image img {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+/* Image action buttons (copy/save) — shared by plots and generated images */
+.ai-image-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 2;
+}
+
+.ai-generated-image:hover .ai-image-actions,
+.ai-plot:hover .ai-image-actions {
+  opacity: 1;
+}
+
+.ai-image-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--text-primary);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: background 0.15s ease;
+}
+
+.ai-image-btn:hover {
+  background: rgba(0, 0, 0, 0.75);
 }
 
 /* Calculator symbolic results and plots */
@@ -747,6 +802,14 @@ pre:hover .code-copy-btn,
 .calc-plot-title .katex {
   color: var(--text-secondary);
   font-size: 1.05em;
+}
+
+.calc-plot-wrapper {
+  position: relative;
+}
+
+.calc-plot-wrapper:hover .ai-image-actions {
+  opacity: 1;
 }
 
 .calc-plot-container {

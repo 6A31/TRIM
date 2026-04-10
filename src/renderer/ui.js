@@ -562,13 +562,49 @@ function createCalcPlotElement(result) {
     el.appendChild(titleDiv);
   }
 
-  // Plotly container
+  // Plotly container with action buttons wrapper
+  const plotWrapper = document.createElement('div');
+  plotWrapper.className = 'calc-plot-wrapper';
   const plotDiv = document.createElement('div');
   plotDiv.className = 'calc-plot-container';
   plotDiv.dataset.plotData = JSON.stringify(result.plotData);
   plotDiv.dataset.plotLayout = JSON.stringify(result.plotLayout);
   plotDiv.dataset.plotConfig = JSON.stringify(result.plotConfig);
-  el.appendChild(plotDiv);
+  plotWrapper.appendChild(plotDiv);
+
+  // Copy/save action buttons
+  const actionsDiv = document.createElement('div');
+  actionsDiv.className = 'ai-image-actions';
+  actionsDiv.innerHTML = `<button class="ai-image-btn calc-plot-copy" title="Copy plot">
+      <span class="material-symbols-rounded" style="font-size:16px">content_copy</span>
+    </button>
+    <button class="ai-image-btn calc-plot-save" title="Save plot">
+      <span class="material-symbols-rounded" style="font-size:16px">download</span>
+    </button>`;
+  plotWrapper.appendChild(actionsDiv);
+
+  // Wire up calc plot copy/save
+  actionsDiv.querySelector('.calc-plot-copy').addEventListener('click', async () => {
+    try {
+      const dataUrl = await window.Plotly.toImage(plotDiv, { format: 'png', width: 800, height: 500 });
+      const ok = await window.trim.copyImageToClipboard(dataUrl);
+      const span = actionsDiv.querySelector('.calc-plot-copy span');
+      if (ok && span) { span.textContent = 'check'; setTimeout(() => span.textContent = 'content_copy', 1500); }
+    } catch { /* */ }
+  });
+  actionsDiv.querySelector('.calc-plot-save').addEventListener('click', async () => {
+    try {
+      const dataUrl = await window.Plotly.toImage(plotDiv, { format: 'png', width: 800, height: 500 });
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `plot_${Date.now()}.png`;
+      a.click();
+      const span = actionsDiv.querySelector('.calc-plot-save span');
+      if (span) { span.textContent = 'check'; setTimeout(() => span.textContent = 'download', 1500); }
+    } catch { /* */ }
+  });
+
+  el.appendChild(plotWrapper);
 
   // Variable awareness note
   if (result.varsNote) {
@@ -675,9 +711,30 @@ function sanitizeHTML(html) {
   return html.replace(/<[^>]*>/g, '');
 }
 
+function imageActionButtons() {
+  return `<div class="ai-image-actions">
+    <button class="ai-image-btn ai-image-copy" title="Copy image">
+      <span class="material-symbols-rounded" style="font-size:16px">content_copy</span>
+    </button>
+    <button class="ai-image-btn ai-image-save" title="Save image">
+      <span class="material-symbols-rounded" style="font-size:16px">download</span>
+    </button>
+  </div>`;
+}
+
 function buildResponseHTML(response) {
   const rawMarkdown = window._aiQuery.formatMarkdown(response.text);
   let html = `<div class="ai-text">${sanitizeHTML(rawMarkdown)}</div>`;
+
+  // Generated images (native model image generation)
+  if (response.generatedImages && response.generatedImages.length > 0) {
+    for (const img of response.generatedImages) {
+      html += `<div class="ai-generated-image">
+        ${imageActionButtons()}
+        <img src="${escapeHtml(img.dataUri)}" alt="Generated image" data-mime="${escapeHtml(img.mimeType || 'image/png')}">
+      </div>`;
+    }
+  }
 
   if (response.codeOutputs && response.codeOutputs.length > 0) {
     for (const output of response.codeOutputs) {
@@ -704,7 +761,10 @@ function buildResponseHTML(response) {
           <span class="material-symbols-rounded" style="font-size:14px">show_chart</span>
           <span>Plot</span>
         </div>
-        <div class="ai-plot"><img src="${escapeHtml(output.plot)}" alt="Plot"></div>`;
+        <div class="ai-plot">
+          ${imageActionButtons()}
+          <img src="${escapeHtml(output.plot)}" alt="Plot" data-mime="image/png">
+        </div>`;
       }
       if (output.error) {
         html += `<pre class="ai-code-error"><code>${escapeHtml(output.error)}</code></pre>`;
@@ -848,6 +908,31 @@ function postProcessCodeBlocks(container) {
   container.querySelectorAll('.ai-source-link').forEach(link => {
     link.addEventListener('click', (e) => e.preventDefault());
     link.title = link.dataset.uri || '';
+  });
+
+  // Wire up image copy/save buttons (generated images + plots)
+  container.querySelectorAll('.ai-image-btn').forEach(btn => {
+    btn.addEventListener('mousedown', (e) => e.preventDefault());
+    btn.addEventListener('click', async () => {
+      const imgEl = btn.closest('.ai-generated-image, .ai-plot')?.querySelector('img');
+      if (!imgEl) return;
+      const span = btn.querySelector('span');
+      if (btn.classList.contains('ai-image-copy')) {
+        try {
+          const ok = await window.trim.copyImageToClipboard(imgEl.src);
+          if (ok && span) { span.textContent = 'check'; setTimeout(() => span.textContent = 'content_copy', 1500); }
+        } catch (err) {
+          console.error('Image copy failed:', err);
+        }
+      } else if (btn.classList.contains('ai-image-save')) {
+        const a = document.createElement('a');
+        a.href = imgEl.src;
+        const ext = (imgEl.dataset.mime || 'image/png').split('/')[1] || 'png';
+        a.download = `image_${Date.now()}.${ext}`;
+        a.click();
+        if (span) { span.textContent = 'check'; setTimeout(() => span.textContent = 'download', 1500); }
+      }
+    });
   });
 }
 

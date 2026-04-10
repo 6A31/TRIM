@@ -388,6 +388,18 @@ const DELETE_FILE_TOOL = {
   },
 };
 
+const GENERATE_IMAGE_TOOL = {
+  name: 'generate_image',
+  description: 'Generate an image from a text prompt using an image generation model. Use when the user asks you to create, draw, generate, design, or make an image, picture, illustration, icon, logo, etc. Provide a detailed prompt describing exactly what to generate.',
+  parameters: {
+    type: 'OBJECT',
+    properties: {
+      prompt: { type: 'STRING', description: 'Detailed text prompt describing the image to generate' },
+    },
+    required: ['prompt'],
+  },
+};
+
 const LIST_DIRECTORY_TOOL = {
   name: 'list_directory',
   description: 'List the contents of a directory. Returns names, sizes, and types (file/directory) for each entry. Use to explore the filesystem.',
@@ -693,7 +705,9 @@ You have access to these tools:
 
 Always use absolute paths for file tools. The user will approve write/edit/delete before execution.
 
-**googleSearch** - Search the web for current information.`;
+**googleSearch** - Search the web for current information.
+
+**generate_image** - Generate an image from a text description. Use when the user asks you to create, draw, or generate an image/picture/illustration. Provide a detailed, descriptive prompt for best results. The generated image will be displayed inline.`;
 
 function getSystemInstruction(forceShowOutput) {
   const osName = platformAdapter ? platformAdapter.getOSLabel() : (process.platform === 'win32' ? 'Windows' : process.platform === 'darwin' ? 'macOS' : 'Linux');
@@ -719,8 +733,15 @@ const AI_TOOLS = [
     EDIT_FILE_TOOL,
     DELETE_FILE_TOOL,
     LIST_DIRECTORY_TOOL,
+    GENERATE_IMAGE_TOOL,
   ] },
 ];
+
+// Map text models to their image-capable counterparts
+const IMAGE_MODEL_MAP = {
+  'gemini-3-flash-preview': 'gemini-3.1-flash-image-preview',
+  'gemini-3.1-pro-preview': 'gemini-3-pro-image-preview',
+};
 
 function initAI(apiKey) {
   if (!apiKey) { ai = null; return; }
@@ -836,6 +857,7 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
     const sysInstruction = getSystemInstruction(forceShowOutput);
 
     const codeOutputs = [];
+    const generatedImages = []; // Images generated natively by the model
     const MAX_ROUNDS = 6;
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -991,6 +1013,43 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
             responseParts.push({
               functionResponse: { name: fc.name, response: { result }, id: fc.id },
             });
+          } else if (fc.name === 'generate_image') {
+            sendStatus(event, 'Generating image...');
+            const imageModel = IMAGE_MODEL_MAP[modelName] || 'gemini-3.1-flash-image-preview';
+            try {
+              const imgResponse = await ai.models.generateContent({
+                model: imageModel,
+                contents: [{ role: 'user', parts: [{ text: fc.args.prompt || '' }] }],
+                config: {
+                  responseModalities: ['IMAGE'],
+                },
+              });
+              const imgCandidate = imgResponse.candidates?.[0];
+              const imgParts = imgCandidate?.content?.parts || [];
+              let imageGenerated = false;
+              for (const imgPart of imgParts) {
+                if (imgPart.inlineData && imgPart.inlineData.mimeType?.startsWith('image/')) {
+                  const dataUri = `data:${imgPart.inlineData.mimeType};base64,${imgPart.inlineData.data}`;
+                  generatedImages.push({ dataUri, mimeType: imgPart.inlineData.mimeType });
+                  imageGenerated = true;
+                }
+              }
+              responseParts.push({
+                functionResponse: {
+                  name: 'generate_image',
+                  response: { result: imageGenerated ? { success: true } : { error: 'No image was generated.' } },
+                  id: fc.id,
+                },
+              });
+            } catch (imgErr) {
+              responseParts.push({
+                functionResponse: {
+                  name: 'generate_image',
+                  response: { result: { error: `Image generation failed: ${imgErr.message || 'Unknown error'}` } },
+                  id: fc.id,
+                },
+              });
+            }
           }
         }
 
@@ -998,17 +1057,24 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
         contents.push({ role: 'user', parts: responseParts });
       } else {
         // Final response - extract text, sources, and any codeExecution inline results
-        const text = response.text || '';
+        let text = response.text || '';
+        // Strip any leaked generate_image tool-call JSON from the text
+        text = text.replace(/```(?:json)?\s*\{[^`]*?generate_image[^`]*?\}\s*```/g, '').trim();
+        text = text.replace(/\{[^{}]*"generate_image"[^{}]*\}/g, '').trim();
         const grounding = candidate?.groundingMetadata;
         const sources = grounding?.groundingChunks
           ?.filter(c => c.web)
           .map(c => ({ title: c.web.title, uri: c.web.uri })) || [];
 
         // Extract inline codeExecution results (server-side code + plots)
+        // and any inline images from responses
         const parts = candidate?.content?.parts || [];
         let currentCode = null;
         let currentOutput = null;
         for (const part of parts) {
+          // Skip thought parts (thinking model internals)
+          if (part.thought) continue;
+
           if (part.executableCode && part.executableCode.code) {
             // New code block - flush any previous one
             if (currentCode) {
@@ -1021,10 +1087,16 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
             currentOutput = part.codeExecutionResult.output || null;
           }
           if (part.inlineData && part.inlineData.mimeType && part.inlineData.mimeType.startsWith('image/')) {
-            const plot = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-            codeOutputs.push({ code: currentCode, stdout: currentOutput, error: null, plot });
-            currentCode = null;
-            currentOutput = null;
+            const dataUri = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+            // If there's a preceding code block, this image is a code execution plot
+            if (currentCode) {
+              codeOutputs.push({ code: currentCode, stdout: currentOutput, error: null, plot: dataUri });
+              currentCode = null;
+              currentOutput = null;
+            } else {
+              // Native model-generated image (text-to-image / image generation)
+              generatedImages.push({ dataUri, mimeType: part.inlineData.mimeType });
+            }
           }
         }
         // Flush remaining code block without a plot
@@ -1036,12 +1108,12 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp) {
         contents.push(candidate.content);
         chatHistory = { contents, model: modelName };
 
-        return { text, sources, codeOutputs };
+        return { text, sources, codeOutputs, generatedImages };
       }
     }
 
     // Fallback after max rounds
-    return { text: 'Reached maximum processing rounds.', sources: [], codeOutputs };
+    return { text: 'Reached maximum processing rounds.', sources: [], codeOutputs, generatedImages };
   } catch (err) {
     return { error: friendlyError(err) };
   } finally {
@@ -1373,6 +1445,17 @@ function registerHandlers(ipcMain) {
 
   ipcMain.handle(IPC.AI_QUERY, async (event, query, usePro, forceShowOutput, followUp) => {
     return handleAIQuery(event, query, usePro, forceShowOutput, followUp);
+  });
+
+  ipcMain.handle('trim:copy-image', async (_e, dataUri) => {
+    try {
+      const { nativeImage, clipboard } = require('electron');
+      const img = nativeImage.createFromDataURL(dataUri);
+      clipboard.writeImage(img);
+      return true;
+    } catch {
+      return false;
+    }
   });
 
   ipcMain.handle(IPC.SEARCH_FOLDERS, async (_e, query) => {

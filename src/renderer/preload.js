@@ -28,4 +28,5 @@ contextBridge.exposeInMainWorld('trim', {
   updateShortcut: (accelerator) => ipcRenderer.invoke('trim:update-shortcut', accelerator),
   onUpdateReady: (cb) => ipcRenderer.on('trim:update-ready', cb),
   quitAndInstall: () => ipcRenderer.send('trim:quit-and-install'),
+  copyImageToClipboard: (dataUri) => ipcRenderer.invoke('trim:copy-image', dataUri),
 });
