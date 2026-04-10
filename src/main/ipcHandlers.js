@@ -875,9 +875,12 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
 
     const codeOutputs = [];
     const generatedImages = []; // Images generated natively by the model
-    const MAX_ROUNDS = 6;
+    const MAX_ROUNDS = 10;
+    let round = 0;
 
-    for (let round = 0; round < MAX_ROUNDS; round++) {
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+    while (round < MAX_ROUNDS) {
       // Bail out if a newer query has started
       if (queryId !== activeQueryId) {
         return { error: '__aborted__' };
@@ -1072,6 +1075,7 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
 
         // Send function responses back
         contents.push({ role: 'user', parts: responseParts });
+        round++;
       } else {
         // Final response - extract text, sources, and any codeExecution inline results
         let text = response.text || '';
@@ -1129,8 +1133,14 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
       }
     }
 
-    // Fallback after max rounds
-    return { text: 'Reached maximum processing rounds.', sources: [], codeOutputs, generatedImages };
+    // Reached round limit — ask user whether to keep going
+    sendStatus(event, 'Waiting for approval...');
+    const keepGoing = await requestConfirmation(event, { tool: 'continue_processing', roundsUsed: round });
+    if (!keepGoing) {
+      return { text: 'Stopped after ' + round + ' rounds.', sources: [], codeOutputs, generatedImages };
+    }
+    round = 0; // reset and continue the outer loop
+    } // end outer while
   } catch (err) {
     return { error: friendlyError(err) };
   } finally {

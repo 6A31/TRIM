@@ -978,7 +978,11 @@ function showConfirmation(details) {
   if (!turnDiv) return;
 
   let icon, title, body;
-  if (details.tool === 'write_file') {
+  if (details.tool === 'continue_processing') {
+    icon = 'autorenew';
+    title = 'Continue processing?';
+    body = `<div class="confirm-path">Used ${details.roundsUsed} rounds. Allow another batch?</div>`;
+  } else if (details.tool === 'write_file') {
     icon = 'edit_document';
     title = 'Write file';
     body = `<div class="confirm-path">${escapeHtml(details.path)}</div>`;
@@ -1006,6 +1010,12 @@ function showConfirmation(details) {
     body = `<div class="confirm-path">${escapeHtml(details.path || '')}</div>`;
   }
 
+  const isContinue = details.tool === 'continue_processing';
+  const approveLabel = isContinue ? 'Continue' : 'Approve';
+  const denyLabel = isContinue ? 'Stop' : 'Deny';
+  const approveIcon = isContinue ? 'play_arrow' : 'check';
+  const denyIcon = isContinue ? 'stop' : 'close';
+
   turnDiv.innerHTML = `
     <div class="confirm-action">
       <div class="confirm-header">
@@ -1015,12 +1025,12 @@ function showConfirmation(details) {
       ${body}
       <div class="confirm-buttons">
         <button class="confirm-btn confirm-deny" id="confirm-deny-btn">
-          <span class="material-symbols-rounded" style="font-size:16px">close</span>
-          Deny
+          <span class="material-symbols-rounded" style="font-size:16px">${denyIcon}</span>
+          ${denyLabel}
         </button>
         <button class="confirm-btn confirm-approve" id="confirm-approve-btn">
-          <span class="material-symbols-rounded" style="font-size:16px">check</span>
-          Approve
+          <span class="material-symbols-rounded" style="font-size:16px">${approveIcon}</span>
+          ${approveLabel}
         </button>
       </div>
     </div>
@@ -1033,20 +1043,23 @@ function showConfirmation(details) {
 
   document.getElementById('confirm-approve-btn').addEventListener('click', () => {
     window.trim.respondConfirmAction(true);
+    const msg = isContinue ? 'Continuing...' : `Executing ${escapeHtml(details.tool.replace(/_/g, ' '))}...`;
     turnDiv.innerHTML = `
       <div class="ai-loading">
         <div class="spinner"></div>
-        <span>Executing ${escapeHtml(details.tool.replace(/_/g, ' '))}...</span>
+        <span>${msg}</span>
       </div>
     `;
   });
 
   document.getElementById('confirm-deny-btn').addEventListener('click', () => {
     window.trim.respondConfirmAction(false);
+    const deniedMsg = isContinue ? 'Processing stopped' : 'Operation denied';
+    const deniedIcon = isContinue ? 'stop_circle' : 'block';
     turnDiv.innerHTML = `
       <div class="confirm-denied">
-        <span class="material-symbols-rounded" style="font-size:16px">block</span>
-        Operation denied
+        <span class="material-symbols-rounded" style="font-size:16px">${deniedIcon}</span>
+        ${deniedMsg}
       </div>
     `;
   });
