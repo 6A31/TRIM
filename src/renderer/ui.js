@@ -1002,7 +1002,7 @@ function showConfirmation(details) {
     body += `</div>`;
   } else if (details.tool === 'delete_file') {
     icon = 'delete';
-    title = details.isDirectory ? 'Delete folder' : 'Delete file';
+    title = details.isDirectory ? 'Move folder to trash' : 'Move to trash';
     body = `<div class="confirm-path">${escapeHtml(details.path)}</div>`;
   } else {
     icon = 'warning';

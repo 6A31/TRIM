@@ -334,6 +334,7 @@ const PYTHON_TOOL = {
         description: 'Pip packages to install before running (e.g. ["numpy", "matplotlib"])',
       },
       show_output: { type: 'BOOLEAN', description: 'Whether to show code + output to the user' },
+      working_directory: { type: 'STRING', description: 'Absolute path to use as the working directory. Defaults to a temp folder. Set this when the user wants to work with files in a specific location.' },
     },
     required: ['code'],
   },
@@ -380,7 +381,7 @@ const EDIT_FILE_TOOL = {
 
 const DELETE_FILE_TOOL = {
   name: 'delete_file',
-  description: 'Delete a file or folder. Requires user confirmation. Folders are deleted recursively.',
+  description: 'Delete a file or folder by moving it to the Recycle Bin / Trash. Requires user confirmation.',
   parameters: {
     type: 'OBJECT',
     properties: {
@@ -471,10 +472,15 @@ function cleanupVenv(venv) {
   try { fs.rmSync(venv.dir, { recursive: true, force: true }); } catch {}
 }
 
-function runPythonCode(py, code, packages, plotPath) {
+function runPythonCode(py, code, packages, plotPath, workingDir) {
   return new Promise((resolve) => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trim-py-'));
     const scriptPath = path.join(tmpDir, 'script.py');
+    // Use caller-specified working directory if valid, otherwise fall back to tmpDir
+    let cwd = tmpDir;
+    if (workingDir) {
+      try { if (fs.statSync(workingDir).isDirectory()) cwd = workingDir; } catch {}
+    }
 
     // Install packages (into venv or global depending on caller)
     if (packages && packages.length > 0) {
@@ -513,7 +519,7 @@ except ImportError:
     fs.writeFileSync(scriptPath, preamble + code, 'utf-8');
 
     execFile(py, [scriptPath], {
-      cwd: tmpDir,
+      cwd,
       timeout: 30000,
       maxBuffer: 5 * 1024 * 1024,
     }, (err, stdout, stderr) => {
@@ -629,18 +635,13 @@ function executeEditFile(filePath, oldText, newText) {
   }
 }
 
-function executeDeleteFile(filePath) {
+async function executeDeleteFile(filePath) {
   if (isPathBlocked(filePath)) {
     return { error: 'Access denied: this path is restricted for security.' };
   }
   try {
-    const stat = fs.statSync(filePath);
-    if (stat.isDirectory()) {
-      fs.rmSync(filePath, { recursive: true, force: true });
-    } else {
-      fs.unlinkSync(filePath);
-    }
-    return { success: true, path: filePath };
+    await shell.trashItem(filePath);
+    return { success: true, path: filePath, trashedNotDeleted: true };
   } catch (err) {
     return { error: err.message };
   }
@@ -697,12 +698,14 @@ You have access to these tools:
 - NEVER save plots to other paths or reference images in text (no ![](...)  links)
 - NEVER use Python for file system operations - use the dedicated file tools below
 - Set show_output=true when user should see code/result, false for intermediate calculations
+- Set working_directory to an absolute path when the user wants to work with files in a specific location (e.g. their Desktop). Relative paths in code will resolve from there.
+- Use subprocess.run() for OS commands when Python alone isn't enough (e.g. git, npm, system utils)
 
 **File tools** - For interacting with the user's file system:
 - read_file(path) - Read file contents (no confirmation needed)
 - write_file(path, content) - Create or overwrite a file (requires user approval)
 - edit_file(path, old_text, new_text) - Find-and-replace in a file (requires user approval)
-- delete_file(path) - Delete a file or folder (requires user approval)
+- delete_file(path) - Move a file or folder to Recycle Bin / Trash (requires user approval)
 - list_directory(path) - List directory contents (no confirmation needed)
 
 Always use absolute paths for file tools. The user will approve write/edit/delete before execution.
@@ -911,6 +914,7 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
             const code = fc.args?.code || '';
             const packages = fc.args?.packages || [];
             const showOutput = forceShowOutput || fc.args?.show_output !== false;
+            const workingDir = fc.args?.working_directory || null;
 
             // Decide: use global Python (fast) or temp venv (exotic packages)
             let py;
@@ -951,7 +955,7 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
             sendStatus(event, 'Running Python code...');
 
             const plotPath = path.join(os.tmpdir(), `trim-plot-${Date.now()}.png`);
-            const pyResult = await runPythonCode(py, code, packages, plotPath);
+            const pyResult = await runPythonCode(py, code, packages, plotPath, workingDir);
 
             if (showOutput) {
               codeOutputs.push({
@@ -1023,7 +1027,7 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
               } else if (fc.name === 'edit_file') {
                 result = executeEditFile(fc.args.path, fc.args.old_text, fc.args.new_text);
               } else if (fc.name === 'delete_file') {
-                result = executeDeleteFile(fc.args.path);
+                result = await executeDeleteFile(fc.args.path);
               }
             } else {
               result = { error: 'User denied this operation.' };
