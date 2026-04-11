@@ -10,13 +10,14 @@ register('/help', {
   icon: 'help',
   execute: () => {
     const helpResults = [
-      { type: 'command', icon: 'search', title: 'app name', subtitle: 'Search and launch installed apps' },
-      { type: 'command', icon: 'auto_awesome', title: '? question', subtitle: 'Ask Gemini Flash AI (press Enter to send)' },
-      { type: 'command', icon: 'auto_awesome', title: '?? question', subtitle: 'Ask Gemini Pro AI (press Enter to send)' },
-      { type: 'command', icon: 'calculate', title: 'c: expression', subtitle: 'Math - solve, plot, differentiate, integrate, factor, and more' },
-      { type: 'command', icon: 'folder_open', title: 'f: path', subtitle: 'Browse folders and files' },
-      { type: 'command', icon: 'attach_file', title: '#filename', subtitle: 'Reference a file in AI queries (Tab to select)' },
-      { type: 'command', icon: 'terminal', title: '/ command', subtitle: 'Run commands - /settings, /reload, /clear' },
+      { type: 'command', icon: 'search', title: 'app name', subtitle: 'Launch apps — type to search, Enter or click to open' },
+      { type: 'command', icon: 'auto_awesome', title: '? question', subtitle: 'Gemini Flash — chat, generate images, read/write files, run Python' },
+      { type: 'command', icon: 'auto_awesome', title: '?? question', subtitle: 'Gemini Pro — same tools, stronger reasoning' },
+      { type: 'command', icon: 'image', title: 'Ctrl+V image', subtitle: 'Paste a screenshot or image into AI chat for analysis' },
+      { type: 'command', icon: 'attach_file', title: '#filename', subtitle: 'Attach a file to your AI query (Tab to autocomplete)' },
+      { type: 'command', icon: 'calculate', title: 'c: expression', subtitle: 'Math — evaluate, solve, plot, derive, integrate, factor' },
+      { type: 'command', icon: 'folder_open', title: 'f: path', subtitle: 'Browse and open files and folders on your system' },
+      { type: 'command', icon: 'terminal', title: '/ command', subtitle: '/settings, /clear (reset AI), /reload, /help' },
     ];
     window._ui.renderResults(helpResults);
   },

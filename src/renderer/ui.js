@@ -172,7 +172,7 @@ function getPlaceholderResult(mode, kind) {
         type: 'placeholder',
         icon: 'auto_awesome',
         title: 'Ask Gemini Flash',
-        subtitle: 'Type your prompt, then press Enter',
+        subtitle: 'Chat, generate images, read/write files, run code. Ctrl+V to paste images',
       };
     }
 
@@ -181,7 +181,7 @@ function getPlaceholderResult(mode, kind) {
         type: 'placeholder',
         icon: 'auto_awesome',
         title: 'Ask Gemini Pro',
-        subtitle: 'Type your prompt, then press Enter',
+        subtitle: 'Same tools as Flash with stronger reasoning. Ctrl+V to paste images',
       };
     }
 
@@ -198,8 +198,8 @@ function getPlaceholderResult(mode, kind) {
       return {
         type: 'placeholder',
         icon: 'folder_open',
-        title: 'Search your files and folders',
-        subtitle: 'Type after f: to start browsing matches',
+        title: 'Browse files and folders',
+        subtitle: 'Type a path or name — Enter to open, Tab to step into folders',
       };
     }
 
@@ -208,7 +208,7 @@ function getPlaceholderResult(mode, kind) {
         type: 'placeholder',
         icon: 'terminal',
         title: 'Run a command',
-        subtitle: 'Type after / to filter available commands',
+        subtitle: '/settings, /clear (reset AI context), /reload, /help',
       };
     }
 
@@ -216,7 +216,7 @@ function getPlaceholderResult(mode, kind) {
       type: 'placeholder',
       icon: 'search',
       title: 'Start typing to search',
-      subtitle: 'Apps, folders, commands, and more. Type /help for tips',
+      subtitle: '? for AI, c: for math, f: for files, / for commands, or /help',
     };
   }
 
@@ -225,7 +225,7 @@ function getPlaceholderResult(mode, kind) {
       type: 'placeholder',
       icon: 'auto_awesome',
       title: 'Press Enter to ask Gemini Flash',
-      subtitle: 'AI queries do not show inline results while you type',
+      subtitle: 'Use #filename to attach files — Ctrl+V to paste images',
     };
   }
 
@@ -234,7 +234,7 @@ function getPlaceholderResult(mode, kind) {
       type: 'placeholder',
       icon: 'auto_awesome',
       title: 'Press Enter to ask Gemini Pro',
-      subtitle: 'AI queries do not show inline results while you type',
+      subtitle: 'Use #filename to attach files — Ctrl+V to paste images',
     };
   }
 
