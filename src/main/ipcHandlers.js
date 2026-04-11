@@ -1772,6 +1772,305 @@ function registerHandlers(ipcMain) {
 
     return { reverted, turnIndex, errors: errors.length > 0 ? errors : undefined };
   });
+
+  // ─── /do — Browser automation agent ───────────────────────────────────
+
+  const browserAgent = require('./browserAgent');
+
+  const DO_TOOLS = [
+    {
+      name: 'browser_navigate',
+      description: 'Navigate to a URL. Bare domains like "google.com" are accepted.',
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          url: { type: 'STRING', description: 'URL to navigate to' },
+        },
+        required: ['url'],
+      },
+    },
+    {
+      name: 'browser_get_content',
+      description: 'Read the current page text and interactive elements. Returns indexed elements like [1] button "Submit". ALWAYS call this after navigating or clicking to see the updated page.',
+      parameters: { type: 'OBJECT', properties: {} },
+    },
+    {
+      name: 'browser_click',
+      description: 'Click an interactive element by its index from browser_get_content.',
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          index: { type: 'INTEGER', description: 'Element index number from the last browser_get_content call' },
+        },
+        required: ['index'],
+      },
+    },
+    {
+      name: 'browser_type',
+      description: 'Type text into an input field by its index from browser_get_content.',
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          index: { type: 'INTEGER', description: 'Element index of the input field' },
+          text: { type: 'STRING', description: 'Text to type' },
+          submit: { type: 'BOOLEAN', description: 'Press Enter after typing (default false)' },
+        },
+        required: ['index', 'text'],
+      },
+    },
+    {
+      name: 'browser_select',
+      description: 'Choose an option from a <select> dropdown by its visible label.',
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          index: { type: 'INTEGER', description: 'Element index of the select dropdown' },
+          value: { type: 'STRING', description: 'Visible option text to select' },
+        },
+        required: ['index', 'value'],
+      },
+    },
+    {
+      name: 'browser_scroll',
+      description: 'Scroll the page up or down.',
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          direction: { type: 'STRING', description: '"up" or "down"' },
+        },
+        required: ['direction'],
+      },
+    },
+    {
+      name: 'browser_back',
+      description: 'Navigate back to the previous page.',
+      parameters: { type: 'OBJECT', properties: {} },
+    },
+    {
+      name: 'get_current_datetime',
+      description: 'Get the current date and time in the user\'s local timezone.',
+      parameters: { type: 'OBJECT', properties: {} },
+    },
+  ];
+
+  const DO_SYSTEM_INSTRUCTION = `You are a browser automation agent inside a desktop app called Trim. You control a real web browser to complete tasks for the user.
+
+## Workflow
+1. Navigate to the relevant website with browser_navigate.
+2. Call browser_get_content to see the page text and numbered interactive elements.
+3. Decide which element to interact with (click, type, select).
+4. After EVERY action, call browser_get_content again to see the updated page.
+5. Repeat until the task is complete.
+
+## Rules
+- ALWAYS call browser_get_content after navigating or clicking — the page may have changed.
+- Use the exact element index numbers from the most recent browser_get_content response.
+- If you can't find the right element, try scrolling or navigating to a different page.
+- If a page hasn't loaded fully, try calling browser_get_content again.
+- When the task is complete, respond with a brief summary of what you accomplished. Use markdown for formatting.
+- Be efficient — don't repeat unnecessary actions.
+- Never guess at element indices — always read the page first.
+- Use get_current_datetime when you need to know the current date or time.`;
+
+  let doAbortController = null;
+  let doContents = null; // persisted conversation history for follow-ups
+
+  function sendDoStatus(event, icon, text) {
+    try { event.sender.send(IPC.DO_STATUS, { icon, text }); } catch {}
+  }
+
+  // Shared agent loop — runs up to maxRounds of tool-calling with the model
+  async function runDoAgentLoop(event, contents, signal) {
+    const settings = loadSettingsSync();
+    const modelName = settings.model || 'gemini-3-flash-preview';
+    const MAX_ROUNDS = 25;
+    let round = 0;
+
+    while (round < MAX_ROUNDS) {
+      if (signal.aborted) break;
+
+      sendDoStatus(event, 'think', 'Thinking...');
+
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents,
+        config: {
+          tools: [{ functionDeclarations: DO_TOOLS }],
+          systemInstruction: DO_SYSTEM_INSTRUCTION,
+        },
+      });
+
+      if (signal.aborted) break;
+
+      const candidate = response.candidates?.[0];
+      if (!candidate?.content?.parts) break;
+
+      const parts = candidate.content.parts;
+      contents.push(candidate.content);
+
+      const functionCalls = parts.filter(p => p.functionCall).map(p => p.functionCall);
+
+      // No function calls → model is done
+      if (functionCalls.length === 0) {
+        const text = parts.filter(p => p.text).map(p => p.text).join('');
+        return { done: true, text };
+      }
+
+      // Execute each function call
+      const responseParts = [];
+      for (const fc of functionCalls) {
+        if (signal.aborted) break;
+
+        const name = fc.name;
+        const args = fc.args || {};
+        let result;
+
+        try {
+          switch (name) {
+            case 'browser_navigate':
+              sendDoStatus(event, 'navigate', `Navigating to ${(args.url || '').slice(0, 50)}...`);
+              result = await browserAgent.navigate(args.url);
+              break;
+            case 'browser_get_content':
+              sendDoStatus(event, 'read', 'Reading page...');
+              result = { content: await browserAgent.getContent() };
+              break;
+            case 'browser_click':
+              sendDoStatus(event, 'click', `Clicking element [${args.index}]`);
+              result = await browserAgent.click(args.index);
+              break;
+            case 'browser_type':
+              sendDoStatus(event, 'type', `Typing into element [${args.index}]`);
+              result = await browserAgent.type(args.index, args.text, args.submit);
+              break;
+            case 'browser_select':
+              sendDoStatus(event, 'select', `Selecting "${args.value}"`);
+              result = await browserAgent.selectOption(args.index, args.value);
+              break;
+            case 'browser_scroll':
+              sendDoStatus(event, 'scroll', `Scrolling ${args.direction}`);
+              result = await browserAgent.scroll(args.direction);
+              break;
+            case 'browser_back':
+              sendDoStatus(event, 'back', 'Going back...');
+              result = await browserAgent.goBack();
+              break;
+            case 'get_current_datetime':
+              result = { datetime: new Date().toLocaleString(), iso: new Date().toISOString() };
+              break;
+            default:
+              result = { error: `Unknown tool: ${name}` };
+          }
+        } catch (err) {
+          result = { error: err.message };
+          sendDoStatus(event, 'error', `Error: ${err.message.slice(0, 60)}`);
+        }
+
+        responseParts.push({
+          functionResponse: { name, response: { result }, id: fc.id },
+        });
+      }
+
+      contents.push({ role: 'user', parts: responseParts });
+      round++;
+    }
+
+    if (signal.aborted) {
+      return { aborted: true };
+    }
+
+    return { done: true, text: 'Reached the maximum number of browser steps. The task may be partially complete.' };
+  }
+
+  ipcMainRef.handle(IPC.DO_TASK, async (event, task) => {
+    if (!ai) {
+      return { error: 'No API key configured. Use /settings to add your Gemini API key.' };
+    }
+    if (doAbortController) {
+      return { error: 'A /do task is already running.' };
+    }
+
+    doAbortController = new AbortController();
+    const signal = doAbortController.signal;
+
+    try {
+      sendDoStatus(event, 'launch', 'Opening browser...');
+      await browserAgent.launch();
+      sendDoStatus(event, 'check', 'Browser ready');
+
+      doContents = [{ role: 'user', parts: [{ text: task }] }];
+      const result = await runDoAgentLoop(event, doContents, signal);
+
+      if (result.aborted) {
+        sendDoStatus(event, 'abort', 'Aborted');
+        // Close browser on abort
+        await browserAgent.close();
+        doContents = null;
+        return { done: true, text: 'Task aborted by user.' };
+      }
+
+      sendDoStatus(event, 'done', result.text ? 'Task complete' : 'Reached maximum steps');
+      // Browser stays open for follow-ups — doContents persisted
+      return { done: true, text: result.text };
+
+    } catch (err) {
+      sendDoStatus(event, 'error', `Error: ${err.message}`);
+      await browserAgent.close();
+      doContents = null;
+      return { error: err.message };
+    } finally {
+      doAbortController = null;
+    }
+  });
+
+  // Follow-up: continue the conversation with the still-open browser
+  ipcMainRef.handle(IPC.DO_FOLLOW_UP, async (event, text) => {
+    if (!ai) {
+      return { error: 'No API key configured.' };
+    }
+    if (!doContents || !browserAgent.isRunning()) {
+      return { error: 'No active browser session. Start a new /do task.' };
+    }
+    if (doAbortController) {
+      return { error: 'A /do task is already running.' };
+    }
+
+    doAbortController = new AbortController();
+    const signal = doAbortController.signal;
+
+    try {
+      doContents.push({ role: 'user', parts: [{ text }] });
+      const result = await runDoAgentLoop(event, doContents, signal);
+
+      if (result.aborted) {
+        sendDoStatus(event, 'abort', 'Aborted');
+        await browserAgent.close();
+        doContents = null;
+        return { done: true, text: 'Task aborted by user.' };
+      }
+
+      sendDoStatus(event, 'done', result.text ? 'Task complete' : 'Reached maximum steps');
+      return { done: true, text: result.text };
+
+    } catch (err) {
+      sendDoStatus(event, 'error', `Error: ${err.message}`);
+      return { error: err.message };
+    } finally {
+      doAbortController = null;
+    }
+  });
+
+  // Explicit close — user is done with the browser session
+  ipcMainRef.on(IPC.DO_CLOSE_BROWSER, async () => {
+    doContents = null;
+    await browserAgent.close();
+  });
+
+  ipcMainRef.on(IPC.DO_ABORT, () => {
+    if (doAbortController) {
+      doAbortController.abort();
+    }
+  });
 }
 
 module.exports = { registerHandlers, loadSettingsSync };

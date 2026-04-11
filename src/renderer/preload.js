@@ -36,4 +36,13 @@ contextBridge.exposeInMainWorld('trim', {
   readClipboardImage: () => ipcRenderer.invoke('trim:read-clipboard-image'),
   isDevMode: () => ipcRenderer.invoke('trim:is-dev-mode'),
   revertToTurn: (turnIndex) => ipcRenderer.invoke('trim:revert-to-turn', turnIndex),
+  doTask: (task) => ipcRenderer.invoke('trim:do-task', task),
+  doFollowUp: (text) => ipcRenderer.invoke('trim:do-follow-up', text),
+  doCloseBrowser: () => ipcRenderer.send('trim:do-close-browser'),
+  doAbort: () => ipcRenderer.send('trim:do-abort'),
+  onDoStatus: (cb) => ipcRenderer.on('trim:do-status', (_e, data) => cb(data)),
+  offDoStatus: () => ipcRenderer.removeAllListeners('trim:do-status'),
+  onDoAbortHotkey: (cb) => ipcRenderer.on('trim:do-abort-hotkey', cb),
+  offDoAbortHotkey: () => ipcRenderer.removeAllListeners('trim:do-abort-hotkey'),
+  suppressBlur: (flag) => ipcRenderer.send('trim:suppress-blur', flag),
 });

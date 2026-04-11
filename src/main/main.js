@@ -74,6 +74,10 @@ if (!gotLock) {
       updater.quitAndInstall();
     });
 
+    ipcMain.on(IPC.SUPPRESS_BLUR, (_e, flag) => {
+      windowManager.suppressBlur(flag);
+    });
+
     updater.init(windowManager.getWindow());
   });
 

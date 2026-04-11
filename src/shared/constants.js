@@ -34,6 +34,12 @@ const IPC = {
   QUIT_AND_INSTALL: 'trim:quit-and-install',
   IS_DEV_MODE: 'trim:is-dev-mode',
   REVERT_TO_TURN: 'trim:revert-to-turn',
+  DO_TASK: 'trim:do-task',
+  DO_FOLLOW_UP: 'trim:do-follow-up',
+  DO_CLOSE_BROWSER: 'trim:do-close-browser',
+  DO_STATUS: 'trim:do-status',
+  DO_ABORT: 'trim:do-abort',
+  SUPPRESS_BLUR: 'trim:suppress-blur',
 };
 
 const DEFAULT_SHORTCUT = 'Alt+Space';

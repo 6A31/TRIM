@@ -18,6 +18,7 @@ register('/help', {
       { type: 'command', icon: 'calculate', title: 'c: expression', subtitle: 'Math — evaluate, solve, plot, derive, integrate, factor' },
       { type: 'command', icon: 'folder_open', title: 'f: path', subtitle: 'Browse and open files and folders on your system' },
       { type: 'command', icon: 'terminal', title: '/ command', subtitle: '/settings, /clear (reset AI), /reload, /help' },
+      { type: 'command', icon: 'smart_toy', title: '/do task', subtitle: 'Automate a browser task — AI controls a real browser for you' },
     ];
     window._ui.renderResults(helpResults);
   },
@@ -47,6 +48,12 @@ register('/clear', {
     window.trim.cleanup();
     document.getElementById('search-input').dispatchEvent(new Event('input'));
   },
+});
+
+register('/do', {
+  description: 'Automate a browser task with AI',
+  icon: 'smart_toy',
+  execute: null, // Handled specially in ui.js Enter handler — needs the full input text
 });
 
 function search(input) {

@@ -4,6 +4,7 @@ const path = require('path');
 let mainWindow = null;
 const WIN_W = 680;
 const BAR_H = 52;
+let blurSuppressed = false;
 
 function create() {
   const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
@@ -41,6 +42,7 @@ function create() {
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
   mainWindow.on('blur', () => {
+    if (blurSuppressed) return;
     hide();
   });
 
@@ -65,6 +67,11 @@ function create() {
 
 function toggle() {
   if (!mainWindow) return;
+  // During a /do task (blur suppressed), hotkey aborts instead of toggling
+  if (blurSuppressed) {
+    mainWindow.webContents.send('trim:do-abort-hotkey');
+    return;
+  }
   if (mainWindow.isVisible()) {
     hide();
   } else {
@@ -98,4 +105,8 @@ function getWindow() {
   return mainWindow;
 }
 
-module.exports = { create, toggle, show, hide, resize, getWindow };
+function suppressBlur(flag) {
+  blurSuppressed = !!flag;
+}
+
+module.exports = { create, toggle, show, hide, resize, getWindow, suppressBlur };

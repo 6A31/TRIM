@@ -91,6 +91,16 @@ function handleKeyboard(e) {
             renderAIResponse(response);
           }, pastedImages);
         }
+      } else if (input.toLowerCase().startsWith('/do ')) {
+        const task = input.slice(4).trim();
+        if (task) {
+          executeDoTask(task);
+        }
+      } else if (doBrowserActive && !doTaskRunning && input.trim()) {
+        // Follow-up to an active /do browser session
+        const followUpText = input.trim();
+        document.getElementById('search-input').value = '';
+        executeDoFollowUp(followUpText);
       } else {
         const didExecute = executeSelected();
         if (!didExecute && window._chips && window._chips.triggerVisibleAction) {
@@ -100,7 +110,13 @@ function handleKeyboard(e) {
       break;
     case 'Escape':
       e.preventDefault();
-      window.trim.hideWindow();
+      if (doTaskRunning) {
+        abortDoTask();
+      } else if (doBrowserActive) {
+        closeDoBrowser();
+      } else {
+        window.trim.hideWindow();
+      }
       break;
     case 'Tab':
       e.preventDefault();
@@ -988,6 +1004,8 @@ function clearResults() {
   if (window._aiQuery) window._aiQuery.clearConversation();
   // Clear any pasted image
   if (window._inputRouter) window._inputRouter.clearPastedImage();
+  // Close browser session if active
+  if (doBrowserActive) closeDoBrowser();
 }
 
 function smartScroll(aiContainer) {
@@ -1140,4 +1158,269 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-window._ui = { init, renderResults, showAILoading, updateAIStatus, renderAIResponse, clearResults, restoreAIArea, showConfirmation, loadHotfixContext, createLoadingSpinner };
+// ─── /do — Browser automation progress tracker ────────────────────────
+
+const DO_ICONS = {
+  launch:   'rocket_launch',
+  check:    'check_circle',
+  think:    'psychology',
+  navigate: 'language',
+  read:     'article',
+  click:    'ads_click',
+  type:     'keyboard',
+  select:   'checklist',
+  scroll:   'swap_vert',
+  back:     'arrow_back',
+  done:     'task_alt',
+  error:    'error',
+  abort:    'block',
+};
+
+let doTaskRunning = false;
+let doBrowserActive = false; // browser still open, accepting follow-ups
+let doTracker = null;        // current tracker DOM reference
+let doLog = null;            // current log DOM reference
+
+async function executeDoTask(task) {
+  if (doTaskRunning) return;
+  doTaskRunning = true;
+
+  const container = document.getElementById('results-container');
+  const aiContainer = document.getElementById('ai-response-container');
+  const settingsPanel = document.getElementById('settings-panel');
+
+  container.classList.add('hidden');
+  settingsPanel.classList.add('hidden');
+  aiContainer.classList.remove('hidden');
+  aiContainer.innerHTML = '';
+  document.getElementById('search-bar').classList.add('has-results');
+
+  // Build progress tracker
+  const tracker = document.createElement('div');
+  tracker.className = 'do-tracker';
+  doTracker = tracker;
+
+  const header = document.createElement('div');
+  header.className = 'do-tracker-header';
+  header.innerHTML = `<span class="material-symbols-rounded do-tracker-icon">smart_toy</span><span class="do-tracker-title">${escapeHtml(task)}</span>`;
+  tracker.appendChild(header);
+
+  const log = document.createElement('div');
+  log.className = 'do-tracker-log';
+  tracker.appendChild(log);
+  doLog = log;
+
+  const footer = document.createElement('div');
+  footer.className = 'do-tracker-footer';
+  const abortBtn = document.createElement('button');
+  abortBtn.className = 'do-abort-btn';
+  abortBtn.innerHTML = '<span class="material-symbols-rounded">stop_circle</span> Abort';
+  footer.appendChild(abortBtn);
+  tracker.appendChild(footer);
+
+  aiContainer.appendChild(tracker);
+
+  // Resize
+  requestAnimationFrame(() => {
+    const h = getBarHeight() + aiContainer.scrollHeight;
+    window.trim.resizeWindow(Math.min(h, 500));
+  });
+
+  // Suppress blur so Trim stays visible while browser is active
+  window.trim.suppressBlur(true);
+
+  // Listen for status updates
+  wireDoStatusListeners(log);
+
+  // Abort handler
+  let aborted = false;
+  abortBtn.addEventListener('click', () => {
+    if (!aborted && doTaskRunning) {
+      aborted = true;
+      window.trim.doAbort();
+      abortBtn.disabled = true;
+      abortBtn.innerHTML = '<span class="material-symbols-rounded">stop_circle</span> Aborting...';
+    }
+  });
+
+  // Global hotkey abort (Trim toggle key aborts during /do)
+  window.trim.offDoAbortHotkey();
+  window.trim.onDoAbortHotkey(() => {
+    if (!aborted && doTaskRunning) {
+      aborted = true;
+      window.trim.doAbort();
+      abortBtn.disabled = true;
+      abortBtn.innerHTML = '<span class="material-symbols-rounded">stop_circle</span> Aborting...';
+    }
+  });
+
+  try {
+    const result = await window.trim.doTask(task);
+
+    if (result.error) {
+      addDoLogEntry(log, 'error', result.error);
+      doBrowserActive = false;
+    } else {
+      if (result.text) {
+        const summary = document.createElement('div');
+        summary.className = 'do-tracker-summary';
+        const rawMd = window._aiQuery.formatMarkdown(result.text);
+        summary.innerHTML = sanitizeHTML(rawMd);
+        window._aiQuery.highlightCodeBlocks(summary);
+        tracker.insertBefore(summary, footer);
+      }
+      // Browser stays open for follow-ups (unless aborted)
+      doBrowserActive = !aborted;
+    }
+  } catch (err) {
+    addDoLogEntry(log, 'error', err.message || 'Unexpected error');
+    doBrowserActive = false;
+  } finally {
+    doTaskRunning = false;
+    window.trim.offDoStatus();
+
+    if (doBrowserActive) {
+      // Show "Close browser" button + hint about follow-ups
+      abortBtn.innerHTML = '<span class="material-symbols-rounded">close</span> Close browser';
+      abortBtn.classList.add('do-abort-done');
+      abortBtn.disabled = false;
+      // Re-bind as close button
+      abortBtn.replaceWith(abortBtn.cloneNode(true));
+      const closeBtn = footer.querySelector('.do-abort-btn');
+      closeBtn.addEventListener('click', () => {
+        closeDoBrowser();
+      });
+    } else {
+      abortBtn.disabled = true;
+      abortBtn.innerHTML = '<span class="material-symbols-rounded">check_circle</span> Done';
+      abortBtn.classList.add('do-abort-done');
+      window.trim.offDoAbortHotkey();
+      window.trim.suppressBlur(false);
+    }
+
+    requestAnimationFrame(() => {
+      const h = getBarHeight() + aiContainer.scrollHeight;
+      window.trim.resizeWindow(Math.min(h, 500));
+      requestAnimationFrame(() => { log.scrollTop = log.scrollHeight; });
+    });
+  }
+}
+
+// Follow-up: user typed something while browser is still open
+async function executeDoFollowUp(text) {
+  if (doTaskRunning || !doBrowserActive) return;
+  doTaskRunning = true;
+
+  const log = doLog;
+  const tracker = doTracker;
+  if (!log || !tracker) return;
+
+  // Add a visual separator for the follow-up
+  addDoLogEntry(log, 'think', `Follow-up: ${text}`);
+
+  wireDoStatusListeners(log);
+
+  try {
+    const result = await window.trim.doFollowUp(text);
+
+    if (result.error) {
+      addDoLogEntry(log, 'error', result.error);
+      doBrowserActive = false;
+    } else if (result.text) {
+      const footer = tracker.querySelector('.do-tracker-footer');
+      // Remove previous summary if any
+      const oldSummary = tracker.querySelector('.do-tracker-summary');
+      if (oldSummary) oldSummary.remove();
+      const summary = document.createElement('div');
+      summary.className = 'do-tracker-summary';
+      const rawMd = window._aiQuery.formatMarkdown(result.text);
+      summary.innerHTML = sanitizeHTML(rawMd);
+      window._aiQuery.highlightCodeBlocks(summary);
+      tracker.insertBefore(summary, footer);
+    }
+  } catch (err) {
+    addDoLogEntry(log, 'error', err.message || 'Unexpected error');
+  } finally {
+    doTaskRunning = false;
+    window.trim.offDoStatus();
+
+    requestAnimationFrame(() => {
+      const aiContainer = document.getElementById('ai-response-container');
+      const h = getBarHeight() + aiContainer.scrollHeight;
+      window.trim.resizeWindow(Math.min(h, 500));
+      requestAnimationFrame(() => { log.scrollTop = log.scrollHeight; });
+    });
+  }
+}
+
+function wireDoStatusListeners(log) {
+  window.trim.offDoStatus();
+  window.trim.onDoStatus(({ icon, text }) => {
+    addDoLogEntry(log, icon, text);
+    requestAnimationFrame(() => {
+      const aiContainer = document.getElementById('ai-response-container');
+      const h = getBarHeight() + aiContainer.scrollHeight;
+      window.trim.resizeWindow(Math.min(h, 500));
+      requestAnimationFrame(() => { log.scrollTop = log.scrollHeight; });
+    });
+  });
+}
+
+function closeDoBrowser() {
+  doBrowserActive = false;
+  doTracker = null;
+  doLog = null;
+  window.trim.doCloseBrowser();
+  window.trim.offDoAbortHotkey();
+  window.trim.suppressBlur(false);
+
+  // Update the button to "Done"
+  const footer = document.querySelector('.do-tracker-footer');
+  if (footer) {
+    const btn = footer.querySelector('.do-abort-btn');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="material-symbols-rounded">check_circle</span> Done';
+    }
+  }
+}
+
+function addDoLogEntry(log, iconKey, text) {
+  const entry = document.createElement('div');
+  const isTerminal = iconKey === 'done' || iconKey === 'error' || iconKey === 'abort' || iconKey === 'check';
+  entry.className = `do-log-entry${isTerminal ? ' do-log-done' : ''}`;
+
+  const icon = DO_ICONS[iconKey] || 'circle';
+  const showSpinner = !isTerminal;
+
+  entry.innerHTML = showSpinner
+    ? `<div class="spinner do-spinner"></div><span class="do-log-text">${escapeHtml(text)}</span>`
+    : `<span class="material-symbols-rounded do-log-icon do-log-icon-${iconKey}">${icon}</span><span class="do-log-text">${escapeHtml(text)}</span>`;
+
+  // Mark previous entries as completed (replace spinner with checkmark)
+  const prev = log.querySelectorAll('.do-log-entry:not(.do-log-done)');
+  for (const p of prev) {
+    const spinner = p.querySelector('.do-spinner');
+    if (spinner) {
+      const check = document.createElement('span');
+      check.className = 'material-symbols-rounded do-log-icon do-log-icon-check';
+      check.textContent = 'check_circle';
+      spinner.replaceWith(check);
+    }
+    p.classList.add('do-log-done');
+  }
+
+  log.appendChild(entry);
+}
+
+function isDoTaskRunning() {
+  return doTaskRunning;
+}
+
+function abortDoTask() {
+  if (doTaskRunning) {
+    window.trim.doAbort();
+  }
+}
+
+window._ui = { init, renderResults, showAILoading, updateAIStatus, renderAIResponse, clearResults, restoreAIArea, showConfirmation, loadHotfixContext, createLoadingSpinner, isDoTaskRunning, abortDoTask, isDoBrowserActive: () => doBrowserActive, closeDoBrowser };

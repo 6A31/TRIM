@@ -130,6 +130,13 @@ function init() {
       return;
     }
 
+    // /do retains its tracker like AI retains its response
+    if (mode === 'command' && raw.toLowerCase().startsWith('/do ')) {
+      clearTimeout(debounceTimer);
+      window._ui.restoreAIArea();
+      return;
+    }
+
     // AI modes only fire on Enter, not on typing
     if (mode === 'ai' || mode === 'ai_pro') {
       clearTimeout(debounceTimer);
