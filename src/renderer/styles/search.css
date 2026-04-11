@@ -1010,6 +1010,45 @@ pre:hover .code-copy-btn,
   font-size: 13px;
 }
 
+/* ─── Revert bar ─── */
+
+.ai-revert-bar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 0 8px;
+}
+
+.ai-revert-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.ai-revert-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ai-revert-btn:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.ai-revert-btn.reverted {
+  color: var(--accent);
+  border-color: transparent;
+}
+
 /* ─── Calculator syntax highlighting ─── */
 
 .calc-func {

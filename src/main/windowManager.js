@@ -54,7 +54,9 @@ function create() {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.setContentSize(WIN_W, BAR_H);
-    // Use the same code path as hotkey toggles so animation/timing matches.
+    // Skip the initial show when launched at login with --hidden.
+    // The user will summon the window via the global hotkey.
+    if (process.argv.includes('--hidden')) return;
     show();
   });
 

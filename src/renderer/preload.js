@@ -35,4 +35,5 @@ contextBridge.exposeInMainWorld('trim', {
   copyImageToClipboard: (dataUri) => ipcRenderer.invoke('trim:copy-image', dataUri),
   readClipboardImage: () => ipcRenderer.invoke('trim:read-clipboard-image'),
   isDevMode: () => ipcRenderer.invoke('trim:is-dev-mode'),
+  revertToTurn: (turnIndex) => ipcRenderer.invoke('trim:revert-to-turn', turnIndex),
 });

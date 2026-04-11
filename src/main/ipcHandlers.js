@@ -298,7 +298,10 @@ function loadSettingsSync() {
 
 function applyAutoStart(enabled) {
   if (!app.isPackaged) return;
-  app.setLoginItemSettings({ openAtLogin: enabled });
+  app.setLoginItemSettings({
+    openAtLogin: enabled,
+    args: ['--hidden'],
+  });
 }
 
 function saveSettingsWithEncryption(settings) {
@@ -765,6 +768,12 @@ function sendStatus(event, text) {
 // --- AI query with function calling loop ---
 
 let chatHistory = null; // { contents: [], model: string }
+let turnCounter = 0; // increments per user query
+// File change log: [{ turn, tool, path, before, after }]
+// before/after are file contents (null = didn't exist / was deleted)
+let fileChangeLog = [];
+// Maps turn index → contents array length at turn start, for pruning on revert
+const turnContentOffsets = new Map();
 
 // Resolve #filepath references in query - read files and build multi-part content
 function resolveFileReferences(query) {
@@ -835,6 +844,7 @@ let activeQueryId = 0;
 
 async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pastedImages) {
   const queryId = ++activeQueryId;
+  const currentTurn = ++turnCounter;
 
   if (!ai) {
     return { error: 'No API key configured. Use /settings to add your Gemini API key.' };
@@ -871,7 +881,11 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
       contents = [...chatHistory.contents, { role: 'user', parts: userParts }];
     } else {
       contents = [{ role: 'user', parts: userParts }];
+      turnContentOffsets.clear();
     }
+
+    // Record where this turn starts in the contents array (before the new user message)
+    turnContentOffsets.set(currentTurn, contents.length - 1);
 
     // Conditionally add force-code instruction
     const sysInstruction = getSystemInstruction(forceShowOutput);
@@ -1021,6 +1035,10 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
 
             let result;
             if (approved) {
+              // Snapshot file state before mutation for revert support
+              let beforeContent = null;
+              try { beforeContent = fs.readFileSync(fc.args.path, 'utf-8'); } catch {}
+
               sendStatus(event, `Executing ${fc.name.replace(/_/g, ' ')}...`);
               if (fc.name === 'write_file') {
                 result = executeWriteFile(fc.args.path, fc.args.content || '');
@@ -1028,6 +1046,21 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
                 result = executeEditFile(fc.args.path, fc.args.old_text, fc.args.new_text);
               } else if (fc.name === 'delete_file') {
                 result = await executeDeleteFile(fc.args.path);
+              }
+
+              // Record change for revert if it succeeded
+              if (result && result.success) {
+                let afterContent = null;
+                if (fc.name !== 'delete_file') {
+                  try { afterContent = fs.readFileSync(fc.args.path, 'utf-8'); } catch {}
+                }
+                fileChangeLog.push({
+                  turn: turnCounter,
+                  tool: fc.name,
+                  path: fc.args.path,
+                  before: beforeContent,
+                  after: afterContent,
+                });
               }
             } else {
               result = { error: 'User denied this operation.' };
@@ -1133,7 +1166,8 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
         contents.push(candidate.content);
         chatHistory = { contents, model: modelName };
 
-        return { text, sources, codeOutputs, generatedImages };
+        const hadFileChanges = fileChangeLog.some(c => c.turn === currentTurn);
+        return { text, sources, codeOutputs, generatedImages, turnIndex: currentTurn, hadFileChanges };
       }
     }
 
@@ -1141,7 +1175,8 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
     sendStatus(event, 'Waiting for approval...');
     const keepGoing = await requestConfirmation(event, { tool: 'continue_processing', roundsUsed: round });
     if (!keepGoing) {
-      return { text: 'Stopped after ' + round + ' rounds.', sources: [], codeOutputs, generatedImages };
+      const hadFileChanges = fileChangeLog.some(c => c.turn === currentTurn);
+      return { text: 'Stopped after ' + round + ' rounds.', sources: [], codeOutputs, generatedImages, turnIndex: currentTurn, hadFileChanges };
     }
     round = 0; // reset and continue the outer loop
     } // end outer while
@@ -1661,6 +1696,9 @@ function registerHandlers(ipcMain) {
 
   ipcMain.handle(IPC.CLEANUP, async () => {
     chatHistory = null;
+    turnCounter = 0;
+    fileChangeLog = [];
+    turnContentOffsets.clear();
     cleanupOrphanedTempDirs();
     return true;
   });
@@ -1689,6 +1727,51 @@ function registerHandlers(ipcMain) {
   });
 
   ipcMain.handle(IPC.IS_DEV_MODE, () => !app.isPackaged);
+
+  // Revert all file changes made after the given turn index
+  ipcMain.handle(IPC.REVERT_TO_TURN, async (_e, turnIndex) => {
+    // Collect changes to undo: everything after the specified turn, in reverse order
+    const toRevert = fileChangeLog.filter(c => c.turn > turnIndex).reverse();
+    if (toRevert.length === 0) return { reverted: 0 };
+
+    let reverted = 0;
+    const errors = [];
+    for (const change of toRevert) {
+      try {
+        if (change.before === null) {
+          // File didn't exist before → delete it
+          if (fs.existsSync(change.path)) {
+            fs.unlinkSync(change.path);
+          }
+        } else {
+          // Restore the previous content
+          fs.mkdirSync(path.dirname(change.path), { recursive: true });
+          fs.writeFileSync(change.path, change.before, 'utf-8');
+        }
+        reverted++;
+      } catch (err) {
+        errors.push({ path: change.path, error: err.message });
+      }
+    }
+
+    // Remove reverted entries from the log
+    fileChangeLog = fileChangeLog.filter(c => c.turn <= turnIndex);
+
+    // Prune chat history: truncate contents to the start of the reverted turn
+    // so the model no longer sees messages that reference reverted file states
+    const nextTurn = turnIndex + 1;
+    const cutOffset = turnContentOffsets.get(nextTurn);
+    if (chatHistory && chatHistory.contents && cutOffset !== undefined) {
+      chatHistory.contents = chatHistory.contents.slice(0, cutOffset);
+    }
+    // Clean up offset entries for pruned turns
+    for (const [t] of turnContentOffsets) {
+      if (t > turnIndex) turnContentOffsets.delete(t);
+    }
+    turnCounter = turnIndex;
+
+    return { reverted, turnIndex, errors: errors.length > 0 ? errors : undefined };
+  });
 }
 
 module.exports = { registerHandlers, loadSettingsSync };

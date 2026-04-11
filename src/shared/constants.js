@@ -33,6 +33,7 @@ const IPC = {
   UPDATE_READY: 'trim:update-ready',
   QUIT_AND_INSTALL: 'trim:quit-and-install',
   IS_DEV_MODE: 'trim:is-dev-mode',
+  REVERT_TO_TURN: 'trim:revert-to-turn',
 };
 
 const DEFAULT_SHORTCUT = 'Alt+Space';

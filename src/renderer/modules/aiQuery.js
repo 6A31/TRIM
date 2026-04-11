@@ -39,6 +39,8 @@ async function execute(query, mode, forceShow, renderFn, pastedImages) {
         sources: result.sources || [],
         codeOutputs: result.codeOutputs || [],
         generatedImages: result.generatedImages || [],
+        turnIndex: result.turnIndex,
+        hadFileChanges: result.hadFileChanges || false,
       });
     }
   } catch (err) {

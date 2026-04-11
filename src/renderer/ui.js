@@ -827,6 +827,43 @@ function renderAIResponse(response) {
   if (turnDiv) {
     turnDiv.innerHTML = html;
     turnDiv.classList.remove('ai-current-turn');
+
+    // Add revert button if this turn modified files
+    if (response.hadFileChanges && response.turnIndex) {
+      const revertBar = document.createElement('div');
+      revertBar.className = 'ai-revert-bar';
+      revertBar.innerHTML = `
+        <button class="ai-revert-btn" data-turn="${response.turnIndex}">
+          <span class="material-symbols-rounded" style="font-size:14px">undo</span>
+          Revert to before this response
+        </button>
+      `;
+      revertBar.querySelector('.ai-revert-btn').addEventListener('mousedown', e => e.preventDefault());
+      revertBar.querySelector('.ai-revert-btn').addEventListener('click', async () => {
+        const btn = revertBar.querySelector('.ai-revert-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="material-symbols-rounded" style="font-size:14px">hourglass_empty</span> Reverting...';
+        const result = await window.trim.revertToTurn(response.turnIndex - 1);
+        if (result && result.reverted > 0) {
+          btn.innerHTML = `<span class="material-symbols-rounded" style="font-size:14px">check_circle</span> Reverted ${result.reverted} change${result.reverted > 1 ? 's' : ''}`;
+          btn.classList.add('reverted');
+
+          // Remove all DOM elements after this revert bar (subsequent turns)
+          while (revertBar.nextSibling) {
+            revertBar.nextSibling.remove();
+          }
+
+          // Resize to fit trimmed content
+          requestAnimationFrame(() => {
+            const contentH = getBarHeight() + aiContainer.scrollHeight;
+            window.trim.resizeWindow(Math.min(contentH, 500));
+          });
+        } else {
+          btn.innerHTML = '<span class="material-symbols-rounded" style="font-size:14px">info</span> Nothing to revert';
+        }
+      });
+      turnDiv.after(revertBar);
+    }
   } else {
     aiContainer.innerHTML = html;
   }
