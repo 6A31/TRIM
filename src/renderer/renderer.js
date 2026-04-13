@@ -56,10 +56,11 @@ function boot() {
     if (window._inputRouter) window._inputRouter.clearPastedImage();
 
     const hasChat = window._aiQuery && window._aiQuery.isFollowUp();
+    const hasDo = window._ui && (window._ui.isDoTaskRunning() || window._ui.isDoBrowserActive());
     input.value = '';
     if (window._inputRouter) window._inputRouter.refreshInputDecor(input);
 
-    if (!hasChat) {
+    if (!hasChat && !hasDo) {
       window._ui.clearResults();
       if (window._chips) window._chips.updateMode('app');
       // Reset icon and hint to defaults
@@ -73,7 +74,23 @@ function boot() {
   // Re-focus input when window is shown
   window.trim.onWindowShown(async () => {
     const hasChat = window._aiQuery && window._aiQuery.isFollowUp();
-    if (hasChat) {
+    const hasDo = window._ui && (window._ui.isDoTaskRunning() || window._ui.isDoBrowserActive());
+
+    if (hasDo) {
+      input.value = '/do ';
+      if (window._inputRouter) window._inputRouter.refreshInputDecor(input);
+      input.setSelectionRange(input.value.length, input.value.length);
+
+      // Restore window size to fit the tracker
+      requestAnimationFrame(() => {
+        const barH = document.getElementById('search-bar').offsetHeight;
+        const ai = document.getElementById('ai-response-container');
+        const contentH = ai.classList.contains('hidden') ? 0 : ai.scrollHeight;
+        if (contentH > 0) {
+          window.trim.resizeWindow(Math.min(barH + contentH, 500));
+        }
+      });
+    } else if (hasChat) {
       const mode = window._aiQuery.getConversationPrefix ? window._aiQuery.getConversationPrefix() : 'ai';
       const prefix = mode === 'ai_pro' ? '?? ' : '? ';
       input.value = prefix;

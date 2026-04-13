@@ -164,10 +164,11 @@ async function selectOption(index, value) {
 
 async function scroll(direction = 'down') {
   ensurePage();
-  const delta = direction === 'up' ? -600 : 600;
+  const delta = direction === 'up' ? -800 : 800;
   await page.mouse.wheel(0, delta);
-  // Brief settle for lazy-loaded content
-  await page.waitForTimeout(400);
+  // Wait for lazy-loaded content to arrive
+  await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(300);
   return { success: true };
 }
 

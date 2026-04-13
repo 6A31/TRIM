@@ -122,6 +122,11 @@ function formatMarkdown(text) {
   text = text.replace(/%%INLINE_(\d+)%%/g, (_m, i) => inlineCodes[i]);
 
   return text
+    // Headings (must come before bold to avoid conflict with **)
+    .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
     // Bold
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     // Italic

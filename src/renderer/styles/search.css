@@ -416,6 +416,20 @@
   margin-bottom: 1px;
 }
 
+.ai-text h1,
+.ai-text h2,
+.ai-text h3,
+.ai-text h4 {
+  margin: 12px 0 6px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.ai-text h1 { font-size: 17px; }
+.ai-text h2 { font-size: 15px; }
+.ai-text h3 { font-size: 14px; }
+.ai-text h4 { font-size: 13px; }
+
 .ai-sources {
   margin-top: 12px;
   padding-top: 10px;
@@ -1085,7 +1099,25 @@ pre:hover .code-copy-btn,
   max-height: 260px;
   overflow-y: auto;
   scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
   padding: 4px 0;
+}
+
+.do-tracker-log::-webkit-scrollbar {
+  width: 4px;
+}
+
+.do-tracker-log::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.do-tracker-log::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+}
+
+.do-tracker-log::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .do-log-entry {
@@ -1119,6 +1151,11 @@ pre:hover .code-copy-btn,
   font-size: 16px;
 }
 
+.do-log-icon-ask {
+  color: var(--accent);
+  font-size: 16px;
+}
+
 .do-log-icon-done {
   color: var(--accent);
 }
@@ -1145,6 +1182,41 @@ pre:hover .code-copy-btn,
   font-size: 12px;
   line-height: 1.5;
   color: var(--text-primary);
+}
+
+.do-tracker-summary p {
+  margin: 0 0 6px;
+}
+
+.do-tracker-summary p:last-child {
+  margin-bottom: 0;
+}
+
+.do-tracker-summary h1,
+.do-tracker-summary h2,
+.do-tracker-summary h3,
+.do-tracker-summary h4 {
+  margin: 8px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.do-tracker-summary h1 { font-size: 14px; }
+.do-tracker-summary h2 { font-size: 13px; }
+
+.do-tracker-summary ul,
+.do-tracker-summary ol {
+  margin: 2px 0;
+  padding-left: 18px;
+}
+
+.do-tracker-summary li {
+  margin: 1px 0;
+}
+
+.do-tracker-summary br + br {
+  display: none;
 }
 
 .do-tracker-footer {
@@ -1186,6 +1258,125 @@ pre:hover .code-copy-btn,
 
 .do-abort-btn .material-symbols-rounded {
   font-size: 16px;
+}
+
+/* ─── /do ask_user question prompts ─── */
+
+.do-question-block {
+  margin: 6px 0;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: opacity 0.2s;
+}
+
+.do-question-block.do-question-answered {
+  opacity: 0.6;
+  border-color: transparent;
+}
+
+.do-question-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.do-question-icon {
+  font-size: 16px;
+  color: var(--accent);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.do-question-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.do-question-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.do-question-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: rgba(124, 138, 255, 0.08);
+  color: var(--accent);
+}
+
+.do-question-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.do-question-btn .material-symbols-rounded {
+  font-size: 15px;
+}
+
+.do-question-btn-yes:hover:not(:disabled) {
+  border-color: #4ade80;
+  background: rgba(74, 222, 128, 0.08);
+  color: #4ade80;
+}
+
+.do-question-btn-no:hover:not(:disabled) {
+  border-color: #f87171;
+  background: rgba(248, 113, 113, 0.08);
+  color: #f87171;
+}
+
+.do-question-input-wrap {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+}
+
+.do-question-input {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.do-question-input:focus {
+  border-color: var(--accent);
+}
+
+.do-question-input::placeholder {
+  color: var(--text-muted);
+}
+
+.do-question-btn-send {
+  padding: 4px 8px;
+}
+
+.do-question-answered-text {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 /* ─── Calculator syntax highlighting ─── */

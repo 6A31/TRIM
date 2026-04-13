@@ -38,6 +38,8 @@ const IPC = {
   DO_FOLLOW_UP: 'trim:do-follow-up',
   DO_CLOSE_BROWSER: 'trim:do-close-browser',
   DO_STATUS: 'trim:do-status',
+  DO_ASK_USER: 'trim:do-ask-user',
+  DO_ANSWER: 'trim:do-answer',
   DO_ABORT: 'trim:do-abort',
   SUPPRESS_BLUR: 'trim:suppress-blur',
 };

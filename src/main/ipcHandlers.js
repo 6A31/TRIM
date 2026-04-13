@@ -1851,6 +1851,23 @@ function registerHandlers(ipcMain) {
       description: 'Get the current date and time in the user\'s local timezone.',
       parameters: { type: 'OBJECT', properties: {} },
     },
+    {
+      name: 'ask_user',
+      description: 'Pause and ask the user a question. Use this when you need clarification, need the user to make a choice, need them to log in, or are unsure what to do next. The user sees the question in the Trim UI and responds.',
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          question: { type: 'STRING', description: 'The question to ask the user' },
+          type: { type: 'STRING', description: '"yes_no" for a yes/no confirmation, "choice" for multiple-choice (provide options), or "text" for a free-text answer' },
+          options: {
+            type: 'ARRAY',
+            items: { type: 'STRING' },
+            description: 'Options to present when type is "choice". Ignored for yes_no and text.',
+          },
+        },
+        required: ['question', 'type'],
+      },
+    },
   ];
 
   const DO_SYSTEM_INSTRUCTION = `You are a browser automation agent inside a desktop app called Trim. You control a real web browser to complete tasks for the user.
@@ -1865,18 +1882,27 @@ function registerHandlers(ipcMain) {
 ## Rules
 - ALWAYS call browser_get_content after navigating or clicking — the page may have changed.
 - Use the exact element index numbers from the most recent browser_get_content response.
-- If you can't find the right element, try scrolling or navigating to a different page.
+- If you can't find the right element, try scrolling down and then calling browser_get_content again — many sites lazy-load content as you scroll.
 - If a page hasn't loaded fully, try calling browser_get_content again.
 - When the task is complete, respond with a brief summary of what you accomplished. Use markdown for formatting.
 - Be efficient — don't repeat unnecessary actions.
 - Never guess at element indices — always read the page first.
-- Use get_current_datetime when you need to know the current date or time.`;
+- Use get_current_datetime when you need to know the current date or time.
+- Use ask_user to pause and ask the user whenever you're unsure: which option to pick, which account/platform to use, to let the user log in first, or to confirm a destructive action. Don't guess — ask.`;
 
   let doAbortController = null;
   let doContents = null; // persisted conversation history for follow-ups
+  let doAnswerResolver = null; // resolves when user answers an ask_user question
 
   function sendDoStatus(event, icon, text) {
     try { event.sender.send(IPC.DO_STATUS, { icon, text }); } catch {}
+  }
+
+  function askUser(event, question, type, options) {
+    return new Promise((resolve) => {
+      doAnswerResolver = resolve;
+      try { event.sender.send(IPC.DO_ASK_USER, { question, type, options }); } catch {}
+    });
   }
 
   // Shared agent loop — runs up to maxRounds of tool-calling with the model
@@ -1958,6 +1984,14 @@ function registerHandlers(ipcMain) {
             case 'get_current_datetime':
               result = { datetime: new Date().toLocaleString(), iso: new Date().toISOString() };
               break;
+            case 'ask_user': {
+              const qType = args.type || 'text';
+              const qOpts = Array.isArray(args.options) ? args.options : [];
+              sendDoStatus(event, 'ask', args.question || 'The agent has a question');
+              const answer = await askUser(event, args.question, qType, qOpts);
+              result = { answer };
+              break;
+            }
             default:
               result = { error: `Unknown tool: ${name}` };
           }
@@ -2067,8 +2101,19 @@ function registerHandlers(ipcMain) {
   });
 
   ipcMainRef.on(IPC.DO_ABORT, () => {
+    if (doAnswerResolver) {
+      doAnswerResolver('_aborted_');
+      doAnswerResolver = null;
+    }
     if (doAbortController) {
       doAbortController.abort();
+    }
+  });
+
+  ipcMainRef.on(IPC.DO_ANSWER, (_event, answer) => {
+    if (doAnswerResolver) {
+      doAnswerResolver(answer);
+      doAnswerResolver = null;
     }
   });
 }

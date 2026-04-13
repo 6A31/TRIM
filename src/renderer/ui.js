@@ -720,7 +720,7 @@ function updateAIStatus(statusText) {
 function sanitizeHTML(html) {
   if (typeof DOMPurify !== 'undefined') {
     return DOMPurify.sanitize(html, {
-      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'ul', 'ol', 'li', 'code', 'pre', 'div', 'span', 'img', 'a', 'button', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
+      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'ul', 'ol', 'li', 'code', 'pre', 'div', 'span', 'img', 'a', 'button', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'h1', 'h2', 'h3', 'h4'],
       ALLOWED_ATTR: ['class', 'style', 'alt', 'src', 'title', 'href', 'data-uri'],
       ALLOW_DATA_ATTR: false,
     });
@@ -1174,6 +1174,7 @@ const DO_ICONS = {
   done:     'task_alt',
   error:    'error',
   abort:    'block',
+  ask:      'help',
 };
 
 let doTaskRunning = false;
@@ -1278,6 +1279,7 @@ async function executeDoTask(task) {
   } finally {
     doTaskRunning = false;
     window.trim.offDoStatus();
+    window.trim.offDoAskUser();
 
     if (doBrowserActive) {
       // Show "Close browser" button + hint about follow-ups
@@ -1290,6 +1292,9 @@ async function executeDoTask(task) {
       closeBtn.addEventListener('click', () => {
         closeDoBrowser();
       });
+      // Release blur suppression — window can hide normally,
+      // session persists and restores on next show
+      window.trim.suppressBlur(false);
     } else {
       abortBtn.disabled = true;
       abortBtn.innerHTML = '<span class="material-symbols-rounded">check_circle</span> Done';
@@ -1314,6 +1319,9 @@ async function executeDoFollowUp(text) {
   const log = doLog;
   const tracker = doTracker;
   if (!log || !tracker) return;
+
+  // Suppress blur while follow-up runs
+  window.trim.suppressBlur(true);
 
   // Add a visual separator for the follow-up
   addDoLogEntry(log, 'think', `Follow-up: ${text}`);
@@ -1343,6 +1351,8 @@ async function executeDoFollowUp(text) {
   } finally {
     doTaskRunning = false;
     window.trim.offDoStatus();
+    window.trim.offDoAskUser();
+    window.trim.suppressBlur(false);
 
     requestAnimationFrame(() => {
       const aiContainer = document.getElementById('ai-response-container');
@@ -1355,15 +1365,115 @@ async function executeDoFollowUp(text) {
 
 function wireDoStatusListeners(log) {
   window.trim.offDoStatus();
+  window.trim.offDoAskUser();
   window.trim.onDoStatus(({ icon, text }) => {
     addDoLogEntry(log, icon, text);
+    doResizeAndScroll(log);
+  });
+  window.trim.onDoAskUser(({ question, type, options }) => {
+    showDoQuestion(log, question, type, options || []);
+    doResizeAndScroll(log);
+  });
+}
+
+function doResizeAndScroll(log) {
+  requestAnimationFrame(() => {
+    const aiContainer = document.getElementById('ai-response-container');
+    const h = getBarHeight() + aiContainer.scrollHeight;
+    window.trim.resizeWindow(Math.min(h, 500));
+    // Triple-ensure scroll sticks after resize-triggered reflows
     requestAnimationFrame(() => {
-      const aiContainer = document.getElementById('ai-response-container');
-      const h = getBarHeight() + aiContainer.scrollHeight;
-      window.trim.resizeWindow(Math.min(h, 500));
-      requestAnimationFrame(() => { log.scrollTop = log.scrollHeight; });
+      log.scrollTop = log.scrollHeight;
+      setTimeout(() => { log.scrollTop = log.scrollHeight; }, 50);
     });
   });
+}
+
+function showDoQuestion(log, question, type, options) {
+  // Mark previous entries as done
+  const prev = log.querySelectorAll('.do-log-entry:not(.do-log-done)');
+  for (const p of prev) {
+    const spinner = p.querySelector('.do-spinner');
+    if (spinner) {
+      const check = document.createElement('span');
+      check.className = 'material-symbols-rounded do-log-icon do-log-icon-check';
+      check.textContent = 'check_circle';
+      spinner.replaceWith(check);
+    }
+    p.classList.add('do-log-done');
+  }
+
+  const block = document.createElement('div');
+  block.className = 'do-question-block';
+
+  const label = document.createElement('div');
+  label.className = 'do-question-label';
+  label.innerHTML = `<span class="material-symbols-rounded do-question-icon">help</span>${escapeHtml(question)}`;
+  block.appendChild(label);
+
+  const actions = document.createElement('div');
+  actions.className = 'do-question-actions';
+
+  function sendAnswer(answer) {
+    block.classList.add('do-question-answered');
+    // Disable all interactive elements
+    block.querySelectorAll('button, input').forEach(el => { el.disabled = true; });
+    // Show the chosen answer as a subtle note
+    const note = document.createElement('div');
+    note.className = 'do-question-answered-text';
+    note.textContent = answer;
+    block.appendChild(note);
+    window.trim.doAnswer(answer);
+    doResizeAndScroll(log);
+  }
+
+  if (type === 'yes_no') {
+    const yesBtn = document.createElement('button');
+    yesBtn.className = 'do-question-btn do-question-btn-yes';
+    yesBtn.innerHTML = '<span class="material-symbols-rounded">check</span> Yes';
+    yesBtn.addEventListener('click', () => sendAnswer('Yes'));
+    actions.appendChild(yesBtn);
+
+    const noBtn = document.createElement('button');
+    noBtn.className = 'do-question-btn do-question-btn-no';
+    noBtn.innerHTML = '<span class="material-symbols-rounded">close</span> No';
+    noBtn.addEventListener('click', () => sendAnswer('No'));
+    actions.appendChild(noBtn);
+  } else if (type === 'choice' && options.length > 0) {
+    for (const opt of options) {
+      const btn = document.createElement('button');
+      btn.className = 'do-question-btn do-question-btn-choice';
+      btn.textContent = opt;
+      btn.addEventListener('click', () => sendAnswer(opt));
+      actions.appendChild(btn);
+    }
+  } else {
+    // Free text
+    const inputWrap = document.createElement('div');
+    inputWrap.className = 'do-question-input-wrap';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'do-question-input';
+    input.placeholder = 'Type your answer...';
+    const sendBtn = document.createElement('button');
+    sendBtn.className = 'do-question-btn do-question-btn-send';
+    sendBtn.innerHTML = '<span class="material-symbols-rounded">send</span>';
+    sendBtn.addEventListener('click', () => {
+      if (input.value.trim()) sendAnswer(input.value.trim());
+    });
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // prevent Trim hotkeys from firing
+      if (e.key === 'Enter' && input.value.trim()) sendAnswer(input.value.trim());
+    });
+    inputWrap.appendChild(input);
+    inputWrap.appendChild(sendBtn);
+    actions.appendChild(inputWrap);
+    // Auto-focus the input
+    requestAnimationFrame(() => input.focus());
+  }
+
+  block.appendChild(actions);
+  log.appendChild(block);
 }
 
 function closeDoBrowser() {
@@ -1387,7 +1497,7 @@ function closeDoBrowser() {
 
 function addDoLogEntry(log, iconKey, text) {
   const entry = document.createElement('div');
-  const isTerminal = iconKey === 'done' || iconKey === 'error' || iconKey === 'abort' || iconKey === 'check';
+  const isTerminal = iconKey === 'done' || iconKey === 'error' || iconKey === 'abort' || iconKey === 'check' || iconKey === 'ask';
   entry.className = `do-log-entry${isTerminal ? ' do-log-done' : ''}`;
 
   const icon = DO_ICONS[iconKey] || 'circle';
