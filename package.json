@@ -1,7 +1,7 @@
 {
   "name": "trim",
   "version": "1.5.2",
-  "description": "A Spotlight-like launcher for Windows and macOS",
+  "description": "A Spotlight-like launcher for Windows, macOS, and Linux",
   "main": "src/main/main.js",
   "scripts": {
     "start": "node launch.js",
@@ -11,7 +11,8 @@
     "test": "node --test test/**/*.test.js",
     "build": "electron-builder",
     "build:win": "node scripts/prepareBundledPython.js && set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder --win",
-    "build:mac": "node scripts/prepareBundledPython.js && electron-builder --mac"
+    "build:mac": "node scripts/prepareBundledPython.js && electron-builder --mac",
+    "build:linux": "node scripts/prepareBundledPython.js && electron-builder --linux"
   },
   "keywords": [],
   "author": "6A31",
@@ -76,6 +77,23 @@
         }
       ],
       "artifactName": "${productName}-${version}-macOS.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility",
+      "icon": "assets/Trim Logo.png",
+      "extraResources": [
+        {
+          "from": "vendor/python/",
+          "to": "python/",
+          "filter": [
+            "linux-*/**/*"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-Linux-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": true,

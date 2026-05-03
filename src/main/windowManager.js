@@ -1,14 +1,23 @@
 const { BrowserWindow, screen } = require('electron');
 const path = require('path');
+const { parseLaunchArgv, shouldShowOnFirstReady } = require('./cliArgs');
 
 let mainWindow = null;
 const WIN_W = 680;
 const BAR_H = 52;
 
+const isLinux = process.platform === 'linux';
+const LINUX_SOLID_BG = '#FF1E1E28';
+
+function useBlurDismiss() {
+  if (!isLinux) return true;
+  return process.env.TRIM_LINUX_BLUR_DISMISS === '1';
+}
+
 function create() {
   const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
 
-  mainWindow = new BrowserWindow({
+  const winOpts = {
     width: WIN_W,
     height: BAR_H,
     x: Math.round((screenW - WIN_W) / 2),
@@ -21,28 +30,36 @@ function create() {
     resizable: false,
     maximizable: false,
     fullscreenable: false,
-    // Electron recommends transparent backgroundColor for background material windows.
-    // Format: #AARRGGBB. The acrylic/mica material renders behind; CSS alpha controls tint.
-    // No flash risk: window is shown only on ready-to-show after HTML renders.
-    backgroundColor: '#00000000',
+    backgroundColor: isLinux ? LINUX_SOLID_BG : '#00000000',
     webPreferences: {
       preload: path.join(__dirname, '..', 'renderer', 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
-  });
+  };
+
+  mainWindow = new BrowserWindow(winOpts);
 
   if (process.platform === 'win32') {
     mainWindow.setBackgroundMaterial('acrylic');
   } else if (process.platform === 'darwin') {
     mainWindow.setVibrancy('under-window');
   }
+
+  if (isLinux) {
+    try {
+      mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    } catch { /* compositor may not support */ }
+  }
+
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
-  mainWindow.on('blur', () => {
-    hide();
-  });
+  if (useBlurDismiss()) {
+    mainWindow.on('blur', () => {
+      hide();
+    });
+  }
 
   // Prevent Alt+Space from opening the system menu on Windows (frameless window).
   // Without this, the renderer can't capture Alt+Space as a keybind.
@@ -54,9 +71,8 @@ function create() {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.setContentSize(WIN_W, BAR_H);
-    // Skip the initial show when launched at login with --hidden.
-    // The user will summon the window via the global hotkey.
-    if (process.argv.includes('--hidden')) return;
+    const cli = parseLaunchArgv(process.argv);
+    if (!shouldShowOnFirstReady(cli)) return;
     show();
   });
 

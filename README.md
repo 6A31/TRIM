@@ -4,9 +4,9 @@
 [![Windows](https://img.shields.io/badge/Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/6A31/TRIM/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/6A31/TRIM/releases/latest)
 
-A launcher for Windows and macOS - kind of like Spotlight, but with AI baked in.
+A launcher for Windows, macOS, and Linux — kind of like Spotlight, but with AI baked in.
 
-Hit **Alt+Space** (Option+Space on macOS) to toggle, type what you need, done. Remappable in `/settings`. Acrylic glass UI, stays out of your way.
+Hit **Alt+Space** (Option+Space on macOS) to toggle on Windows and macOS; on Linux bind your compositor to the TRIM binary with `--toggle` (see [docs/linux.md](docs/linux.md)). Remappable in `/settings` where supported. Acrylic glass UI on Windows 11, stays out of your way.
 
 ![App Search](assets/screenshots/app-search.png)
 
@@ -18,6 +18,7 @@ Just start typing to find your apps. Results are sorted by how often you use the
 
 - **Windows**: Start Menu shortcuts + Microsoft Store / UWP apps
 - **macOS**: `.app` bundles from `/Applications`, `/System/Applications`, and `~/Applications`
+- **Linux**: `.desktop` entries from `~/.local/share/applications` and `/usr/share/applications`
 
 ### AI Chat
 
@@ -31,7 +32,7 @@ Conversations stick around when you hide the window - bring it back and keep goi
 
 The AI can install packages, run full scripts, and give you results inline - not just plots. There's a **Force Code** toggle that makes every query run actual Python instead of letting the LLM guess, which is great when you want real answers for math or data stuff.
 
-Both Windows and macOS builds ship with a portable Python runtime, so everything works out of the box even if you don't have Python installed.
+Windows, macOS, and Linux builds can ship with a portable Python runtime, so everything works out of the box even if you don't have Python installed (set `TRIM_SKIP_BUNDLED_PYTHON=1` to use system Python during development).
 
 ![Python Execution](assets/screenshots/ai-python.png)
 

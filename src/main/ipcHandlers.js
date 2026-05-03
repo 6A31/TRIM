@@ -246,6 +246,10 @@ function getBundledPythonExecutable() {
     const dirs = { arm64: 'macos-arm64', x64: 'macos-x64' };
     resourceDir = dirs[process.arch] || dirs.arm64;
     exeRelPath = path.join('bin', 'python3');
+  } else if (process.platform === 'linux') {
+    const dirs = { x64: 'linux-x64', arm64: 'linux-arm64' };
+    resourceDir = dirs[process.arch] || dirs.x64;
+    exeRelPath = path.join('bin', 'python3');
   } else {
     return null;
   }
@@ -1727,6 +1731,13 @@ function registerHandlers(ipcMain) {
   });
 
   ipcMain.handle(IPC.IS_DEV_MODE, () => !app.isPackaged);
+
+  ipcMain.handle(IPC.GET_RUNTIME_INFO, () => ({
+    platform: process.platform,
+    isLinux: process.platform === 'linux',
+    exePath: app.getPath('exe'),
+    isPackaged: app.isPackaged,
+  }));
 
   // Revert all file changes made after the given turn index
   ipcMain.handle(IPC.REVERT_TO_TURN, async (_e, turnIndex) => {

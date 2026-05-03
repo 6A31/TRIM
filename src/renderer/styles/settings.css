@@ -183,6 +183,49 @@
   margin-top: 4px;
 }
 
+.settings-description code {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.settings-code-block {
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  font-size: 11px;
+  line-height: 1.45;
+  background: rgba(0, 0, 0, 0.28);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.settings-code-block code {
+  font-family: var(--font-mono, monospace);
+  background: none;
+  padding: 0;
+}
+
+.settings-linux-examples {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.settings-linux-examples code {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
 /* ── Color swatches ── */
 .swatch-row {
   display: flex;

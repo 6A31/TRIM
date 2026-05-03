@@ -36,8 +36,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: node scripts/prepareBundledPython.js
+      - run: npx electron-builder --linux --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   publish:
-    needs: [build-windows, build-mac]
+    needs: [build-windows, build-mac, build-linux]
     runs-on: ubuntu-latest
     steps:
       - run: gh release edit "$TAG" --repo "$REPO" --draft=false

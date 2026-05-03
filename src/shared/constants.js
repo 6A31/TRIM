@@ -34,6 +34,7 @@ const IPC = {
   QUIT_AND_INSTALL: 'trim:quit-and-install',
   IS_DEV_MODE: 'trim:is-dev-mode',
   REVERT_TO_TURN: 'trim:revert-to-turn',
+  GET_RUNTIME_INFO: 'trim:get-runtime-info',
 };
 
 const DEFAULT_SHORTCUT = 'Alt+Space';

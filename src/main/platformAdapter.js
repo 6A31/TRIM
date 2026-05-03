@@ -1,4 +1,5 @@
 const { execFile } = require('child_process');
+const linuxAdapter = require('./platformAdapterLinux');
 
 function toDataUriFromBuffer(buf, mime) {
   return `data:${mime};base64,${buf.toString('base64')}`;
@@ -75,6 +76,7 @@ function createPlatformAdapter(deps) {
   const { app, fs, path, os, shell, nativeImage, runPowerShell, getScriptsPath } = deps;
   const isWindows = process.platform === 'win32';
   const isMac = process.platform === 'darwin';
+  const isLinux = !isWindows && !isMac;
 
   async function listApps() {
     if (isWindows) {
@@ -86,6 +88,10 @@ function createPlatformAdapter(deps) {
 
     if (isMac) {
       return listMacApps(fs, path, os);
+    }
+
+    if (isLinux) {
+      return linuxAdapter.listLinuxApps(fs, path, os);
     }
 
     return [];
@@ -125,6 +131,29 @@ function createPlatformAdapter(deps) {
       return img.toDataURL();
     }
 
+    if (isLinux) {
+      const home = os.homedir();
+      const lower = (filePath || '').toLowerCase();
+      let iconStr = null;
+      if (lower.endsWith('.desktop')) {
+        iconStr = linuxAdapter.readDesktopIconFromFile(fs, path, filePath);
+      }
+      if (iconStr) {
+        const resolved = linuxAdapter.resolveLinuxIconPath(fs, path, home, iconStr);
+        if (resolved) {
+          try {
+            const img = nativeImage.createFromPath(resolved);
+            if (img && !img.isEmpty()) return img.toDataURL();
+          } catch { /* */ }
+        }
+      }
+      try {
+        const img = await app.getFileIcon(filePath, { size: 'large' });
+        if (img && !img.isEmpty()) return img.toDataURL();
+      } catch { /* */ }
+      return null;
+    }
+
     return null;
   }
 
@@ -151,6 +180,11 @@ function createPlatformAdapter(deps) {
       return;
     }
 
+    if (isLinux) {
+      await linuxAdapter.openLinuxApp(appPath, shell);
+      return;
+    }
+
     await shell.openPath(appPath);
   }
 
@@ -166,6 +200,12 @@ function createPlatformAdapter(deps) {
 
     if (isMac) {
       roots.push('/Applications', path.join(home, 'Applications'));
+    }
+
+    if (isLinux) {
+      for (const r of linuxAdapter.getLinuxSearchExtras(settings, path, os)) {
+        if (r && !roots.includes(r)) roots.unshift(r);
+      }
     }
 
     return roots;

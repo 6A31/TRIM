@@ -97,6 +97,10 @@ function escapeAttr(str) {
   return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+function escapeHtml(str) {
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 function buildSwatches(presets, selectedColor, name) {
   return presets.map(p => {
     const active = p.color.toLowerCase() === selectedColor.toLowerCase();
@@ -146,12 +150,60 @@ function wireDropdown(container) {
   });
 }
 
+function buildLinuxSummonSection(runtime) {
+  const exe = escapeHtml(runtime.exePath || 'trim');
+  const devLine = !runtime.isPackaged
+    ? '<div class="settings-description" style="margin-top:8px">From the repo: <code>npx electron . --toggle</code></div>'
+    : '';
+  return `
+    <div class="settings-group">
+      <label class="settings-label">Summon TRIM</label>
+      <div class="settings-description">
+        On Linux, TRIM does not register a global shortcut. Bind a key in Hyprland, Sway, i3, Hyper, etc. to run the packaged binary.
+        Use <strong>Escape</strong> to dismiss when open (click-away is disabled by default so tiling WMs and focus-follows-mouse do not close the bar).
+      </div>
+      ${devLine}
+      <div class="settings-description" style="margin-top:10px">Recommended keybind command (toggle show/hide):</div>
+      <pre class="settings-code-block"><code>"${exe}" --toggle</code></pre>
+      <div class="settings-description" style="margin-top:10px">Examples (adjust paths):</div>
+      <ul class="settings-linux-examples">
+        <li><strong>Hyprland:</strong> <code>bind = SUPER, SPACE, exec, "${exe}" --toggle</code></li>
+        <li><strong>Sway / i3:</strong> <code>bindsym $mod+Shift+space exec "${exe}" --toggle</code></li>
+        <li><strong>Hyper</strong> (config): <code>shell: '${exe} --toggle',</code> on a key chord</li>
+      </ul>
+      <div class="settings-description" style="margin-top:8px">Optional: set <code>TRIM_LINUX_BLUR_DISMISS=1</code> before launch to restore click-away dismiss (can conflict with tiling / focus-follows-mouse).</div>
+    </div>
+  `;
+}
+
+function buildShortcutRecorderSection(settings) {
+  return `
+    <div class="settings-group">
+      <label class="settings-label">Shortcut</label>
+      <div class="shortcut-recorder" id="shortcut-recorder">
+        <span class="shortcut-display" id="shortcut-display">${escapeAttr(prettyShortcut(settings.shortcutLabel || settings.shortcut || 'Alt+Space'))}</span>
+        <button class="shortcut-record-btn" id="shortcut-record-btn" title="Record new shortcut">
+          <span class="material-symbols-rounded" style="font-size:14px">keyboard</span>
+          Change
+        </button>
+        <button class="settings-revert-btn shortcut-default-btn" id="shortcut-default-btn" title="Restore default shortcut">
+          <span class="material-symbols-rounded" style="font-size:14px">restart_alt</span>
+          Default
+        </button>
+      </div>
+      <div class="settings-description" id="shortcut-hint">Global keyboard shortcut to toggle TRIM.</div>
+    </div>
+  `;
+}
+
 async function render() {
   const panel = document.getElementById('settings-panel');
-  const [settings, cacheInfo] = await Promise.all([
+  const [runtime, settings, cacheInfo] = await Promise.all([
+    window.trim.getRuntimeInfo(),
     window.trim.loadSettings(),
     window.trim.getCacheSize(),
   ]);
+  const isLinux = Boolean(runtime?.isLinux);
   const cacheSizeLabel = formatBytes(cacheInfo?.totalBytes || 0);
 
   const accentColor = settings.accentColor || APPEARANCE_DEFAULTS.accentColor;
@@ -265,21 +317,7 @@ async function render() {
       General
     </div>
 
-    <div class="settings-group">
-      <label class="settings-label">Shortcut</label>
-      <div class="shortcut-recorder" id="shortcut-recorder">
-        <span class="shortcut-display" id="shortcut-display">${escapeAttr(prettyShortcut(settings.shortcutLabel || settings.shortcut || 'Alt+Space'))}</span>
-        <button class="shortcut-record-btn" id="shortcut-record-btn" title="Record new shortcut">
-          <span class="material-symbols-rounded" style="font-size:14px">keyboard</span>
-          Change
-        </button>
-        <button class="settings-revert-btn shortcut-default-btn" id="shortcut-default-btn" title="Restore default shortcut">
-          <span class="material-symbols-rounded" style="font-size:14px">restart_alt</span>
-          Default
-        </button>
-      </div>
-      <div class="settings-description" id="shortcut-hint">Global keyboard shortcut to toggle TRIM.</div>
-    </div>
+    ${isLinux ? buildLinuxSummonSection(runtime) : buildShortcutRecorderSection(settings)}
 
     <div class="settings-group">
       <label class="settings-label">Default Mode</label>
@@ -353,8 +391,10 @@ async function render() {
   // Default-mode custom dropdown
   wireDropdown(panel.querySelector('#settings-default-mode'));
 
-  // ── Shortcut recorder ──
-  wireShortcutRecorder(panel, settings.shortcut || 'Alt+Space', settings.shortcutLabel);
+  // ── Shortcut recorder (non-Linux) ──
+  if (!isLinux) {
+    wireShortcutRecorder(panel, settings.shortcut || 'Alt+Space', settings.shortcutLabel);
+  }
 
   // Accent swatches
   panel.querySelectorAll('[data-accent]').forEach(btn => {
@@ -744,8 +784,9 @@ async function save() {
     showHints, calcSyntax, defaultMode, accentColor, appColor, transparency, transparencyType,
   };
 
-  // Include shortcut if it was changed
-  if (pendingShortcut) {
+  // Include shortcut if it was changed (global shortcut not used on Linux)
+  const runtimeSave = await window.trim.getRuntimeInfo();
+  if (!runtimeSave?.isLinux && pendingShortcut) {
     // Test-register the shortcut first
     const ok = await window.trim.updateShortcut(pendingShortcut.accel);
     if (!ok) {
