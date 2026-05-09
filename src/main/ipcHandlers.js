@@ -21,6 +21,22 @@ let platformAdapter = null;
 const isDevMode = !app.isPackaged;
 function dbg(...args) { if (isDevMode) console.log(...args); }
 
+let safeStorageUnavailableLogged = false;
+/** Log once: safeStorage needs OS secret service (e.g. libsecret / gnome-keyring on Linux). */
+function warnSafeStorageUnavailableOnce() {
+  if (safeStorageUnavailableLogged) return;
+  safeStorageUnavailableLogged = true;
+  const linux =
+    process.platform === 'linux'
+      ? '\n  Linux: install a Secret Service provider (typically `sudo pacman -S gnome-keyring`), then ensure the session runs `gnome-keyring-daemon` (many DEs do this automatically; on minimal WM+i3/Sway add it to your session autostart). Also ensure `dbus` is running.'
+      : '';
+  console.warn(
+    '[TRIM] Encrypted settings unavailable (Electron safeStorage). '
+    + 'Your Gemini API key cannot be stored on disk and will only last until you quit the app.'
+    + linux,
+  );
+}
+
 // macOS directories that are huge, contain no user files, and choke the
 // synchronous shallow scan (and slow the deep scan) when enumerated.
 const MACOS_SKIP_DIRS = new Set([
@@ -283,6 +299,8 @@ function loadSettingsSync() {
         if (safeStorage.isEncryptionAvailable()) {
           const buf = Buffer.from(settings.apiKeyEncrypted, 'base64');
           settings.apiKey = safeStorage.decryptString(buf);
+        } else {
+          warnSafeStorageUnavailableOnce();
         }
       } catch {}
     }
@@ -316,7 +334,7 @@ function saveSettingsWithEncryption(settings) {
       if (safeStorage.isEncryptionAvailable()) {
         toWrite.apiKeyEncrypted = safeStorage.encryptString(toWrite.apiKey).toString('base64');
       } else {
-        console.warn('safeStorage not available - API key will not be persisted.');
+        warnSafeStorageUnavailableOnce();
       }
     } catch (err) {
       console.warn('Failed to encrypt API key:', err.message);
