@@ -1,10 +1,27 @@
 const { app } = require('electron');
 
+// Packaged TRIM and `electron .` would otherwise share the same userData directory
+// and thus the same single-instance lock. Then either (a) npm run dev exits at once
+// while the AppImage is still running, or (b) your keybind only talks to the packaged
+// binary — dev never shows. A separate -dev profile gives dev its own lock and config.
+if (!app.isPackaged) {
+  app.setPath('userData', `${app.getPath('userData')}-dev`);
+}
+
 // Exit duplicate instances before loading heavy main-process modules (ipcHandlers,
 // platform adapters, etc.). A WM keybind that execs the AppImage with --toggle
 // spawns a short-lived second process; keeping this path minimal makes toggles
 // feel much snappier.
 if (!app.requestSingleInstanceLock()) {
+  // Same as a WM `exec …/TRIM.AppImage --toggle` hitting an already-running app:
+  // this process is redundant and must exit. If you ran `npm run dev` and saw
+  // the terminal return immediately, another TRIM/Electron instance is still
+  // running — quit it first (e.g. `node scripts/kill.js` or pkill) or use
+  // your keybind, which forwards to the existing process.
+  console.error(
+    '[TRIM] Another instance is already running; exiting (single-instance lock). '
+    + 'Stop the other TRIM before `npm run dev`, or this was an intentional --toggle.',
+  );
   app.exit(0);
 } else {
   const { ipcMain, Menu, screen } = require('electron');
