@@ -98,47 +98,10 @@ function renderLatex(text) {
   return text;
 }
 
+const { formatMarkdown: formatMarkdownCore } = require('../../shared/markdownFormat');
+
 function formatMarkdown(text) {
-  if (!text) return '';
-
-  // Protect code blocks from LaTeX processing
-  const codeBlocks = [];
-  text = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
-    const cls = lang ? ` class="language-${lang}"` : '';
-    codeBlocks.push(`<pre><code${cls}>${escapeHtmlInline(code)}</code></pre>`);
-    return `%%CODEBLOCK_${codeBlocks.length - 1}%%`;
-  });
-  const inlineCodes = [];
-  text = text.replace(/`([^`]+)`/g, (_m, code) => {
-    inlineCodes.push(`<code>${escapeHtmlInline(code)}</code>`);
-    return `%%INLINE_${inlineCodes.length - 1}%%`;
-  });
-
-  // Render LaTeX
-  text = renderLatex(text);
-
-  // Restore code blocks
-  text = text.replace(/%%CODEBLOCK_(\d+)%%/g, (_m, i) => codeBlocks[i]);
-  text = text.replace(/%%INLINE_(\d+)%%/g, (_m, i) => inlineCodes[i]);
-
-  return text
-    // Bold
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    // Italic
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Unordered lists
-    .replace(/^[*-] (.+)$/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
-    // Ordered lists
-    .replace(/^\d+\.\s(.+)$/gm, '<li>$1</li>')
-    // Line breaks → paragraphs
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/\n/g, '<br>')
-    .replace(/^(.+)$/, '<p>$1</p>');
-}
-
-function escapeHtmlInline(str) {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return formatMarkdownCore(text, { renderLatex });
 }
 
 function highlightCodeBlocks(container) {

@@ -7,6 +7,7 @@ const { spawnSync } = require('child_process');
 
 const PYTHON_VERSION_WIN = '3.12.10';
 const PYTHON_VERSION_MAC = '3.12.13';
+const PYTHON_VERSION_LINUX = '3.12.13';
 const PBS_RELEASE = '20260408';
 
 const WIN_ARCHS = {
@@ -18,6 +19,11 @@ const WIN_ARCHS = {
 const MAC_ARCHS = {
   arm64: { target: 'aarch64-apple-darwin', resourceDir: 'macos-arm64' },
   x64:   { target: 'x86_64-apple-darwin',  resourceDir: 'macos-x64' },
+};
+
+const LINUX_ARCHS = {
+  arm64: { target: 'aarch64-unknown-linux-gnu', resourceDir: 'linux-arm64' },
+  x64:   { target: 'x86_64-unknown-linux-gnu',  resourceDir: 'linux-x64' },
 };
 
 // ---- Helpers ----
@@ -165,6 +171,47 @@ async function prepareMac(vendorRoot) {
   log(`Bundled Python ${PYTHON_VERSION_MAC} ready.`);
 }
 
+// ---- Linux (python-build-standalone from astral-sh) ----
+
+async function prepareLinux(vendorRoot) {
+  const arch = LINUX_ARCHS[process.arch];
+  if (!arch) fail(`Unsupported Linux architecture: ${process.arch}`);
+
+  const runtimeRoot = path.join(vendorRoot, arch.resourceDir);
+  const pythonBin = path.join(runtimeRoot, 'bin', 'python3');
+
+  if (fs.existsSync(pythonBin) && isCached(runtimeRoot, PYTHON_VERSION_LINUX)) {
+    log(`Using cached Python ${PYTHON_VERSION_LINUX} from ${runtimeRoot}`);
+    return;
+  }
+
+  fs.rmSync(runtimeRoot, { recursive: true, force: true });
+  ensureDir(runtimeRoot);
+
+  const filename = `cpython-${PYTHON_VERSION_LINUX}+${PBS_RELEASE}-${arch.target}-install_only.tar.gz`;
+  const archivePath = path.join(vendorRoot, filename);
+  const url = `https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_RELEASE}/${filename}`;
+
+  log(`Downloading Python ${PYTHON_VERSION_LINUX} (${arch.target})...`);
+  await downloadFile(url, archivePath);
+
+  log(`Extracting to ${runtimeRoot}...`);
+  extractTarGz(archivePath, runtimeRoot);
+
+  if (!fs.existsSync(pythonBin)) throw new Error(`python3 not found at ${pythonBin}`);
+
+  const pipCheck = spawnSync(pythonBin, ['-m', 'pip', '--version'], { stdio: 'pipe' });
+  if (pipCheck.status !== 0) {
+    log('pip missing, bootstrapping via ensurepip...');
+    const ep = spawnSync(pythonBin, ['-m', 'ensurepip', '--upgrade'], { stdio: 'inherit' });
+    if (ep.status !== 0) throw new Error(`ensurepip failed (exit ${ep.status})`);
+  }
+
+  writeMarker(runtimeRoot, PYTHON_VERSION_LINUX);
+  fs.rmSync(archivePath, { force: true });
+  log(`Bundled Python ${PYTHON_VERSION_LINUX} ready.`);
+}
+
 // ---- Entry point ----
 
 async function main() {
@@ -180,6 +227,8 @@ async function main() {
     await prepareWindows(vendorRoot);
   } else if (process.platform === 'darwin') {
     await prepareMac(vendorRoot);
+  } else if (process.platform === 'linux') {
+    await prepareLinux(vendorRoot);
   } else {
     log(`No bundled Python for platform "${process.platform}", skipping.`);
   }

@@ -677,7 +677,7 @@ pre:hover .code-copy-btn,
   border-radius: 6px;
 }
 
-/* Image action buttons (copy/save) — shared by plots and generated images */
+/* Image action buttons (copy/save), shared by plots and generated images */
 .ai-image-actions {
   position: absolute;
   top: 8px;

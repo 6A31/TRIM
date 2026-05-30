@@ -2,6 +2,7 @@ const { app, shell, nativeImage, safeStorage } = require('electron');
 const { execFile, execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const os = require('os');
 const { IPC, DEFAULTS } = require('../shared/constants');
 const { createPlatformAdapter } = require('./platformAdapter');
@@ -20,6 +21,73 @@ const activeFolderRequests = new Map(); // webContentsId -> requestId
 let platformAdapter = null;
 const isDevMode = !app.isPackaged;
 function dbg(...args) { if (isDevMode) console.log(...args); }
+
+let safeStorageUnavailableLogged = false;
+let localKeyFallbackLogged = false;
+
+/** Log once when OS keyring works but we had to use local crypto fallback before (informational). */
+function warnSafeStorageUnavailableOnce() {
+  if (safeStorageUnavailableLogged) return;
+  safeStorageUnavailableLogged = true;
+  const linux =
+    process.platform === 'linux'
+      ? '\n  Linux: install a Secret Service provider (typically `sudo pacman -S gnome-keyring`), then ensure the session runs `gnome-keyring-daemon` (many DEs do this automatically; on minimal WM+i3/Sway add it to your session autostart). Also ensure `dbus` is running.'
+      : '';
+  console.warn(
+    '[TRIM] Encrypted settings unavailable (Electron safeStorage). '
+    + 'Your Gemini API key cannot be stored on disk and will only last until you quit the app.'
+    + linux,
+  );
+}
+
+function logLocalKeyFallbackOnce() {
+  if (localKeyFallbackLogged) return;
+  localKeyFallbackLogged = true;
+  console.warn(
+    '[TRIM] OS keyring unavailable for Electron (e.g. Chromium cannot reach org.freedesktop.secrets '
+    + 'even if `secret-tool` works in a terminal, different environment). '
+    + 'Storing your API key with AES-256-GCM keyed to this machine and profile (persists across restarts; '
+    + 'weaker than system keychain, better than nothing).',
+  );
+}
+
+/** Deterministic key for local-only encryption when safeStorage is unusable. */
+function getLocalKeyMaterial() {
+  let machineId = '';
+  try {
+    machineId = fs.readFileSync('/etc/machine-id', 'utf-8').trim();
+  } catch {
+    try {
+      machineId = fs.readFileSync('/var/lib/dbus/machine-id', 'utf-8').trim();
+    } catch {
+      machineId = 'fallback-id';
+    }
+  }
+  const salt = Buffer.from('trim-api-local-v1', 'utf8');
+  const pwd = `${machineId}:${app.getPath('userData')}`;
+  return crypto.scryptSync(pwd, salt, 32);
+}
+
+function encryptApiKeyLocal(plaintext) {
+  const key = getLocalKeyMaterial();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const enc = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, enc]).toString('base64');
+}
+
+function decryptApiKeyLocal(b64) {
+  const buf = Buffer.from(b64, 'base64');
+  if (buf.length < 12 + 16) throw new Error('Invalid local cipher blob');
+  const iv = buf.subarray(0, 12);
+  const tag = buf.subarray(12, 28);
+  const data = buf.subarray(28);
+  const key = getLocalKeyMaterial();
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
+}
 
 // macOS directories that are huge, contain no user files, and choke the
 // synchronous shallow scan (and slow the deep scan) when enumerated.
@@ -246,6 +314,10 @@ function getBundledPythonExecutable() {
     const dirs = { arm64: 'macos-arm64', x64: 'macos-x64' };
     resourceDir = dirs[process.arch] || dirs.arm64;
     exeRelPath = path.join('bin', 'python3');
+  } else if (process.platform === 'linux') {
+    const dirs = { x64: 'linux-x64', arm64: 'linux-arm64' };
+    resourceDir = dirs[process.arch] || dirs.x64;
+    exeRelPath = path.join('bin', 'python3');
   } else {
     return null;
   }
@@ -273,16 +345,31 @@ function loadSettingsSync() {
   try {
     const raw = fs.readFileSync(getSettingsPath(), 'utf-8');
     const settings = { ...DEFAULTS, ...JSON.parse(raw) };
-    // Decrypt API key if stored encrypted
-    if (settings.apiKeyEncrypted && !settings.apiKey) {
+    // Decrypt API key: prefer OS keyring, then machine-local AES-GCM fallback
+    if (!settings.apiKey && settings.apiKeyEncrypted) {
       try {
         if (safeStorage.isEncryptionAvailable()) {
           const buf = Buffer.from(settings.apiKeyEncrypted, 'base64');
           settings.apiKey = safeStorage.decryptString(buf);
         }
-      } catch {}
+      } catch { /* try fallback below */ }
+    }
+    if (!settings.apiKey && settings.apiKeyLocalEnc) {
+      try {
+        settings.apiKey = decryptApiKeyLocal(settings.apiKeyLocalEnc);
+      } catch (e) {
+        console.warn('[TRIM] Could not decrypt machine-local API key:', e.message);
+      }
+    }
+    if (
+      settings.apiKeyEncrypted
+      && !settings.apiKey
+      && !safeStorage.isEncryptionAvailable()
+    ) {
+      warnSafeStorageUnavailableOnce();
     }
     delete settings.apiKeyEncrypted;
+    delete settings.apiKeyLocalEnc;
 
     // Migrate: if plaintext apiKey was on disk, re-save encrypted
     const parsed = JSON.parse(raw);
@@ -306,17 +393,31 @@ function applyAutoStart(enabled) {
 
 function saveSettingsWithEncryption(settings) {
   const toWrite = { ...settings };
-  // Never write plaintext apiKey to disk - encrypt or omit
+  // Never write plaintext apiKey to disk - OS keyring first, else AES-GCM (machine-bound)
   if (toWrite.apiKey) {
     try {
       if (safeStorage.isEncryptionAvailable()) {
         toWrite.apiKeyEncrypted = safeStorage.encryptString(toWrite.apiKey).toString('base64');
+        delete toWrite.apiKeyLocalEnc;
       } else {
-        console.warn('safeStorage not available - API key will not be persisted.');
+        toWrite.apiKeyLocalEnc = encryptApiKeyLocal(toWrite.apiKey);
+        delete toWrite.apiKeyEncrypted;
+        logLocalKeyFallbackOnce();
       }
     } catch (err) {
       console.warn('Failed to encrypt API key:', err.message);
+      try {
+        toWrite.apiKeyLocalEnc = encryptApiKeyLocal(toWrite.apiKey);
+        delete toWrite.apiKeyEncrypted;
+        logLocalKeyFallbackOnce();
+      } catch (e2) {
+        console.warn('Local API key encryption also failed:', e2.message);
+      }
     }
+    delete toWrite.apiKey;
+  } else if (toWrite.apiKey === '') {
+    delete toWrite.apiKeyEncrypted;
+    delete toWrite.apiKeyLocalEnc;
     delete toWrite.apiKey;
   }
   fs.writeFileSync(getSettingsPath(), JSON.stringify(toWrite, null, 2));
@@ -1171,7 +1272,7 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
       }
     }
 
-    // Reached round limit — ask user whether to keep going
+    // Reached round limit; ask user whether to keep going
     sendStatus(event, 'Waiting for approval...');
     const keepGoing = await requestConfirmation(event, { tool: 'continue_processing', roundsUsed: round });
     if (!keepGoing) {
@@ -1727,6 +1828,14 @@ function registerHandlers(ipcMain) {
   });
 
   ipcMain.handle(IPC.IS_DEV_MODE, () => !app.isPackaged);
+
+  ipcMain.handle(IPC.GET_RUNTIME_INFO, () => ({
+    platform: process.platform,
+    isLinux: process.platform === 'linux',
+    exePath: app.getPath('exe'),
+    isPackaged: app.isPackaged,
+    appImagePath: process.env.APPIMAGE || null,
+  }));
 
   // Revert all file changes made after the given turn index
   ipcMain.handle(IPC.REVERT_TO_TURN, async (_e, turnIndex) => {

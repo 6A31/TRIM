@@ -199,7 +199,7 @@ function getPlaceholderResult(mode, kind) {
         type: 'placeholder',
         icon: 'folder_open',
         title: 'Browse files and folders',
-        subtitle: 'Type a path or name — Enter to open, Tab to step into folders',
+        subtitle: 'Type a path or name. Enter to open, Tab to step into folders',
       };
     }
 
@@ -225,7 +225,7 @@ function getPlaceholderResult(mode, kind) {
       type: 'placeholder',
       icon: 'auto_awesome',
       title: 'Press Enter to ask Gemini Flash',
-      subtitle: 'Use #filename to attach files — Ctrl+V to paste images',
+      subtitle: 'Use #filename to attach files. Ctrl+V to paste images',
     };
   }
 
@@ -234,7 +234,7 @@ function getPlaceholderResult(mode, kind) {
       type: 'placeholder',
       icon: 'auto_awesome',
       title: 'Press Enter to ask Gemini Pro',
-      subtitle: 'Use #filename to attach files — Ctrl+V to paste images',
+      subtitle: 'Use #filename to attach files. Ctrl+V to paste images',
     };
   }
 

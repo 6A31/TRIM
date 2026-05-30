@@ -5,6 +5,11 @@ const { DEFAULT_SHORTCUT } = require('../shared/constants');
 let currentShortcut = null;
 
 function register(shortcut) {
+  if (process.platform === 'linux') {
+    currentShortcut = shortcut || DEFAULT_SHORTCUT;
+    return true;
+  }
+
   shortcut = shortcut || DEFAULT_SHORTCUT;
 
   // Unregister previous shortcut if changing
@@ -34,6 +39,10 @@ function register(shortcut) {
 }
 
 function unregister() {
+  if (process.platform === 'linux') {
+    currentShortcut = null;
+    return;
+  }
   globalShortcut.unregisterAll();
   currentShortcut = null;
 }
