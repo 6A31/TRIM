@@ -152,26 +152,57 @@ function wireDropdown(container) {
 
 function buildLinuxSummonSection(runtime) {
   const exe = escapeHtml(runtime.exePath || 'trim');
-  const devLine = !runtime.isPackaged
-    ? '<div class="settings-description" style="margin-top:8px">From the repo: <code>npx electron . --toggle</code></div>'
+  const appImage = runtime.appImagePath ? escapeHtml(runtime.appImagePath) : null;
+  const toggleCmd = appImage ? `"${appImage}" --toggle` : `"${exe}" --toggle`;
+  const startHiddenCmd = appImage ? `"${appImage}" --hidden` : `"${exe}" --hidden`;
+  const releasesUrl = 'https://github.com/6A31/TRIM/releases/latest';
+
+  const devNote = !runtime.isPackaged
+    ? `<div class="settings-description">Dev build. Use <code>npx electron . --toggle</code>. Separate config from the packaged app.</div>`
     : '';
+
+  const runningFrom = appImage
+    ? `<div class="settings-description" style="margin-top:10px">Running: <code>${appImage}</code></div>`
+    : runtime.isPackaged
+      ? `<div class="settings-description" style="margin-top:10px">Running: <code>${exe}</code></div>`
+      : '';
+
+  const latencyNote = runtime.isPackaged
+    ? `<div class="settings-note">Each keybind exec spins up a helper process (AppImage mount + Electron). ~150ms before toggle. Normal for packaged builds.</div>`
+    : '';
+
   return `
     <div class="settings-group">
-      <label class="settings-label">Summon TRIM</label>
+      <label class="settings-label">Linux</label>
       <div class="settings-description">
-        On Linux, TRIM does not register a global shortcut. Bind a key in Hyprland, Sway, i3, Hyper, etc. to run the packaged binary.
-        Use <strong>Escape</strong> to dismiss when open (click-away is disabled by default so tiling WMs and focus-follows-mouse do not close the bar).
+        TRIM can't grab a global shortcut on Linux. Bind this in your WM (Hyprland, Sway, i3, etc.):
       </div>
-      ${devLine}
-      <div class="settings-description" style="margin-top:10px">Recommended keybind command (toggle show/hide):</div>
-      <pre class="settings-code-block"><code>"${exe}" --toggle</code></pre>
-      <div class="settings-description" style="margin-top:10px">Examples (adjust paths):</div>
-      <ul class="settings-linux-examples">
-        <li><strong>Hyprland:</strong> <code>bind = SUPER, SPACE, exec, "${exe}" --toggle</code></li>
-        <li><strong>Sway / i3:</strong> <code>bindsym $mod+Shift+space exec "${exe}" --toggle</code></li>
-        <li><strong>Hyper</strong> (config): <code>shell: '${exe} --toggle',</code> on a key chord</li>
-      </ul>
-      <div class="settings-description" style="margin-top:8px">Optional: set <code>TRIM_LINUX_BLUR_DISMISS=1</code> before launch to restore click-away dismiss (can conflict with tiling / focus-follows-mouse).</div>
+      <pre class="settings-code-block"><code>${toggleCmd}</code></pre>
+      <div class="settings-description">
+        Hyprland: <code>bind = SUPER, SPACE, exec, ${toggleCmd}</code>
+      </div>
+
+      ${runningFrom}
+      ${latencyNote}
+
+      <div class="settings-description" style="margin-top:10px">
+        Linux builds are AppImages from <a class="settings-link" href="${releasesUrl}">GitHub Releases</a>.
+        Put it somewhere fixed, <code>chmod +x</code>, run once.
+        On Arch you might need <code>fuse2</code>.
+      </div>
+
+      <div class="settings-description" style="margin-top:10px">
+        TRIM needs to stay running for <code>--toggle</code> to work.
+        Autostart hidden, or flip on Launch on startup below:
+      </div>
+      <pre class="settings-code-block"><code>${startHiddenCmd}</code></pre>
+
+      <div class="settings-description" style="margin-top:10px">
+        Escape closes the bar. Click-away dismiss is off on Linux (tiling WMs + focus-follows-mouse).
+        Set <code>TRIM_LINUX_BLUR_DISMISS=1</code> if you want click-away back.
+      </div>
+
+      ${devNote}
     </div>
   `;
 }
@@ -599,7 +630,7 @@ function wireShortcutRecorder(panel, savedShortcut, savedLabel) {
       return;
     }
     const accel = keyEventToAccelerator(e);
-    if (!accel) return; // modifier-only or unmappable key — keep waiting
+    if (!accel) return; // modifier-only or unmappable key; keep waiting
     const label = keyEventToLabel(e) || accel;
     stopRecording();
     captured = { accel, label };
@@ -624,7 +655,7 @@ function wireShortcutRecorder(panel, savedShortcut, savedLabel) {
   function onSystemKey(accel) {
     if (!recording) return;
     stopRecording();
-    // System key (Alt+Space) — accel and label are the same
+    // System key (Alt+Space): accel and label are the same
     captured = { accel, label: accel };
     showConfirm(accel);
   }

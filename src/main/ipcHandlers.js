@@ -45,7 +45,7 @@ function logLocalKeyFallbackOnce() {
   localKeyFallbackLogged = true;
   console.warn(
     '[TRIM] OS keyring unavailable for Electron (e.g. Chromium cannot reach org.freedesktop.secrets '
-    + 'even if `secret-tool` works in a terminal — different environment). '
+    + 'even if `secret-tool` works in a terminal, different environment). '
     + 'Storing your API key with AES-256-GCM keyed to this machine and profile (persists across restarts; '
     + 'weaker than system keychain, better than nothing).',
   );
@@ -1272,7 +1272,7 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
       }
     }
 
-    // Reached round limit — ask user whether to keep going
+    // Reached round limit; ask user whether to keep going
     sendStatus(event, 'Waiting for approval...');
     const keepGoing = await requestConfirmation(event, { tool: 'continue_processing', roundsUsed: round });
     if (!keepGoing) {
@@ -1834,6 +1834,7 @@ function registerHandlers(ipcMain) {
     isLinux: process.platform === 'linux',
     exePath: app.getPath('exe'),
     isPackaged: app.isPackaged,
+    appImagePath: process.env.APPIMAGE || null,
   }));
 
   // Revert all file changes made after the given turn index

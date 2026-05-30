@@ -70,14 +70,14 @@ function init() {
     const mode = detectMode(currentRaw);
 
     if (!data || !Array.isArray(data.results)) {
-      dbg('[F: UPDATE] Ignored — no data or empty results');
+      dbg('[F: UPDATE] Ignored: no data or empty results');
       return;
     }
 
     if (mode === 'folder') {
       const q = currentRaw.trim().slice(2).trim();
       if (data.requestId !== activeFolderRequestId || data.query !== q) {
-        dbg(`[F: UPDATE] Stale — reqId ${data.requestId} vs ${activeFolderRequestId}, query "${data.query}" vs "${q}"`);
+        dbg(`[F: UPDATE] Stale: reqId ${data.requestId} vs ${activeFolderRequestId}, query "${data.query}" vs "${q}"`);
         return;
       }
       dbg(`[F: UPDATE] Rendering ${data.results.length} streamed results for "${q}"`);
@@ -97,7 +97,7 @@ function init() {
       const searchTerm = hashMatch && hashMatch[1] ? hashMatch[1].trim() : '';
       if (!searchTerm) return;
       if (data.requestId !== activeFilePickRequestId || data.query !== searchTerm) {
-        dbg(`[#REF UPDATE] Stale — reqId ${data.requestId} vs ${activeFilePickRequestId}, query "${data.query}" vs "${searchTerm}"`);
+        dbg(`[#REF UPDATE] Stale: reqId ${data.requestId} vs ${activeFilePickRequestId}, query "${data.query}" vs "${searchTerm}"`);
         return;
       }
       dbg(`[#REF UPDATE] Rendering ${data.results.length} streamed results for "${searchTerm}"`);

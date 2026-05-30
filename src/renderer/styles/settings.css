@@ -210,20 +210,24 @@
   padding: 0;
 }
 
-.settings-linux-examples {
-  margin: 8px 0 0;
-  padding-left: 18px;
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.5;
+.settings-link {
+  color: var(--accent);
+  text-decoration: none;
 }
 
-.settings-linux-examples code {
-  font-family: var(--font-mono, monospace);
-  font-size: 10px;
-  background: rgba(0, 0, 0, 0.25);
-  padding: 1px 4px;
-  border-radius: 4px;
+.settings-link:hover {
+  text-decoration: underline;
+}
+
+.settings-note {
+  margin-top: 8px;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  background: rgba(255, 180, 0, 0.07);
+  border-radius: 6px;
+  border-left: 2px solid rgba(255, 180, 0, 0.35);
 }
 
 /* ── Color swatches ── */
