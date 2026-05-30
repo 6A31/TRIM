@@ -98,9 +98,9 @@ function renderLatex(text) {
   return text;
 }
 
-const { formatMarkdown: formatMarkdownCore } = require('../../shared/markdownFormat');
-
 function formatMarkdown(text) {
+  const formatMarkdownCore = window._markdownFormat?.formatMarkdown;
+  if (!formatMarkdownCore) return text || '';
   return formatMarkdownCore(text, { renderLatex });
 }
 

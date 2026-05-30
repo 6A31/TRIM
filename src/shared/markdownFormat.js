@@ -74,4 +74,11 @@ function formatMarkdown(text, { renderLatex = (t) => t } = {}) {
   return htmlBlocks.filter(Boolean).join('');
 }
 
-module.exports = { formatMarkdown, formatInlineMarkdown, escapeHtmlInline };
+const markdownFormatApi = { formatMarkdown, formatInlineMarkdown, escapeHtmlInline };
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = markdownFormatApi;
+}
+if (typeof window !== 'undefined') {
+  window._markdownFormat = markdownFormatApi;
+}
