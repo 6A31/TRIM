@@ -72,11 +72,17 @@ function resolveLinuxIconPath(fs, pathMod, home, iconStr) {
   } catch { /* */ }
 
   const sizes = ['512', '256', '128', '96', '64', '48', '32'];
-  const roots = [
+  const iconRoots = [
+    pathMod.join(home, '.local', 'share', 'flatpak', 'exports', 'share', 'icons'),
+    '/var/lib/flatpak/exports/share/icons',
     pathMod.join(home, '.local', 'share', 'icons'),
     '/usr/share/icons',
   ];
-  for (const root of roots) {
+  for (const root of iconRoots) {
+    const scalableSvg = pathMod.join(root, 'hicolor', 'scalable', 'apps', `${base}.svg`);
+    try {
+      if (fs.existsSync(scalableSvg)) return scalableSvg;
+    } catch { /* */ }
     for (const size of sizes) {
       const rel = pathMod.join('hicolor', `${size}x${size}`, 'apps', `${base}.png`);
       const full = pathMod.join(root, rel);
@@ -96,7 +102,9 @@ function collectDesktopFiles(fs, pathMod, dir, out) {
     return;
   }
   for (const e of entries) {
-    if (!e.isFile() || !e.name.endsWith('.desktop')) continue;
+    if (!e.name.endsWith('.desktop')) continue;
+    // Flatpak (and some Snap) exports are symlinks to the real .desktop file.
+    if (!e.isFile() && !e.isSymbolicLink()) continue;
     out.push(pathMod.join(dir, e.name));
   }
 }
@@ -190,6 +198,7 @@ function openLinuxApp(appPath, shell) {
 
 module.exports = {
   listLinuxApps,
+  collectDesktopFiles,
   resolveLinuxIconPath,
   readDesktopIconFromFile,
   getLinuxSearchExtras,
