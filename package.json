@@ -34,7 +34,8 @@
     "electron": "^41.1.1",
     "electron-builder": "^26.8.1",
     "highlight.js": "^11.11.1",
-    "katex": "^0.16.45"
+    "katex": "^0.16.45",
+    "marked": "^15.0.12"
   },
   "build": {
     "appId": "com.trim.launcher",

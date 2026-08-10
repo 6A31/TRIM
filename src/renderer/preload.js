@@ -37,4 +37,8 @@ contextBridge.exposeInMainWorld('trim', {
   isDevMode: () => ipcRenderer.invoke('trim:is-dev-mode'),
   getRuntimeInfo: () => ipcRenderer.invoke('trim:get-runtime-info'),
   revertToTurn: (turnIndex) => ipcRenderer.invoke('trim:revert-to-turn', turnIndex),
+  listConversations: () => ipcRenderer.invoke('trim:ai-history-list'),
+  saveConversation: (meta) => ipcRenderer.invoke('trim:ai-history-save', meta),
+  loadConversation: (id) => ipcRenderer.invoke('trim:ai-history-load', id),
+  deleteConversation: (id) => ipcRenderer.invoke('trim:ai-history-delete', id),
 });

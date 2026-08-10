@@ -10,14 +10,15 @@ register('/help', {
   icon: 'help',
   execute: () => {
     const helpResults = [
-      { type: 'command', icon: 'search', title: 'app name', subtitle: 'Launch apps. Type to search, Enter or click to open' },
-      { type: 'command', icon: 'auto_awesome', title: '? question', subtitle: 'Gemini Flash: chat, generate images, read/write files, run Python' },
-      { type: 'command', icon: 'auto_awesome', title: '?? question', subtitle: 'Gemini Pro: same tools, stronger reasoning' },
-      { type: 'command', icon: 'image', title: 'Ctrl+V image', subtitle: 'Paste a screenshot or image into AI chat for analysis' },
+      { type: 'command', icon: 'search', title: 'app name', subtitle: 'Launch apps — type to search, Enter or click to open' },
+      { type: 'command', icon: 'auto_awesome', title: '? question', subtitle: 'Gemini Flash — chat, generate images, read/write files, run Python' },
+      { type: 'command', icon: 'auto_awesome', title: '?? question', subtitle: 'Gemini Pro — same tools, stronger reasoning' },
+      { type: 'command', icon: 'image', title: 'Ctrl+V images', subtitle: 'Paste one or more screenshots/images into AI chat (accumulates)' },
+      { type: 'command', icon: 'history', title: '? history', subtitle: 'Type ? alone to browse past chats — clear ? to start a new convo' },
       { type: 'command', icon: 'attach_file', title: '#filename', subtitle: 'Attach a file to your AI query (Tab to autocomplete)' },
       { type: 'command', icon: 'calculate', title: 'c: expression', subtitle: 'Math: evaluate, solve, plot, derive, integrate, factor' },
       { type: 'command', icon: 'folder_open', title: 'f: path', subtitle: 'Browse and open files and folders on your system' },
-      { type: 'command', icon: 'terminal', title: '/ command', subtitle: '/settings, /clear (reset AI), /reload, /help' },
+      { type: 'command', icon: 'terminal', title: '/ command', subtitle: '/settings, /clear (reset AI), /history, /reload, /help' },
     ];
     window._ui.renderResults(helpResults);
   },
@@ -46,6 +47,21 @@ register('/clear', {
     }
     window.trim.cleanup();
     document.getElementById('search-input').dispatchEvent(new Event('input'));
+  },
+});
+
+register('/history', {
+  description: 'Browse past AI conversations',
+  icon: 'history',
+  execute: () => {
+    const input = document.getElementById('search-input');
+    input.value = '? ';
+    if (window._inputRouter) window._inputRouter.refreshInputDecor(input);
+    input.setSelectionRange(2, 2);
+    input.focus();
+    if (window._ui && window._ui.showConversationHistory) {
+      window._ui.showConversationHistory('ai');
+    }
   },
 });
 

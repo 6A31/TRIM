@@ -27,7 +27,8 @@ let activeFilePickRequestId = null;
 const aiFileRefs = new Map(); // label -> absolute path
 let inputOverlayEl = null;
 let calcSyntaxEnabled = true;
-let pastedImageData = null; // { dataUri, mimeType } or null
+let pastedImages = []; // [{ dataUri, mimeType }, ...]
+const MAX_PASTED_IMAGES = 8;
 
 function init() {
   const input = document.getElementById('search-input');
@@ -47,7 +48,7 @@ function init() {
     DEBUG_SEARCH = isDev;
   }).catch(() => {});
 
-  // Handle image paste - use Electron's native clipboard via IPC (sandbox-safe)
+  // Handle image paste — accumulate multiple clipboard images
   input.addEventListener('paste', async (e) => {
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -59,8 +60,12 @@ function init() {
     e.preventDefault();
     const result = await window.trim.readClipboardImage();
     if (result && result.dataUri) {
-      pastedImageData = { dataUri: result.dataUri, mimeType: result.mimeType };
+      if (pastedImages.length >= MAX_PASTED_IMAGES) {
+        pastedImages.shift();
+      }
+      pastedImages.push({ dataUri: result.dataUri, mimeType: result.mimeType });
       if (window._chips) window._chips.renderChips();
+      if (window._ui && window._ui.renderImageAttachments) window._ui.renderImageAttachments();
     }
   });
 
@@ -123,10 +128,18 @@ function init() {
     updateModeIndicator(raw);
     refreshInputDecor(input);
 
-    // Empty input - always clear and shrink
+    // Empty input - always clear and shrink (archives AI chat; starts a new convo)
     if (!raw.trim()) {
       clearTimeout(debounceTimer);
-      window._ui.clearResults();
+      const finishClear = () => {
+        window._ui.clearResults();
+        window.trim.cleanup();
+      };
+      if (window._ui && window._ui.archiveCurrentConversation) {
+        window._ui.archiveCurrentConversation().then(finishClear).catch(finishClear);
+      } else if (window._ui) {
+        finishClear();
+      }
       return;
     }
 
@@ -163,6 +176,14 @@ function init() {
         filePickActive = false;
         activeFilePickRequestId = null;
         window._ui.restoreAIArea();
+        return;
+      }
+
+      // Prefix-only with no active conversation: show history + empty hint
+      const prefixOnly = /^(\?\??\s*)$/.test(raw);
+      const inConversation = window._aiQuery && window._aiQuery.isFollowUp();
+      if (prefixOnly && !inConversation && window._ui && window._ui.showConversationHistory) {
+        window._ui.showConversationHistory(mode);
         return;
       }
 
@@ -383,23 +404,17 @@ function renderInputOverlay(inputEl) {
     return;
   }
 
-  // Show conversation hint when input is just the prefix
-  if (!hasRefs && prefixOnly && inConversation) {
+  // Prefix only: show context hint (follow-up vs start a new chat)
+  if (!hasRefs && prefixOnly) {
     inputOverlayEl.style.display = '';
-    // Keep native text visible (the prefix) - don't hide it
     inputEl.style.color = '';
     inputEl.style.webkitTextFillColor = '';
-    // Invisible spacer matching the prefix width, then muted hint
     const spacer = `<span style="visibility:hidden">${escapeHtml(raw)}</span>`;
-    inputOverlayEl.innerHTML = `${spacer}<span class="conv-hint">Ask a follow-up or <span class="material-symbols-rounded conv-hint-icon">backspace</span> to exit</span>`;
-    return;
-  }
-
-  if (!hasRefs) {
-    inputOverlayEl.innerHTML = '';
-    inputOverlayEl.style.display = 'none';
-    inputEl.style.color = '';
-    inputEl.style.webkitTextFillColor = '';
+    if (inConversation) {
+      inputOverlayEl.innerHTML = `${spacer}<span class="conv-hint">Ask a follow-up · clear <span class="conv-hint-key">?</span> to start a new chat</span>`;
+    } else {
+      inputOverlayEl.innerHTML = `${spacer}<span class="conv-hint">Just keep typing to start a new chat</span>`;
+    }
     return;
   }
 
@@ -511,6 +526,17 @@ function isFilePickActive() {
 }
 
 window._inputRouter = { init, route, detectMode, isFilePickActive, resolveAIFileRefsInQuery, refreshInputDecor, setCalcSyntax(v) { calcSyntaxEnabled = v; },
-  getPastedImage() { return pastedImageData; },
-  clearPastedImage() { pastedImageData = null; if (window._chips) window._chips.renderChips(); },
+  getPastedImage() { return pastedImages[0] || null; },
+  getPastedImages() { return pastedImages.slice(); },
+  clearPastedImage() {
+    pastedImages = [];
+    if (window._chips) window._chips.renderChips();
+    if (window._ui && window._ui.renderImageAttachments) window._ui.renderImageAttachments();
+  },
+  removePastedImage(index) {
+    if (index < 0 || index >= pastedImages.length) return;
+    pastedImages.splice(index, 1);
+    if (window._chips) window._chips.renderChips();
+    if (window._ui && window._ui.renderImageAttachments) window._ui.renderImageAttachments();
+  },
 };

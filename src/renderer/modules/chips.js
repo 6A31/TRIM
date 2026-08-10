@@ -94,7 +94,10 @@ register('pasted_image', {
   default: false,
   modes: ['ai', 'ai_pro'],
   dismissable: true,
-  visibleWhen: () => window._inputRouter && !!window._inputRouter.getPastedImage(),
+  visibleWhen: () => {
+    if (!window._inputRouter || !window._inputRouter.getPastedImages) return false;
+    return window._inputRouter.getPastedImages().length > 0;
+  },
   action: () => { if (window._inputRouter) window._inputRouter.clearPastedImage(); },
 });
 
@@ -172,7 +175,12 @@ function renderChips(mode) {
 
     const label = document.createElement('span');
     label.className = 'chip-label';
-    label.textContent = chip.label;
+    if (id === 'pasted_image' && window._inputRouter && window._inputRouter.getPastedImages) {
+      const n = window._inputRouter.getPastedImages().length;
+      label.textContent = n > 1 ? `${n} images` : 'Clipboard image';
+    } else {
+      label.textContent = chip.label;
+    }
     el.appendChild(label);
 
     if (chip.dismissable) {

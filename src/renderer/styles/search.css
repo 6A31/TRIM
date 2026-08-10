@@ -93,6 +93,11 @@
   vertical-align: middle;
 }
 
+.conv-hint-key {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
 .file-ref-pill {
   display: inline;
   border-radius: 6px;
@@ -416,6 +421,117 @@
   margin-bottom: 1px;
 }
 
+.ai-text h1,
+.ai-text h2,
+.ai-text h3,
+.ai-text h4 {
+  margin: 12px 0 6px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.ai-text h1 { font-size: 17px; }
+.ai-text h2 { font-size: 15px; }
+.ai-text h3 { font-size: 14px; }
+.ai-text h4 { font-size: 13px; }
+
+.ai-text blockquote {
+  margin: 8px 0;
+  padding: 4px 12px;
+  border-left: 3px solid var(--accent);
+  color: var(--text-secondary);
+}
+
+.ai-text hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 12px 0;
+}
+
+.ai-text table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.ai-text th,
+.ai-text td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.ai-text th {
+  background: rgba(255, 255, 255, 0.04);
+  font-weight: 600;
+}
+
+.ai-text a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.ai-text a:hover {
+  text-decoration: underline;
+}
+
+/* Prefer transparent backgrounds when selection is copied as rich text */
+#ai-response-container ::selection {
+  background: var(--accent-glow);
+  color: var(--text-primary);
+}
+
+/* Image paste thumbnails */
+#image-attachments {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  max-width: 160px;
+  overflow-x: auto;
+}
+
+#image-attachments.hidden,
+#image-attachments:empty {
+  display: none;
+}
+
+.image-attach-thumb {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  cursor: pointer;
+  border: 1px solid var(--border);
+}
+
+.image-attach-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.image-attach-remove {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  padding: 0;
+}
+
+.image-attach-thumb:hover .image-attach-remove {
+  display: flex;
+}
+
 .ai-sources {
   margin-top: 12px;
   padding-top: 10px;
@@ -507,6 +623,13 @@
   font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary);
+}
+
+/* First turn: no separator / gap above (looked like a stray <br>) */
+.ai-follow-up-query:first-child {
+  margin-top: 0;
+  border-top: none;
+  padding-top: 0;
 }
 
 .ai-follow-up-query .material-symbols-rounded {

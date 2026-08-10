@@ -1,21 +1,30 @@
 let isQuerying = false;
 let hasConversation = false;
 let conversationPrefix = null; // 'ai' or 'ai_pro'
+let currentSessionId = null;
+let sessionTitle = null;
 
 async function search(query) {
   if (!query.trim()) return [];
-  // Return a loading indicator - actual response rendered after
   return [{ type: 'ai-loading' }];
 }
 
+function newSessionId() {
+  return `chat_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
 async function execute(query, mode, forceShow, renderFn, pastedImages) {
-  if (isQuerying) return; // Prevent concurrent queries
+  if (isQuerying) return;
   isQuerying = true;
 
   const usePro = mode === 'ai_pro';
   const followUp = hasConversation && conversationPrefix === mode;
 
-  // Clean up previous listener before re-registering
+  if (!followUp) {
+    currentSessionId = newSessionId();
+    sessionTitle = (query || '').trim().slice(0, 80) || 'New chat';
+  }
+
   window.trim.offAIStatus();
   window.trim.onAIStatus((data) => {
     window._ui.updateAIStatus(data.text);
@@ -24,13 +33,11 @@ async function execute(query, mode, forceShow, renderFn, pastedImages) {
   try {
     const result = await window.trim.aiQuery(query, usePro, forceShow, followUp, pastedImages || []);
 
-    // Silently ignore aborted queries
     if (result.error === '__aborted__') return;
 
     if (result.error) {
       renderFn({ type: 'ai-error', error: result.error });
     } else {
-      // Mark conversation active before rendering so the input hint can show
       hasConversation = true;
       conversationPrefix = mode;
       renderFn({
@@ -42,6 +49,13 @@ async function execute(query, mode, forceShow, renderFn, pastedImages) {
         turnIndex: result.turnIndex,
         hadFileChanges: result.hadFileChanges || false,
       });
+
+      // Persist after DOM updates (caller renders synchronously before we await)
+      queueMicrotask(() => {
+        if (window._ui && window._ui.persistCurrentConversation) {
+          window._ui.persistCurrentConversation();
+        }
+      });
     }
   } catch (err) {
     renderFn({ type: 'ai-error', error: err.message || 'Failed to reach Gemini' });
@@ -51,64 +65,162 @@ async function execute(query, mode, forceShow, renderFn, pastedImages) {
   }
 }
 
-// Call before showAILoading to handle mode switches (e.g. ? → ??)
 function prepareForQuery(mode) {
   if (hasConversation && conversationPrefix !== mode) {
     hasConversation = false;
     conversationPrefix = null;
+    currentSessionId = null;
+    sessionTitle = null;
   }
 }
 
 function clearConversation() {
   hasConversation = false;
   conversationPrefix = null;
+  currentSessionId = null;
+  sessionTitle = null;
 }
 
 function isFollowUp() {
   return hasConversation;
 }
 
+function isBusy() {
+  return isQuerying;
+}
+
 function getConversationPrefix() {
   return conversationPrefix;
 }
 
-function renderLatex(text) {
-  if (!text || typeof katex === 'undefined') return text;
+function getSessionMeta() {
+  return { id: currentSessionId, title: sessionTitle, mode: conversationPrefix };
+}
 
-  // Display math: $$...$$ or \[...\]
+function restoreSession(meta) {
+  hasConversation = true;
+  conversationPrefix = meta.mode || 'ai';
+  currentSessionId = meta.id || null;
+  sessionTitle = meta.title || null;
+}
+
+function escapeHtmlInline(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function protectMath(text) {
+  const slots = [];
+  const stash = (html) => {
+    slots.push(html);
+    return `%%MATH_${slots.length - 1}%%`;
+  };
+
+  // Protect fenced + inline code from math rewriting
+  const codeSlots = [];
+  text = text.replace(/```[\s\S]*?```/g, (m) => {
+    codeSlots.push(m);
+    return `%%CODEPROTECT_${codeSlots.length - 1}%%`;
+  });
+  text = text.replace(/`[^`\n]+`/g, (m) => {
+    codeSlots.push(m);
+    return `%%CODEPROTECT_${codeSlots.length - 1}%%`;
+  });
+
+  // Display math first
   text = text.replace(/\$\$([\s\S]*?)\$\$/g, (_m, expr) => {
-    try { return katex.renderToString(expr.trim(), { displayMode: true, throwOnError: false }); }
-    catch { return _m; }
+    try {
+      return stash(typeof katex !== 'undefined'
+        ? katex.renderToString(expr.trim(), { displayMode: true, throwOnError: false })
+        : `$$${expr}$$`);
+    } catch {
+      return _m;
+    }
   });
   text = text.replace(/\\\[([\s\S]*?)\\\]/g, (_m, expr) => {
-    try { return katex.renderToString(expr.trim(), { displayMode: true, throwOnError: false }); }
-    catch { return _m; }
+    try {
+      return stash(typeof katex !== 'undefined'
+        ? katex.renderToString(expr.trim(), { displayMode: true, throwOnError: false })
+        : `\\[${expr}\\]`);
+    } catch {
+      return _m;
+    }
   });
 
-  // Inline math: $...$ (not $$) or \(...\)
-  text = text.replace(/\$([^\$]+?)\$/g, (_m, expr) => {
-    try { return katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false }); }
-    catch { return _m; }
+  // Inline math
+  text = text.replace(/\$([^\$\n]+?)\$/g, (_m, expr) => {
+    // Skip likely currency like $5 or $12.99
+    if (/^\d/.test(expr.trim())) return _m;
+    try {
+      return stash(typeof katex !== 'undefined'
+        ? katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false })
+        : `$${expr}$`);
+    } catch {
+      return _m;
+    }
   });
   text = text.replace(/\\\(([\s\S]*?)\\\)/g, (_m, expr) => {
-    try { return katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false }); }
-    catch { return _m; }
+    try {
+      return stash(typeof katex !== 'undefined'
+        ? katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false })
+        : `\\(${expr}\\)`);
+    } catch {
+      return _m;
+    }
   });
 
-  return text;
+  // Restore code before markdown parse
+  text = text.replace(/%%CODEPROTECT_(\d+)%%/g, (_m, i) => codeSlots[Number(i)]);
+
+  return { text, slots };
 }
 
 function formatMarkdown(text) {
-  const formatMarkdownCore = window._markdownFormat?.formatMarkdown;
-  if (!formatMarkdownCore) return text || '';
-  return formatMarkdownCore(text, { renderLatex });
+  if (!text) return '';
+
+  const { text: withMath, slots } = protectMath(text);
+
+  let html;
+  const parse = (typeof marked !== 'undefined')
+    ? (marked.parse || marked.marked || (typeof marked === 'function' ? marked : null))
+    : null;
+
+  if (parse) {
+    if (typeof marked.setOptions === 'function') {
+      marked.setOptions({ gfm: true, breaks: true });
+    }
+    html = parse(withMath);
+  } else {
+    html = escapeHtmlInline(withMath)
+      .replace(/\n\n/g, '</p><p>')
+      .replace(/\n/g, '<br>');
+    html = `<p>${html}</p>`;
+  }
+
+  html = html.replace(/%%MATH_(\d+)%%/g, (_m, i) => slots[Number(i)] || '');
+  return html;
 }
 
 function highlightCodeBlocks(container) {
   if (typeof hljs === 'undefined') return;
-  container.querySelectorAll('pre code[class*="language-"]').forEach(el => {
-    hljs.highlightElement(el);
+  container.querySelectorAll('pre code').forEach(el => {
+    if (el.classList.contains('hljs')) return;
+    try { hljs.highlightElement(el); } catch {}
   });
 }
 
-window._aiQuery = { search, execute, prepareForQuery, formatMarkdown, clearConversation, isFollowUp, getConversationPrefix, highlightCodeBlocks };
+window._aiQuery = {
+  search,
+  execute,
+  prepareForQuery,
+  formatMarkdown,
+  clearConversation,
+  isFollowUp,
+  isBusy,
+  getConversationPrefix,
+  getSessionMeta,
+  restoreSession,
+  highlightCodeBlocks,
+};

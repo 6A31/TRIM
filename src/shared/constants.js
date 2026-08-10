@@ -35,6 +35,10 @@ const IPC = {
   IS_DEV_MODE: 'trim:is-dev-mode',
   REVERT_TO_TURN: 'trim:revert-to-turn',
   GET_RUNTIME_INFO: 'trim:get-runtime-info',
+  AI_HISTORY_LIST: 'trim:ai-history-list',
+  AI_HISTORY_SAVE: 'trim:ai-history-save',
+  AI_HISTORY_LOAD: 'trim:ai-history-load',
+  AI_HISTORY_DELETE: 'trim:ai-history-delete',
 };
 
 const DEFAULT_SHORTCUT = 'Alt+Space';

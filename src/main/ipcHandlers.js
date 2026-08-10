@@ -793,7 +793,7 @@ function requestConfirmation(event, details) {
 
 // --- AI init ---
 
-const SYSTEM_INSTRUCTION = `You are a concise assistant inside a desktop launcher called Trim. Give short, direct answers - a few sentences max. Include all key facts but skip filler, introductions, and unnecessary detail. Use bullet points for lists. Never repeat the question.
+const SYSTEM_INSTRUCTION = `You are a concise assistant inside a desktop launcher called Trim. Give short, direct answers - a few sentences max. Include all key facts but skip filler, introductions, and unnecessary detail. Use Markdown for structure (headings, lists, code fences, bold). Use bullet points for lists. Never repeat the question.
 
 You have access to these tools:
 
@@ -816,7 +816,7 @@ Always use absolute paths for file tools. The user will approve write/edit/delet
 
 **googleSearch** - Search the web for current information.
 
-**generate_image** - Generate an image from a text description. Use when the user asks you to create, draw, or generate an image/picture/illustration. Provide a detailed, descriptive prompt for best results. The generated image will be displayed inline.`;
+**generate_image** - Generate an image from a text description. ALWAYS call this tool when the user asks you to create, draw, generate, design, or make an image/picture/illustration/icon/logo. Provide a detailed, descriptive prompt. The generated image will be displayed inline — do not claim you cannot generate images.`;
 
 function getSystemInstruction(forceShowOutput) {
   const osName = platformAdapter ? platformAdapter.getOSLabel() : (process.platform === 'win32' ? 'Windows' : process.platform === 'darwin' ? 'macOS' : 'Linux');
@@ -850,7 +850,57 @@ const AI_TOOLS = [
 const IMAGE_MODEL_MAP = {
   'gemini-3-flash-preview': 'gemini-3.1-flash-image-preview',
   'gemini-3.1-pro-preview': 'gemini-3-pro-image-preview',
+  'gemini-2.5-flash': 'gemini-3.1-flash-image-preview',
+  'gemini-2.5-pro': 'gemini-3-pro-image-preview',
 };
+
+function resolveImageModel(modelName) {
+  if (IMAGE_MODEL_MAP[modelName]) return IMAGE_MODEL_MAP[modelName];
+  const lower = String(modelName || '').toLowerCase();
+  if (lower.includes('pro')) return 'gemini-3-pro-image-preview';
+  return 'gemini-3.1-flash-image-preview';
+}
+
+function getConversationsPath() {
+  return getCachePath('ai-conversations.json');
+}
+
+function loadConversationsSync() {
+  try {
+    const raw = fs.readFileSync(getConversationsPath(), 'utf-8');
+    const data = JSON.parse(raw);
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveConversationsSync(list) {
+  try {
+    fs.writeFileSync(getConversationsPath(), JSON.stringify(list), 'utf-8');
+  } catch (err) {
+    dbg('[AI HISTORY] Failed to save:', err.message);
+  }
+}
+
+/** Strip bulky inline media from history contents so disk stays manageable */
+function slimContentsForStorage(contents) {
+  if (!Array.isArray(contents)) return [];
+  return contents.map(msg => {
+    if (!msg || !Array.isArray(msg.parts)) return msg;
+    return {
+      ...msg,
+      parts: msg.parts.map(part => {
+        if (part && part.inlineData && part.inlineData.data && part.inlineData.data.length > 8000) {
+          return {
+            text: `[Attached ${part.inlineData.mimeType || 'media'} omitted from history]`,
+          };
+        }
+        return part;
+      }),
+    };
+  });
+}
 
 function initAI(apiKey) {
   if (!apiKey) { ai = null; return; }
@@ -967,15 +1017,22 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
     // Build contents: continue existing conversation or start fresh
     const userParts = [{ text: resolvedQuery }, ...extraParts];
 
-    // Add pasted images
+    // Add pasted images (supports multiple clipboard pastes)
     if (Array.isArray(pastedImages) && pastedImages.length > 0) {
+      let attached = 0;
       for (const img of pastedImages) {
         if (img.dataUri && img.mimeType) {
           const base64 = img.dataUri.replace(/^data:[^;]+;base64,/, '');
           userParts.push({ inlineData: { mimeType: img.mimeType, data: base64 } });
+          attached++;
         }
       }
-      userParts[0] = { text: resolvedQuery + '\n\n[Pasted image attached]' };
+      if (attached > 0) {
+        const label = attached === 1
+          ? '[Pasted image attached]'
+          : `[${attached} pasted images attached]`;
+        userParts[0] = { text: resolvedQuery + '\n\n' + label };
+      }
     }
     let contents;
     if (followUp && chatHistory && chatHistory.model === modelName) {
@@ -1021,7 +1078,16 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
 
       if (functionCalls && functionCalls.length > 0) {
         // Append model turn to history
-        contents.push(candidate.content);
+        if (candidate?.content) {
+          contents.push(candidate.content);
+        } else {
+          contents.push({
+            role: 'model',
+            parts: functionCalls.map(fc => ({
+              functionCall: { name: fc.name, args: fc.args || {}, id: fc.id },
+            })),
+          });
+        }
 
         const responseParts = [];
         for (const fc of functionCalls) {
@@ -1173,33 +1239,58 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
             });
           } else if (fc.name === 'generate_image') {
             sendStatus(event, 'Generating image...');
-            const imageModel = IMAGE_MODEL_MAP[modelName] || 'gemini-3.1-flash-image-preview';
+            const imageModel = resolveImageModel(modelName);
             try {
+              const promptText = (fc.args && fc.args.prompt) ? String(fc.args.prompt) : '';
+              if (!promptText.trim()) {
+                responseParts.push({
+                  functionResponse: {
+                    name: 'generate_image',
+                    response: { result: { error: 'Missing image prompt.' } },
+                    id: fc.id,
+                  },
+                });
+                continue;
+              }
+              // Gemini image models require TEXT+IMAGE modalities (IMAGE-only fails)
               const imgResponse = await ai.models.generateContent({
                 model: imageModel,
-                contents: [{ role: 'user', parts: [{ text: fc.args.prompt || '' }] }],
+                contents: [{ role: 'user', parts: [{ text: promptText }] }],
                 config: {
-                  responseModalities: ['IMAGE'],
+                  responseModalities: ['TEXT', 'IMAGE'],
                 },
               });
               const imgCandidate = imgResponse.candidates?.[0];
               const imgParts = imgCandidate?.content?.parts || [];
               let imageGenerated = false;
+              let imageNote = '';
               for (const imgPart of imgParts) {
-                if (imgPart.inlineData && imgPart.inlineData.mimeType?.startsWith('image/')) {
-                  const dataUri = `data:${imgPart.inlineData.mimeType};base64,${imgPart.inlineData.data}`;
-                  generatedImages.push({ dataUri, mimeType: imgPart.inlineData.mimeType });
-                  imageGenerated = true;
+                if (imgPart.thought) continue;
+                if (imgPart.inlineData) {
+                  const mime = imgPart.inlineData.mimeType || 'image/png';
+                  const data = imgPart.inlineData.data;
+                  if (data && mime.startsWith('image/')) {
+                    const dataUri = `data:${mime};base64,${data}`;
+                    generatedImages.push({ dataUri, mimeType: mime });
+                    imageGenerated = true;
+                  }
+                } else if (imgPart.text && !imageNote) {
+                  imageNote = String(imgPart.text).slice(0, 200);
                 }
               }
               responseParts.push({
                 functionResponse: {
                   name: 'generate_image',
-                  response: { result: imageGenerated ? { success: true } : { error: 'No image was generated.' } },
+                  response: {
+                    result: imageGenerated
+                      ? { success: true, model: imageModel }
+                      : { error: imageNote || `No image was generated by ${imageModel}.` },
+                  },
                   id: fc.id,
                 },
               });
             } catch (imgErr) {
+              dbg('[IMAGE GEN]', imgErr);
               responseParts.push({
                 functionResponse: {
                   name: 'generate_image',
@@ -1264,7 +1355,11 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
         }
 
         // Save conversation history for follow-ups
-        contents.push(candidate.content);
+        if (candidate?.content) {
+          contents.push(candidate.content);
+        } else if (text) {
+          contents.push({ role: 'model', parts: [{ text }] });
+        }
         chatHistory = { contents, model: modelName };
 
         const hadFileChanges = fileChangeLog.some(c => c.turn === currentTurn);
@@ -1802,6 +1897,63 @@ function registerHandlers(ipcMain) {
     turnContentOffsets.clear();
     cleanupOrphanedTempDirs();
     return true;
+  });
+
+  ipcMain.handle(IPC.AI_HISTORY_LIST, async () => {
+    return loadConversationsSync().map(c => ({
+      id: c.id,
+      title: c.title || 'Untitled',
+      mode: c.mode || 'ai',
+      updatedAt: c.updatedAt || 0,
+      preview: c.preview || '',
+    }));
+  });
+
+  ipcMain.handle(IPC.AI_HISTORY_SAVE, async (_e, meta) => {
+    if (!meta || !meta.id) return { error: 'Missing conversation id' };
+    const list = loadConversationsSync();
+    const idx = list.findIndex(c => c.id === meta.id);
+    const entry = {
+      id: meta.id,
+      title: (meta.title || 'Untitled').slice(0, 120),
+      mode: meta.mode === 'ai_pro' ? 'ai_pro' : 'ai',
+      updatedAt: Date.now(),
+      preview: (meta.preview || '').slice(0, 200),
+      html: typeof meta.html === 'string' ? meta.html : '',
+      contents: slimContentsForStorage(chatHistory?.contents || meta.contents || []),
+      model: chatHistory?.model || meta.model || null,
+    };
+    if (idx >= 0) list[idx] = { ...list[idx], ...entry };
+    else list.unshift(entry);
+    // Cap history
+    list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    saveConversationsSync(list.slice(0, 40));
+    return { id: entry.id };
+  });
+
+  ipcMain.handle(IPC.AI_HISTORY_LOAD, async (_e, id) => {
+    const list = loadConversationsSync();
+    const entry = list.find(c => c.id === id);
+    if (!entry) return { error: 'Conversation not found' };
+    chatHistory = entry.contents && entry.model
+      ? { contents: entry.contents, model: entry.model }
+      : null;
+    turnCounter = 0;
+    fileChangeLog = [];
+    turnContentOffsets.clear();
+    return {
+      id: entry.id,
+      title: entry.title,
+      mode: entry.mode,
+      html: entry.html || '',
+      updatedAt: entry.updatedAt,
+    };
+  });
+
+  ipcMain.handle(IPC.AI_HISTORY_DELETE, async (_e, id) => {
+    const list = loadConversationsSync().filter(c => c.id !== id);
+    saveConversationsSync(list);
+    return { ok: true };
   });
 
   ipcMain.handle(IPC.GET_CACHE_SIZE, async () => {

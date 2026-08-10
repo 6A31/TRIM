@@ -1,4 +1,4 @@
-let selectedIndex = -1;
+﻿let selectedIndex = -1;
 let currentResults = [];
 const MAX_VISIBLE = 8;
 const HOTFIX_SCALE_FACTOR = 1;
@@ -7,7 +7,35 @@ let displayScaleFactor = window.devicePixelRatio || null;
 
 function init() {
   document.addEventListener('keydown', handleKeyboard);
+  document.addEventListener('copy', handleAICopy);
   void loadHotfixContext();
+}
+
+/** Copy AI answers as plain text / clean HTML so Word/docs don't get a dark background */
+function handleAICopy(e) {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+  const ai = document.getElementById('ai-response-container');
+  if (!ai || ai.classList.contains('hidden')) return;
+  const node = sel.anchorNode;
+  if (!node || !ai.contains(node.nodeType === 1 ? node : node.parentElement)) return;
+
+  const plain = sel.toString();
+  const range = sel.getRangeAt(0);
+  const frag = range.cloneContents();
+  const wrap = document.createElement('div');
+  wrap.appendChild(frag);
+  wrap.querySelectorAll('*').forEach(el => {
+    el.style.background = 'transparent';
+    el.style.backgroundColor = 'transparent';
+    el.removeAttribute('class');
+    // Keep readable text color for rich paste destinations
+    if (el.style) el.style.color = '#111111';
+  });
+  // Prefer plain text for most destinations; provide cleaned HTML as fallback
+  e.clipboardData.setData('text/plain', plain);
+  e.clipboardData.setData('text/html', `<div style="background:transparent;color:#111">${wrap.innerHTML}</div>`);
+  e.preventDefault();
 }
 
 async function loadHotfixContext() {
@@ -66,6 +94,10 @@ function handleKeyboard(e) {
         if (sel.action) sel.action();
         break;
       }
+      // Block double-submit while Gemini is thinking
+      if (window._aiQuery && window._aiQuery.isBusy && window._aiQuery.isBusy()) {
+        break;
+      }
       // If in AI mode, fire the query
       const input = document.getElementById('search-input').value;
       const forceShow = window._chips && window._chips.isActive('force_code');
@@ -75,10 +107,16 @@ function handleKeyboard(e) {
         if (query) {
           const pastedImages = collectPastedImages();
           window._aiQuery.prepareForQuery('ai_pro');
-          showAILoading('Asking Gemini Pro...');
+          // Lock input to prefix immediately so Enter can't re-fire the same query
+          const searchInput = document.getElementById('search-input');
+          searchInput.value = '?? ';
+          if (window._inputRouter) window._inputRouter.refreshInputDecor(searchInput);
+          showAILoading('Asking Gemini Pro...', query);
           window._aiQuery.execute(resolvedQuery, 'ai_pro', forceShow, (response) => {
             renderAIResponse(response);
           }, pastedImages);
+        } else {
+          executeSelected();
         }
       } else if (input.startsWith('?')) {
         const query = input.slice(1).trim();
@@ -86,10 +124,15 @@ function handleKeyboard(e) {
         if (query) {
           const pastedImages = collectPastedImages();
           window._aiQuery.prepareForQuery('ai');
-          showAILoading();
+          const searchInput = document.getElementById('search-input');
+          searchInput.value = '? ';
+          if (window._inputRouter) window._inputRouter.refreshInputDecor(searchInput);
+          showAILoading('Asking Gemini...', query);
           window._aiQuery.execute(resolvedQuery, 'ai', forceShow, (response) => {
             renderAIResponse(response);
           }, pastedImages);
+        } else {
+          executeSelected();
         }
       } else {
         const didExecute = executeSelected();
@@ -143,6 +186,7 @@ function executeSelected() {
   if (selectedIndex >= 0 && selectedIndex < currentResults.length) {
     const result = currentResults[selectedIndex];
     if (result.action) result.action();
+    if (result.type === 'ai-history' || result.type === 'placeholder') return true;
     if (result.type !== 'command' && result.type !== 'calc' && result.type !== 'calc-symbolic' && result.type !== 'calc-plot' && result.type !== 'calc-loading') {
       window.trim.hideWindow();
     }
@@ -172,7 +216,7 @@ function getPlaceholderResult(mode, kind) {
         type: 'placeholder',
         icon: 'auto_awesome',
         title: 'Ask Gemini Flash',
-        subtitle: 'Chat, generate images, read/write files, run code. Ctrl+V to paste images',
+        subtitle: 'Chat, generate images, read/write files, run code. Paste images with Ctrl+V (multiple OK)',
       };
     }
 
@@ -181,7 +225,7 @@ function getPlaceholderResult(mode, kind) {
         type: 'placeholder',
         icon: 'auto_awesome',
         title: 'Ask Gemini Pro',
-        subtitle: 'Same tools as Flash with stronger reasoning. Ctrl+V to paste images',
+        subtitle: 'Same tools as Flash with stronger reasoning. Paste images with Ctrl+V (multiple OK)',
       };
     }
 
@@ -411,6 +455,7 @@ function createResultElement(result) {
   el.className = 'result-item';
   el.addEventListener('click', () => {
     if (result.action) result.action();
+    if (result.type === 'ai-history' || result.type === 'placeholder') return;
     if (result.type !== 'command' && result.type !== 'calc' && result.type !== 'calc-symbolic' && result.type !== 'calc-plot' && result.type !== 'calc-loading') {
       window.trim.hideWindow();
     }
@@ -646,7 +691,7 @@ function createLoadingSpinner(statusText) {
   return el;
 }
 
-function showAILoading(statusText) {
+function showAILoading(statusText, queryOverride) {
   const container = document.getElementById('results-container');
   const aiContainer = document.getElementById('ai-response-container');
   const settingsPanel = document.getElementById('settings-panel');
@@ -656,17 +701,25 @@ function showAILoading(statusText) {
   aiContainer.classList.remove('hidden');
   document.getElementById('search-bar').classList.add('has-results');
 
+  // Don't restart loading UI if a query is already in flight
+  if (aiContainer.querySelector('.ai-current-turn .ai-loading')) {
+    updateAIStatus(statusText || 'Asking Gemini...');
+    return;
+  }
+
   const isFollowUp = window._aiQuery && window._aiQuery.isFollowUp();
 
   if (!isFollowUp) {
     aiContainer.innerHTML = '';
   }
 
-  // Show the user's query as a header for follow-ups
-  if (isFollowUp) {
+  // Show the user's query as a header (first turn and follow-ups)
+  const queryText = queryOverride || (() => {
     const input = document.getElementById('search-input').value;
-    const queryText = input.startsWith('??') ? input.slice(2).trim()
+    return input.startsWith('??') ? input.slice(2).trim()
       : input.startsWith('?') ? input.slice(1).trim() : input;
+  })();
+  if (queryText) {
     const queryDiv = document.createElement('div');
     queryDiv.className = 'ai-follow-up-query';
     queryDiv.innerHTML = `<span class="material-symbols-rounded" style="font-size:14px">person</span> ${escapeHtml(queryText)}`;
@@ -704,12 +757,17 @@ function updateAIStatus(statusText) {
 function sanitizeHTML(html) {
   if (typeof DOMPurify !== 'undefined') {
     return DOMPurify.sanitize(html, {
-      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'ul', 'ol', 'li', 'code', 'pre', 'div', 'span', 'img', 'a', 'button', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
-      ALLOWED_ATTR: ['class', 'style', 'alt', 'src', 'title', 'href', 'data-uri'],
+      ALLOWED_TAGS: [
+        'p', 'br', 'strong', 'em', 'b', 'i', 'u', 's', 'del', 'ins',
+        'ul', 'ol', 'li', 'code', 'pre', 'div', 'span', 'img', 'a', 'button',
+        'table', 'thead', 'tbody', 'tr', 'th', 'td',
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'blockquote', 'hr', 'sup', 'sub',
+      ],
+      ALLOWED_ATTR: ['class', 'style', 'alt', 'src', 'title', 'href', 'data-uri', 'target', 'rel', 'align'],
       ALLOW_DATA_ATTR: false,
     });
   }
-  // DOMPurify failed to load - strip all HTML tags as a safe fallback.
   return html.replace(/<[^>]*>/g, '');
 }
 
@@ -880,9 +938,12 @@ function renderAIResponse(response) {
 
   // Prep input for follow-up: clear to just the prefix
   const searchInput = document.getElementById('search-input');
-  const val = searchInput.value;
-  const prefix = val.startsWith('??') ? '?? '
-    : val.startsWith('?') ? '? ' : '';
+  const mode = window._aiQuery && window._aiQuery.getConversationPrefix
+    ? window._aiQuery.getConversationPrefix()
+    : null;
+  const prefix = mode === 'ai_pro' ? '?? '
+    : mode === 'ai' ? '? '
+    : (searchInput.value.startsWith('??') ? '?? ' : searchInput.value.startsWith('?') ? '? ' : '');
   if (prefix) {
     searchInput.value = prefix;
     searchInput.setSelectionRange(prefix.length, prefix.length);
@@ -984,10 +1045,153 @@ function clearResults() {
   if (window._chips) window._chips.setResultsCount(0);
   const rawInput = document.getElementById('search-input').value || '';
   renderPlaceholderState('empty', rawInput);
-  // Clear conversation history
+  // Clear conversation history flags (fast-chat: deleting ? starts a new convo)
   if (window._aiQuery) window._aiQuery.clearConversation();
-  // Clear any pasted image
+  // Clear any pasted images
   if (window._inputRouter) window._inputRouter.clearPastedImage();
+}
+
+function collectPastedImages() {
+  if (!window._inputRouter) return [];
+  const imgs = window._inputRouter.getPastedImages
+    ? window._inputRouter.getPastedImages()
+    : (window._inputRouter.getPastedImage() ? [window._inputRouter.getPastedImage()] : []);
+  if (!imgs.length) return [];
+  window._inputRouter.clearPastedImage();
+  return imgs;
+}
+
+function renderImageAttachments() {
+  const el = document.getElementById('image-attachments');
+  if (!el) return;
+  const imgs = (window._inputRouter && window._inputRouter.getPastedImages)
+    ? window._inputRouter.getPastedImages()
+    : [];
+  if (!imgs.length) {
+    el.innerHTML = '';
+    el.classList.add('hidden');
+    return;
+  }
+  el.classList.remove('hidden');
+  el.innerHTML = imgs.map((img, i) => `
+    <div class="image-attach-thumb" data-index="${i}" title="Remove image">
+      <img src="${escapeHtml(img.dataUri)}" alt="Pasted ${i + 1}">
+      <button type="button" class="image-attach-remove" aria-label="Remove">
+        <span class="material-symbols-rounded" style="font-size:12px">close</span>
+      </button>
+    </div>
+  `).join('');
+  el.querySelectorAll('.image-attach-thumb').forEach(thumb => {
+    thumb.addEventListener('mousedown', (e) => e.preventDefault());
+    thumb.addEventListener('click', () => {
+      const idx = Number(thumb.dataset.index);
+      if (window._inputRouter) window._inputRouter.removePastedImage(idx);
+    });
+  });
+}
+
+async function persistCurrentConversation() {
+  if (!window._aiQuery || !window._aiQuery.isFollowUp()) return;
+  const meta = window._aiQuery.getSessionMeta();
+  if (!meta || !meta.id) return;
+  const aiContainer = document.getElementById('ai-response-container');
+  const textEl = aiContainer.querySelector('.ai-text');
+  const preview = textEl ? textEl.textContent.trim().slice(0, 160) : '';
+  try {
+    await window.trim.saveConversation({
+      id: meta.id,
+      title: meta.title || 'Untitled',
+      mode: meta.mode || 'ai',
+      preview,
+      html: aiContainer.innerHTML,
+    });
+  } catch (err) {
+    console.error('Failed to save conversation:', err);
+  }
+}
+
+async function archiveCurrentConversation() {
+  if (!window._aiQuery || !window._aiQuery.isFollowUp()) return;
+  await persistCurrentConversation();
+}
+
+async function showConversationHistory(mode) {
+  const list = await window.trim.listConversations().catch(() => []);
+  const filtered = (list || []);
+  if (!filtered.length) {
+    restoreAIArea();
+    return;
+  }
+
+  const results = filtered.slice(0, 8).map(c => {
+    const when = formatRelativeTime(c.updatedAt);
+    return {
+      type: 'ai-history',
+      icon: 'history',
+      title: c.title || 'Untitled chat',
+      subtitle: `${c.mode === 'ai_pro' ? 'Pro' : 'Flash'}${when ? ` Â· ${when}` : ''}${c.preview ? ` â€” ${c.preview}` : ''}`,
+      action: () => openConversation(c.id),
+    };
+  });
+
+  // Keep a "new chat" row at top
+  results.unshift({
+    type: 'placeholder',
+    icon: 'edit_square',
+    title: mode === 'ai_pro' ? 'New Pro chat' : 'New chat',
+    subtitle: 'Just keep typing to start a new chat',
+  });
+
+  renderResults(results);
+}
+
+function formatRelativeTime(ts) {
+  if (!ts) return '';
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(ts).toLocaleDateString();
+}
+
+async function openConversation(id) {
+  const entry = await window.trim.loadConversation(id);
+  if (!entry || entry.error) return;
+
+  if (window._aiQuery) {
+    window._aiQuery.restoreSession({
+      id: entry.id,
+      title: entry.title,
+      mode: entry.mode,
+    });
+  }
+
+  const aiContainer = document.getElementById('ai-response-container');
+  const container = document.getElementById('results-container');
+  const settingsPanel = document.getElementById('settings-panel');
+  container.classList.add('hidden');
+  settingsPanel.classList.add('hidden');
+  aiContainer.classList.remove('hidden');
+  aiContainer.innerHTML = entry.html || '<div class="ai-text"><p>Empty conversation.</p></div>';
+  document.getElementById('search-bar').classList.add('has-results');
+  postProcessCodeBlocks(aiContainer);
+
+  const prefix = entry.mode === 'ai_pro' ? '?? ' : '? ';
+  const searchInput = document.getElementById('search-input');
+  searchInput.value = prefix;
+  if (window._inputRouter) window._inputRouter.refreshInputDecor(searchInput);
+  searchInput.setSelectionRange(prefix.length, prefix.length);
+  searchInput.focus();
+
+  requestAnimationFrame(() => {
+    const h = getBarHeight() + aiContainer.scrollHeight;
+    window.trim.resizeWindow(Math.min(h, 500));
+    smartScroll(aiContainer);
+  });
 }
 
 function smartScroll(aiContainer) {
@@ -1126,18 +1330,25 @@ function restoreAIArea() {
   }
 }
 
-function collectPastedImages() {
-  if (!window._inputRouter) return [];
-  const img = window._inputRouter.getPastedImage();
-  if (!img) return [];
-  window._inputRouter.clearPastedImage();
-  return [img];
-}
-
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
 }
 
-window._ui = { init, renderResults, showAILoading, updateAIStatus, renderAIResponse, clearResults, restoreAIArea, showConfirmation, loadHotfixContext, createLoadingSpinner };
+window._ui = {
+  init,
+  renderResults,
+  showAILoading,
+  updateAIStatus,
+  renderAIResponse,
+  clearResults,
+  restoreAIArea,
+  showConfirmation,
+  loadHotfixContext,
+  createLoadingSpinner,
+  persistCurrentConversation,
+  archiveCurrentConversation,
+  showConversationHistory,
+  renderImageAttachments,
+};
