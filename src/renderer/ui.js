@@ -1336,6 +1336,14 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+async function resetAISession() {
+  if (window._aiQuery && window._aiQuery.isFollowUp()) {
+    await archiveCurrentConversation();
+  }
+  clearResults();
+  await window.trim.cleanup();
+}
+
 window._ui = {
   init,
   renderResults,
@@ -1349,6 +1357,7 @@ window._ui = {
   createLoadingSpinner,
   persistCurrentConversation,
   archiveCurrentConversation,
+  resetAISession,
   showConversationHistory,
   renderImageAttachments,
 };

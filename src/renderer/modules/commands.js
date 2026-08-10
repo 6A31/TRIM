@@ -18,7 +18,7 @@ register('/help', {
       { type: 'command', icon: 'attach_file', title: '#filename', subtitle: 'Attach a file to your AI query (Tab to autocomplete)' },
       { type: 'command', icon: 'calculate', title: 'c: expression', subtitle: 'Math: evaluate, solve, plot, derive, integrate, factor' },
       { type: 'command', icon: 'folder_open', title: 'f: path', subtitle: 'Browse and open files and folders on your system' },
-      { type: 'command', icon: 'terminal', title: '/ command', subtitle: '/settings, /clear (reset AI), /history, /reload, /help' },
+      { type: 'command', icon: 'terminal', title: '/ command', subtitle: '/settings, /clear (reset AI chat), /history, /reload, /help' },
     ];
     window._ui.renderResults(helpResults);
   },
@@ -36,16 +36,20 @@ register('/reload', {
 });
 
 register('/clear', {
-  description: 'Clear search, AI context, and temp files',
-  icon: 'clear_all',
-  execute: () => {
+  description: 'Reset current AI chat (saved history is kept)',
+  icon: 'restart_alt',
+  execute: async () => {
     document.getElementById('search-input').value = '';
-    window._ui.clearResults();
     if (window._chips) {
       window._chips.deactivate('force_code');
       window._chips.updateMode('app');
     }
-    window.trim.cleanup();
+    if (window._ui && window._ui.resetAISession) {
+      await window._ui.resetAISession();
+    } else {
+      window._ui.clearResults();
+      await window.trim.cleanup();
+    }
     document.getElementById('search-input').dispatchEvent(new Event('input'));
   },
 });

@@ -535,7 +535,134 @@ function findPython() {
 
 let pythonCmd = null;
 
-// All Python execution uses a temp venv - no global pip installs.
+/** Packages preinstalled into the persistent Trim Python environment */
+const CORE_PYTHON_PACKAGES = [
+  'numpy', 'matplotlib', 'pandas', 'scipy', 'sympy', 'Pillow', 'requests',
+];
+
+function execFileAsync(cmd, args, opts = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, opts, (err, stdout, stderr) => {
+      if (err) reject(Object.assign(err, { stdout, stderr }));
+      else resolve({ stdout: stdout || '', stderr: stderr || '' });
+    });
+  });
+}
+
+function getPersistentVenvDir() {
+  return path.join(app.getPath('userData'), 'python-venv');
+}
+
+function getPersistentVenvPython() {
+  const dir = getPersistentVenvDir();
+  return process.platform === 'win32'
+    ? path.join(dir, 'Scripts', 'python.exe')
+    : path.join(dir, 'bin', 'python');
+}
+
+function getInstalledPackagesPath() {
+  return path.join(getPersistentVenvDir(), '.trim-installed.json');
+}
+
+function loadInstalledPackages() {
+  try {
+    const raw = fs.readFileSync(getInstalledPackagesPath(), 'utf-8');
+    const list = JSON.parse(raw);
+    return new Set(Array.isArray(list) ? list : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveInstalledPackages(set) {
+  try {
+    fs.mkdirSync(getPersistentVenvDir(), { recursive: true });
+    fs.writeFileSync(getInstalledPackagesPath(), JSON.stringify([...set]), 'utf-8');
+  } catch {}
+}
+
+let installedPackages = null;
+let venvEnsurePromise = null;
+
+function getInstalledPackages() {
+  if (!installedPackages) installedPackages = loadInstalledPackages();
+  return installedPackages;
+}
+
+function packageKey(name) {
+  return String(name).split('[')[0].trim().toLowerCase();
+}
+
+function resetAISessionState() {
+  chatHistory = null;
+  turnCounter = 0;
+  fileChangeLog = [];
+  turnContentOffsets.clear();
+}
+
+async function ensurePersistentVenv(event) {
+  const venvPy = getPersistentVenvPython();
+  if (fs.existsSync(venvPy)) {
+    return { dir: getPersistentVenvDir(), python: venvPy };
+  }
+
+  if (venvEnsurePromise) return venvEnsurePromise;
+
+  venvEnsurePromise = (async () => {
+    if (!pythonCmd) pythonCmd = findPython();
+    if (!pythonCmd) return null;
+
+    const venvDir = getPersistentVenvDir();
+    if (event) sendStatus(event, 'Setting up Python environment...');
+    await execFileAsync(pythonCmd, ['-m', 'venv', venvDir], { timeout: 120000 });
+
+    const py = getPersistentVenvPython();
+    if (event) sendStatus(event, 'Installing core Python packages...');
+    await execFileAsync(py, ['-m', 'pip', 'install', '--upgrade', 'pip', '--quiet'], { timeout: 120000 });
+    await execFileAsync(py, ['-m', 'pip', 'install', ...CORE_PYTHON_PACKAGES, '--quiet'], { timeout: 300000 });
+
+    const pkgs = getInstalledPackages();
+    for (const pkg of CORE_PYTHON_PACKAGES) pkgs.add(packageKey(pkg));
+    saveInstalledPackages(pkgs);
+
+    return { dir: venvDir, python: py };
+  })().finally(() => {
+    venvEnsurePromise = null;
+  });
+
+  return venvEnsurePromise;
+}
+
+async function installPackagesAsync(py, packages, event) {
+  if (!packages || packages.length === 0) return;
+
+  const safePackageRe = /^[a-zA-Z0-9][a-zA-Z0-9._-]*(?:\[.*\])?$/;
+  const pkgs = getInstalledPackages();
+  const toInstall = [];
+
+  for (const pkg of packages) {
+    if (!safePackageRe.test(pkg)) throw new Error(`Invalid package name: ${pkg}`);
+    if (!pkgs.has(packageKey(pkg))) toInstall.push(pkg);
+  }
+
+  if (toInstall.length === 0) return;
+
+  if (event) sendStatus(event, `Installing ${toInstall.join(', ')}...`);
+  await execFileAsync(py, ['-m', 'pip', 'install', ...toInstall, '--quiet'], { timeout: 180000 });
+
+  for (const pkg of toInstall) pkgs.add(packageKey(pkg));
+  saveInstalledPackages(pkgs);
+}
+
+async function resetPythonEnvironment() {
+  venvEnsurePromise = null;
+  installedPackages = new Set();
+  try { fs.rmSync(getPersistentVenvDir(), { recursive: true, force: true }); } catch {}
+  cleanupOrphanedTempDirs();
+  return true;
+}
+
+// Python runs in a persistent app venv when third-party packages are requested
 function needsVenv(packages) {
   return packages && packages.length > 0;
 }
@@ -552,61 +679,17 @@ function cleanupOrphanedTempDirs() {
   } catch {}
 }
 
-function createTempVenv() {
-  if (!pythonCmd) pythonCmd = findPython();
-  if (!pythonCmd) return null;
-
-  const venvDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trim-py-venv-'));
-  const venvPy = process.platform === 'win32'
-    ? path.join(venvDir, 'Scripts', 'python.exe')
-    : path.join(venvDir, 'bin', 'python');
-
-  try {
-    execFileSync(pythonCmd, ['-m', 'venv', venvDir], { stdio: 'pipe', timeout: 30000 });
-  } catch {
-    try { fs.rmSync(venvDir, { recursive: true, force: true }); } catch {}
-    return null;
+async function runPythonCode(py, code, packages, plotPath, workingDir, event) {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trim-py-'));
+  const scriptPath = path.join(tmpDir, 'script.py');
+  let cwd = tmpDir;
+  if (workingDir) {
+    try { if (fs.statSync(workingDir).isDirectory()) cwd = workingDir; } catch {}
   }
 
-  return { dir: venvDir, python: venvPy };
-}
+  try {
+    await installPackagesAsync(py, packages, event);
 
-function cleanupVenv(venv) {
-  if (!venv) return;
-  try { fs.rmSync(venv.dir, { recursive: true, force: true }); } catch {}
-}
-
-function runPythonCode(py, code, packages, plotPath, workingDir) {
-  return new Promise((resolve) => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trim-py-'));
-    const scriptPath = path.join(tmpDir, 'script.py');
-    // Use caller-specified working directory if valid, otherwise fall back to tmpDir
-    let cwd = tmpDir;
-    if (workingDir) {
-      try { if (fs.statSync(workingDir).isDirectory()) cwd = workingDir; } catch {}
-    }
-
-    // Install packages (into venv or global depending on caller)
-    if (packages && packages.length > 0) {
-      try {
-        const safePackageRe = /^[a-zA-Z0-9][a-zA-Z0-9._-]*(?:\[.*\])?$/;
-        for (const pkg of packages) {
-          if (!safePackageRe.test(pkg)) {
-            resolve({ error: `Invalid package name: ${pkg}` });
-            return;
-          }
-        }
-        execFileSync(py, ['-m', 'pip', 'install', ...packages, '--quiet'], {
-          stdio: 'pipe',
-          timeout: 60000,
-        });
-      } catch (err) {
-        resolve({ error: `Failed to install packages: ${err.message}` });
-        return;
-      }
-    }
-
-    // Prepend plot path + matplotlib config + monkeypatch plt.show() to savefig
     const preamble = `import os as _os, warnings as _w
 PLOT_PATH = ${JSON.stringify(plotPath)}
 _os.environ['PLOT_PATH'] = PLOT_PATH
@@ -622,33 +705,40 @@ except ImportError:
 
     fs.writeFileSync(scriptPath, preamble + code, 'utf-8');
 
-    execFile(py, [scriptPath], {
+    const { stdout, stderr } = await execFileAsync(py, [scriptPath], {
       cwd,
       timeout: 30000,
       maxBuffer: 5 * 1024 * 1024,
-    }, (err, stdout, stderr) => {
-      let plot = null;
-      if (fs.existsSync(plotPath)) {
-        const buf = fs.readFileSync(plotPath);
-        plot = `data:image/png;base64,${buf.toString('base64')}`;
-      }
-
-      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
-      try { if (fs.existsSync(plotPath)) fs.unlinkSync(plotPath); } catch {}
-
-      if (err && !stdout && !stderr) {
-        resolve({ error: err.message, plot });
-      } else {
-        const output = (stdout || '').trim();
-        const errOutput = (stderr || '').trim();
-        resolve({
-          stdout: output,
-          error: errOutput || (err ? err.message : null),
-          plot,
-        });
-      }
     });
-  });
+
+    let plot = null;
+    if (fs.existsSync(plotPath)) {
+      const buf = fs.readFileSync(plotPath);
+      plot = `data:image/png;base64,${buf.toString('base64')}`;
+    }
+
+    return {
+      stdout: stdout || '',
+      stderr: stderr || '',
+      plot,
+      error: null,
+    };
+  } catch (err) {
+    const stdout = err.stdout || '';
+    const stderr = err.stderr || err.message || '';
+    let plot = null;
+    if (fs.existsSync(plotPath)) {
+      const buf = fs.readFileSync(plotPath);
+      plot = `data:image/png;base64,${buf.toString('base64')}`;
+    }
+    if (plot || stdout || stderr) {
+      return { stdout, stderr, plot, error: plot || stdout ? null : stderr };
+    }
+    return { error: stderr || 'Python execution failed.' };
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    try { if (fs.existsSync(plotPath)) fs.unlinkSync(plotPath); } catch {}
+  }
 }
 
 // --- File operation helpers ---
@@ -1008,8 +1098,6 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
 
   sendStatus(event, usePro ? 'Asking Gemini Pro...' : 'Asking Gemini...');
 
-  let venv = null;
-
   try {
     // Resolve #file references in the query
     const { text: resolvedQuery, extraParts } = resolveFileReferences(query);
@@ -1097,27 +1185,21 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
             const showOutput = forceShowOutput || fc.args?.show_output !== false;
             const workingDir = fc.args?.working_directory || null;
 
-            // Decide: use global Python (fast) or temp venv (exotic packages)
+            // Persistent app venv for third-party packages; bundled/system Python for stdlib-only
             let py;
             if (needsVenv(packages)) {
-              if (!venv) {
-                sendStatus(event, 'Setting up Python environment...');
-                venv = createTempVenv();
-                if (!venv) {
-                  responseParts.push({
-                    functionResponse: {
-                      name: 'run_python',
-                      response: { result: { error: 'Python 3 not found.' } },
-                      id: fc.id,
-                    },
-                  });
-                  continue;
-                }
+              const env = await ensurePersistentVenv(event);
+              if (!env) {
+                responseParts.push({
+                  functionResponse: {
+                    name: 'run_python',
+                    response: { result: { error: 'Python 3 not found.' } },
+                    id: fc.id,
+                  },
+                });
+                continue;
               }
-              py = venv.python;
-              if (packages.length > 0) {
-                sendStatus(event, `Installing ${packages.join(', ')}...`);
-              }
+              py = env.python;
             } else {
               if (!pythonCmd) pythonCmd = findPython();
               if (!pythonCmd) {
@@ -1136,7 +1218,7 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
             sendStatus(event, 'Running Python code...');
 
             const plotPath = path.join(os.tmpdir(), `trim-plot-${Date.now()}.png`);
-            const pyResult = await runPythonCode(py, code, packages, plotPath, workingDir);
+            const pyResult = await runPythonCode(py, code, packages, plotPath, workingDir, event);
 
             if (showOutput) {
               codeOutputs.push({
@@ -1377,9 +1459,6 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
     } // end outer while
   } catch (err) {
     return { error: friendlyError(err) };
-  } finally {
-    // Always clean up venv after query completes
-    cleanupVenv(venv);
   }
 }
 
@@ -1911,12 +1990,18 @@ function registerHandlers(ipcMain) {
   });
 
   ipcMain.handle(IPC.CLEANUP, async () => {
-    chatHistory = null;
-    turnCounter = 0;
-    fileChangeLog = [];
-    turnContentOffsets.clear();
-    cleanupOrphanedTempDirs();
+    resetAISessionState();
     return true;
+  });
+
+  ipcMain.handle(IPC.CLEAR_AI_HISTORY, async () => {
+    saveConversationsSync([]);
+    return { ok: true };
+  });
+
+  ipcMain.handle(IPC.RESET_PYTHON_ENV, async () => {
+    await resetPythonEnvironment();
+    return { ok: true };
   });
 
   ipcMain.handle(IPC.AI_HISTORY_LIST, async () => {

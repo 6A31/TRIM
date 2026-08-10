@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('trim', {
   offAIStatus:   ()           => ipcRenderer.removeAllListeners('trim:ai-status'),
   cleanup:       ()           => ipcRenderer.invoke('trim:cleanup'),
   clearCache:    ()           => ipcRenderer.invoke('trim:clear-cache'),
+  clearAIHistory: ()         => ipcRenderer.invoke('trim:clear-ai-history'),
+  resetPythonEnv: ()          => ipcRenderer.invoke('trim:reset-python-env'),
   getCacheSize:  ()           => ipcRenderer.invoke('trim:get-cache-size'),
   onConfirmAction: (cb)       => ipcRenderer.on('trim:confirm-action', (_e, details) => cb(details)),
   respondConfirmAction: (approved) => ipcRenderer.send('trim:confirm-action-response', approved),

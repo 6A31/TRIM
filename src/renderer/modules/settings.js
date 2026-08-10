@@ -405,12 +405,38 @@ async function render() {
       </span>
     </div>
 
-    <div class="settings-group" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
-      <label class="settings-label">Cache</label>
-      <div class="settings-description">Clears app list, icons, usage data, and file search cache. Apps will be re-scanned.</div>
+    <div class="settings-divider"></div>
+
+    <!-- ─── Data & cleanup ─── -->
+    <div class="settings-section-title">
+      <span class="material-symbols-rounded" style="font-size:16px">cleaning_services</span>
+      Data & cleanup
+    </div>
+
+    <div class="settings-group">
+      <label class="settings-label">App cache</label>
+      <div class="settings-description">Launcher icons, app list, usage stats, and file search index. Apps are re-scanned automatically.</div>
       <button class="settings-danger-btn" id="settings-clear-cache-btn">
         <span class="material-symbols-rounded" style="font-size:16px">delete_sweep</span>
-        Clear Cache (${cacheSizeLabel})
+        Clear app cache (${cacheSizeLabel})
+      </button>
+    </div>
+
+    <div class="settings-group">
+      <label class="settings-label">AI chat history</label>
+      <div class="settings-description">Permanently delete all saved AI conversations. Your current chat session is also reset.</div>
+      <button class="settings-danger-btn" id="settings-clear-ai-history-btn">
+        <span class="material-symbols-rounded" style="font-size:16px">history</span>
+        Clear AI history
+      </button>
+    </div>
+
+    <div class="settings-group">
+      <label class="settings-label">Python environment</label>
+      <div class="settings-description">Remove the persistent Python venv and leftover temp folders. Packages reinstall on next use.</div>
+      <button class="settings-danger-btn" id="settings-reset-python-btn">
+        <span class="material-symbols-rounded" style="font-size:16px">terminal</span>
+        Reset Python environment
       </button>
     </div>
   `;
@@ -510,6 +536,26 @@ async function render() {
     await window.trim.clearCache();
     const btn = document.getElementById('settings-clear-cache-btn');
     btn.innerHTML = '<span class="material-symbols-rounded" style="font-size:16px">check_circle</span> Cleared (0 B)';
+    setTimeout(() => render(), 2000);
+  });
+
+  panel.querySelector('#settings-clear-ai-history-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('settings-clear-ai-history-btn');
+    btn.disabled = true;
+    await window.trim.clearAIHistory();
+    if (window._ui) {
+      window._ui.clearResults();
+      await window.trim.cleanup();
+    }
+    btn.innerHTML = '<span class="material-symbols-rounded" style="font-size:16px">check_circle</span> AI history cleared';
+    setTimeout(() => render(), 2000);
+  });
+
+  panel.querySelector('#settings-reset-python-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('settings-reset-python-btn');
+    btn.disabled = true;
+    await window.trim.resetPythonEnv();
+    btn.innerHTML = '<span class="material-symbols-rounded" style="font-size:16px">check_circle</span> Python environment reset';
     setTimeout(() => render(), 2000);
   });
 

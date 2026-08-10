@@ -128,17 +128,14 @@ function init() {
     updateModeIndicator(raw);
     refreshInputDecor(input);
 
-    // Empty input - always clear and shrink (archives AI chat; starts a new convo)
+    // Empty input - archive active chat and reset session (saved history is kept)
     if (!raw.trim()) {
       clearTimeout(debounceTimer);
-      const finishClear = () => {
+      if (window._ui && window._ui.resetAISession) {
+        window._ui.resetAISession();
+      } else if (window._ui) {
         window._ui.clearResults();
         window.trim.cleanup();
-      };
-      if (window._ui && window._ui.archiveCurrentConversation) {
-        window._ui.archiveCurrentConversation().then(finishClear).catch(finishClear);
-      } else if (window._ui) {
-        finishClear();
       }
       return;
     }
