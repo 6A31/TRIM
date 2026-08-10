@@ -756,17 +756,25 @@ function updateAIStatus(statusText) {
 
 function sanitizeHTML(html) {
   if (typeof DOMPurify !== 'undefined') {
-    return DOMPurify.sanitize(html, {
-      ALLOWED_TAGS: [
-        'p', 'br', 'strong', 'em', 'b', 'i', 'u', 's', 'del', 'ins',
-        'ul', 'ol', 'li', 'code', 'pre', 'div', 'span', 'img', 'a', 'button',
-        'table', 'thead', 'tbody', 'tr', 'th', 'td',
-        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-        'blockquote', 'hr', 'sup', 'sub',
-      ],
-      ALLOWED_ATTR: ['class', 'style', 'alt', 'src', 'title', 'href', 'data-uri', 'target', 'rel', 'align'],
-      ALLOW_DATA_ATTR: false,
-    });
+    const config = (window._aiSanitize && window._aiSanitize.getAiHtmlSanitizeConfig)
+      ? window._aiSanitize.getAiHtmlSanitizeConfig()
+      : {
+          ALLOWED_TAGS: [
+            'p', 'br', 'strong', 'em', 'b', 'i', 'u', 's', 'del', 'ins',
+            'ul', 'ol', 'li', 'code', 'pre', 'div', 'span', 'img', 'a', 'button',
+            'table', 'thead', 'tbody', 'tr', 'th', 'td',
+            'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+            'blockquote', 'hr', 'sup', 'sub',
+            'svg', 'path', 'line', 'g', 'math', 'semantics', 'mrow', 'mi', 'mo', 'mn',
+            'msup', 'msub', 'mfrac', 'msqrt', 'mroot', 'annotation',
+          ],
+          ALLOWED_ATTR: [
+            'class', 'style', 'alt', 'src', 'title', 'href', 'data-uri', 'target', 'rel', 'align',
+            'viewBox', 'xmlns', 'd', 'width', 'height', 'preserveAspectRatio', 'aria-hidden',
+          ],
+          ALLOW_DATA_ATTR: false,
+        };
+    return DOMPurify.sanitize(html, config);
   }
   return html.replace(/<[^>]*>/g, '');
 }

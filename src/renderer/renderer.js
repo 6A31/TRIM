@@ -4,6 +4,7 @@
 // Modules
 const moduleScripts = [
   '../shared/markdownFormat.js',
+  '../shared/aiSanitize.js',
   'modules/appSearch.js',
   'modules/aiQuery.js',
   'modules/calculator.js',

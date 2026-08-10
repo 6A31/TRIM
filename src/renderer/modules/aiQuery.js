@@ -151,8 +151,11 @@ function protectMath(text) {
 
   // Inline math
   text = text.replace(/\$([^\$\n]+?)\$/g, (_m, expr) => {
-    // Skip likely currency like $5 or $12.99
-    if (/^\d/.test(expr.trim())) return _m;
+    // Skip currency like $5 / $12.99, but keep real math ($3^{\frac{1}{3}}$, $2x$, …)
+    const isCurrency = (typeof window !== 'undefined' && window._aiSanitize)
+      ? window._aiSanitize.isCurrencyLikeDollarMath(expr)
+      : /^\d+([.,]\d{1,2})?$/.test(expr.trim());
+    if (isCurrency) return _m;
     try {
       return stash(typeof katex !== 'undefined'
         ? katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false })
