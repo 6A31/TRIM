@@ -638,7 +638,7 @@ const MATH_FUNCS = {
   round: Math.round, ceil: Math.ceil, floor: Math.floor,
 };
 
-function _gcd(a, b) {
+function _gcdPair(a, b) {
   if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isInteger(a) || !Number.isInteger(b)) return NaN;
   a = Math.abs(a);
   b = Math.abs(b);
@@ -648,12 +648,34 @@ function _gcd(a, b) {
   return a;
 }
 
-function _lcm(a, b) {
+function _lcmPair(a, b) {
   if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isInteger(a) || !Number.isInteger(b)) return NaN;
   a = Math.abs(a);
   b = Math.abs(b);
   if (!a || !b) return 0;
-  return (a / _gcd(a, b)) * b;
+  return (a / _gcdPair(a, b)) * b;
+}
+
+/** N-ary GCD: requires ≥2 integers; any non-integer → NaN (fail closed). */
+function _gcd(...nums) {
+  if (nums.length < 2) return NaN;
+  let acc = nums[0];
+  for (let i = 1; i < nums.length; i++) {
+    acc = _gcdPair(acc, nums[i]);
+    if (!Number.isFinite(acc)) return NaN;
+  }
+  return acc;
+}
+
+/** N-ary LCM: requires ≥2 integers; any non-integer → NaN (fail closed). */
+function _lcm(...nums) {
+  if (nums.length < 2) return NaN;
+  let acc = nums[0];
+  for (let i = 1; i < nums.length; i++) {
+    acc = _lcmPair(acc, nums[i]);
+    if (!Number.isFinite(acc)) return NaN;
+  }
+  return acc;
 }
 
 const MATH_FUNCS_2 = {
@@ -813,21 +835,23 @@ function parsePrimary(ctx) {
 
   if (tok.type === 'func') {
     consume(ctx);
-    const fn2 = MATH_FUNCS_2[tok.name];
+    const fnN = MATH_FUNCS_2[tok.name];
     const fn = MATH_FUNCS[tok.name];
     if (!peek(ctx) || peek(ctx).value !== '(') throw new Error('expected ( after function');
     consume(ctx);
-    const arg1 = parseExpr(ctx);
-    if (fn2 && peek(ctx) && peek(ctx).value === ',') {
+    const args = [parseExpr(ctx)];
+    while (peek(ctx) && peek(ctx).value === ',') {
       consume(ctx);
-      const arg2 = parseExpr(ctx);
-      if (!peek(ctx) || peek(ctx).value !== ')') throw new Error('expected )');
-      consume(ctx);
-      return fn2(arg1, arg2);
+      args.push(parseExpr(ctx));
     }
     if (!peek(ctx) || peek(ctx).value !== ')') throw new Error('expected )');
     consume(ctx);
-    return fn(arg1);
+    if (fnN) {
+      if (args.length < 2) throw new Error('expected at least 2 args');
+      return fnN(...args);
+    }
+    if (args.length !== 1) throw new Error('expected 1 arg');
+    return fn(args[0]);
   }
 
   if (tok.type === 'num') {

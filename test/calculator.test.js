@@ -483,6 +483,84 @@ describe('Combined & Edge Cases', () => {
   });
 });
 
+describe('GCD/LCM n-ary, nesting, precedence', () => {
+  it('n-ary equals nested reduce: ggt(48,18,30) === ggt(ggt(48,18),30)', () => {
+    assert.equal(evaluate('ggt(48,18,30)'), evaluate('ggt(ggt(48,18),30)'));
+    assert.equal(evaluate('ggt(48,18,30)'), 6);
+  });
+
+  it('nested both sides: ggt(ggt(4,8),ggt(8,16)) = 4', () => {
+    assert.equal(evaluate('ggt(ggt(4,8),ggt(8,16))'), 4);
+  });
+
+  it('deep nest: ggt(ggt(ggt(48,18),30),12) = 6', () => {
+    assert.equal(evaluate('ggt(ggt(ggt(48,18),30),12)'), 6);
+  });
+
+  it('lcm n-ary equals nest: lcm(2,3,4) === lcm(lcm(2,3),4)', () => {
+    assert.equal(evaluate('lcm(2,3,4)'), evaluate('lcm(lcm(2,3),4)'));
+    assert.equal(evaluate('lcm(2,3,4)'), 12);
+  });
+
+  it('mixed: lcm(ggt(12,8),3) = 12 and ggt(lcm(4,6),9) = 3', () => {
+    assert.equal(evaluate('lcm(ggt(12,8),3)'), 12);
+    assert.equal(evaluate('ggt(lcm(4,6),9)'), 3);
+  });
+
+  it('precedence: 2+ggt(12,8)*3 = 14 (* before +)', () => {
+    assert.equal(evaluate('2+ggt(12,8)*3'), 14);
+  });
+
+  it('precedence: ggt(12,8)^2 = 16 and 2^ggt(4,2) = 4', () => {
+    assert.equal(evaluate('ggt(12,8)^2'), 16);
+    assert.equal(evaluate('2^ggt(4,2)'), 4);
+  });
+
+  it('unary minus / percent: -ggt(12,8) = -4, ggt(12,8)% = 0.04', () => {
+    assert.equal(evaluate('-ggt(12,8)'), -4);
+    assert.equal(evaluate('ggt(12,8)%'), 0.04);
+  });
+
+  it('mul chain either side: 15*2*ggt(14,24) and ggt(14,24)*15*2', () => {
+    assert.equal(evaluate('15*2*ggt(14,24)'), 60);
+    assert.equal(evaluate('ggt(14,24)*15*2'), 60);
+  });
+
+  it('args with ops: ggt(2+4,9)=3, ggt(2*6,3*3)=3', () => {
+    assert.equal(evaluate('ggt(2+4,9)'), 3);
+    assert.equal(evaluate('ggt(2*6,3*3)'), 3);
+  });
+
+  it('parens binding: (ggt(12,8)+2)*3 = 18', () => {
+    assert.equal(evaluate('(ggt(12,8)+2)*3'), 18);
+  });
+
+  it('many args: ggt(12,8,4,16,32)=4, kgv(2,4,8,3)=24', () => {
+    assert.equal(evaluate('ggt(12,8,4,16,32)'), 4);
+    assert.equal(evaluate('kgv(2,4,8,3)'), 24);
+  });
+
+  it('n-ary negatives/zeros: ggt(-12,-8,4)=4, ggt(0,0,5)=5, lcm(0,5,10)=0', () => {
+    assert.equal(evaluate('ggt(-12,-8,4)'), 4);
+    assert.equal(evaluate('ggt(0,0,5)'), 5);
+    assert.equal(evaluate('ggt(0,0,0)'), 0);
+    assert.equal(evaluate('lcm(0,5,10)'), 0);
+  });
+
+  it('fail closed: empty/one-arg/bad commas/non-integers/space-separated', () => {
+    assert.equal(evaluate('ggt()'), undefined);
+    assert.equal(evaluate('ggt(12)'), undefined);
+    assert.equal(evaluate('ggt(12,)'), undefined);
+    assert.equal(evaluate('ggt(,12)'), undefined);
+    assert.equal(evaluate('ggt(12,8,)'), undefined);
+    assert.equal(evaluate('ggt(1.5,3)'), undefined);
+    assert.equal(evaluate('ggt(12,8,2.5)'), undefined);
+    assert.equal(evaluate('lcm(2,3,1.1)'), undefined);
+    assert.equal(evaluate('ggt(12 8)'), undefined);
+    assert.equal(evaluate('ggt(ggt(12),8)'), undefined);
+  });
+});
+
 describe('Implicit Multiplication', () => {
   it('2(3+4) = 14', () => {
     assert.equal(evaluate('2(3+4)'), 14);
@@ -642,11 +720,26 @@ describe('Error handling: must return undefined', () => {
   it('sin pi → undefined (func without parens)', () => {
     assert.equal(evaluate('sin pi'), undefined);
   });
-  it('gcd(12, 8, 4) → undefined (too many args)', () => {
-    assert.equal(evaluate('gcd(12, 8, 4)'), undefined);
+  it('gcd(12, 8, 4) = 4 (n-ary)', () => {
+    assert.equal(evaluate('gcd(12, 8, 4)'), 4);
+  });
+  it('ggt(48, 18, 30) = 6 (n-ary German alias)', () => {
+    assert.equal(evaluate('ggt(48, 18, 30)'), 6);
+  });
+  it('lcm(2, 3, 4) = 12 (n-ary)', () => {
+    assert.equal(evaluate('lcm(2, 3, 4)'), 12);
+  });
+  it('15 * 2 * ggt(14, 24) = 60', () => {
+    assert.equal(evaluate('15 * 2 * ggt(14, 24)'), 60);
+  });
+  it('gcd(12) → undefined (needs ≥2 args)', () => {
+    assert.equal(evaluate('gcd(12)'), undefined);
   });
   it('gcd(2.6, 1.2) → undefined (integer-only function)', () => {
     assert.equal(evaluate('gcd(2.6, 1.2)'), undefined);
+  });
+  it('gcd(12, 8, 2.5) → undefined (any non-integer fails closed)', () => {
+    assert.equal(evaluate('gcd(12, 8, 2.5)'), undefined);
   });
   it('lcm(2.6, 1.2) → undefined (integer-only function)', () => {
     assert.equal(evaluate('lcm(2.6, 1.2)'), undefined);
