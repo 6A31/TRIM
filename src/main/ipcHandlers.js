@@ -1308,9 +1308,6 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
       } else {
         // Final response - extract text, sources, and any codeExecution inline results
         let text = response.text || '';
-        // Strip any leaked generate_image tool-call JSON from the text
-        text = text.replace(/```(?:json)?\s*\{[^`]*?generate_image[^`]*?\}\s*```/g, '').trim();
-        text = text.replace(/\{[^{}]*"generate_image"[^{}]*\}/g, '').trim();
         const grounding = candidate?.groundingMetadata;
         const sources = grounding?.groundingChunks
           ?.filter(c => c.web)
@@ -1354,6 +1351,8 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
           codeOutputs.push({ code: currentCode, stdout: currentOutput, error: null, plot: null });
         }
 
+        text = sanitizeAIResponseText(text, { hasGeneratedImages: generatedImages.length > 0 });
+
         // Save conversation history for follow-ups
         if (candidate?.content) {
           contents.push(candidate.content);
@@ -1382,6 +1381,27 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
     // Always clean up venv after query completes
     cleanupVenv(venv);
   }
+}
+
+/** Remove tool-call / grounding blobs Gemini sometimes leaks into visible text */
+function sanitizeAIResponseText(text, { hasGeneratedImages = false } = {}) {
+  if (!text) return '';
+
+  // Fenced or inline generate_image JSON
+  text = text.replace(/```(?:json)?\s*\{[^`]*?generate_image[^`]*?\}\s*```/gi, '').trim();
+  text = text.replace(/\{[^{}]*"generate_image"[^{}]*\}/gi, '').trim();
+
+  // Unquoted metadata blobs, e.g. {true: true,url:https://images.google.com/...}
+  text = text.replace(/\{[^{}]*\burl\s*:\s*https?:\/\/[^\s}]+[^}]*\}/gi, '').trim();
+
+  // When we already rendered a generated image, drop image-search URLs the model cites
+  if (hasGeneratedImages) {
+    text = text.replace(/https?:\/\/(?:www\.)?images\.google\.com\/search[^\s)>\]}"']*/gi, '').trim();
+  }
+
+  // Collapse extra blank lines left after stripping
+  text = text.replace(/\n{3,}/g, '\n\n').trim();
+  return text;
 }
 
 function friendlyError(err) {

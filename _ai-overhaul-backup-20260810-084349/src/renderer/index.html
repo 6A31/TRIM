@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self';">
+  <title>TRIM</title>
+  <link rel="stylesheet" href="vendor/fonts.css">
+  <link rel="stylesheet" href="styles/main.css">
+  <link rel="stylesheet" href="styles/search.css">
+  <link rel="stylesheet" href="styles/settings.css">
+  <link rel="stylesheet" href="styles/animations.css">
+  <link rel="stylesheet" href="vendor/katex.min.css">
+  <link rel="stylesheet" href="vendor/github-dark-dimmed.min.css">
+  <script defer src="vendor/purify.min.js"></script>
+  <script defer src="vendor/marked.min.js"></script>
+  <script defer src="vendor/katex.min.js"></script>
+  <script defer src="vendor/highlight.min.js"></script>
+  <script defer src="vendor/nerdamer.min.js"></script>
+  <script defer src="vendor/plotly.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <div id="search-bar">
+      <span class="material-symbols-rounded search-icon" id="search-mode-icon">search</span>
+      <div class="search-input-wrap">
+        <div id="search-input-overlay" aria-hidden="true"></div>
+        <input
+          type="text"
+          id="search-input"
+          placeholder="Search or type / for commands"
+          autocomplete="off"
+          spellcheck="false"
+        >
+      </div>
+      <div id="image-attachments"></div>
+      <div id="chip-container"></div>
+      <span class="search-hint" id="search-hint"></span>
+    </div>
+    <div id="results-container"></div>
+    <div id="ai-response-container" class="hidden"></div>
+    <div id="settings-panel" class="hidden"></div>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>

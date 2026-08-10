@@ -1,0 +1,105 @@
+{
+  "name": "trim",
+  "version": "1.5.2",
+  "description": "A Spotlight-like launcher for Windows and macOS",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "node launch.js",
+    "dev": "electron .",
+    "kill": "node scripts/kill.js",
+    "prepare:python:win": "node scripts/prepareBundledPython.js",
+    "test": "node --test test/**/*.test.js",
+    "build": "electron-builder",
+    "build:win": "node scripts/prepareBundledPython.js && set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder --win",
+    "build:mac": "node scripts/prepareBundledPython.js && electron-builder --mac"
+  },
+  "keywords": [],
+  "author": "6A31",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/6A31/TRIM.git"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "commonjs",
+  "dependencies": {
+    "@google/genai": "^1.48.0",
+    "electron-updater": "^6.8.3",
+    "nerdamer": "^1.1.13",
+    "playwright-core": "^1.59.1",
+    "plotly.js-dist-min": "^3.5.0"
+  },
+  "devDependencies": {
+    "@highlightjs/cdn-assets": "^11.11.1",
+    "dompurify": "^3.3.3",
+    "electron": "^41.1.1",
+    "electron-builder": "^26.8.1",
+    "highlight.js": "^11.11.1",
+    "katex": "^0.16.45",
+    "marked": "^15.0.12"
+  },
+  "build": {
+    "appId": "com.trim.launcher",
+    "productName": "TRIM",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/Trim Logo.ico",
+      "extraResources": [
+        {
+          "from": "vendor/python/",
+          "to": "python/",
+          "filter": [
+            "windows-*/**/*"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-Windows.${ext}"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/Trim Logo.icns",
+      "category": "public.app-category.utilities",
+      "extendInfo": {
+        "LSUIElement": true
+      },
+      "extraResources": [
+        {
+          "from": "vendor/python/",
+          "to": "python/",
+          "filter": [
+            "macos-*/**/*"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-macOS.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "installerIcon": "assets/Trim Logo.ico",
+      "uninstallerIcon": "assets/Trim Logo.ico"
+    },
+    "extraResources": [
+      {
+        "from": "scripts/",
+        "to": "scripts/",
+        "filter": [
+          "**/*.ps1"
+        ]
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "6A31",
+        "repo": "TRIM"
+      }
+    ]
+  }
+}

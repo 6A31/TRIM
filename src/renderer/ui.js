@@ -1129,7 +1129,7 @@ async function showConversationHistory(mode) {
       type: 'ai-history',
       icon: 'history',
       title: c.title || 'Untitled chat',
-      subtitle: `${c.mode === 'ai_pro' ? 'Pro' : 'Flash'}${when ? ` Â· ${when}` : ''}${c.preview ? ` â€” ${c.preview}` : ''}`,
+      subtitle: `${c.mode === 'ai_pro' ? 'Pro' : 'Flash'}${when ? ` \u00b7 ${when}` : ''}${c.preview ? ` \u2014 ${c.preview}` : ''}`,
       action: () => openConversation(c.id),
     };
   });

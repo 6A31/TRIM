@@ -1,0 +1,1751 @@
+let selectedIndex = -1;
+let currentResults = [];
+const MAX_VISIBLE = 8;
+const HOTFIX_SCALE_FACTOR = 1;
+let hotfixSettings = { showHints: false };
+let displayScaleFactor = window.devicePixelRatio || null;
+
+function init() {
+  document.addEventListener('keydown', handleKeyboard);
+  document.addEventListener('copy', handleAICopy);
+  void loadHotfixContext();
+}
+
+/** Copy AI answers as plain text / clean HTML so Word/docs don't get a dark background */
+function handleAICopy(e) {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+  const ai = document.getElementById('ai-response-container');
+  if (!ai || ai.classList.contains('hidden')) return;
+  const node = sel.anchorNode;
+  if (!node || !ai.contains(node.nodeType === 1 ? node : node.parentElement)) return;
+
+  const plain = sel.toString();
+  const range = sel.getRangeAt(0);
+  const frag = range.cloneContents();
+  const wrap = document.createElement('div');
+  wrap.appendChild(frag);
+  wrap.querySelectorAll('*').forEach(el => {
+    el.style.background = 'transparent';
+    el.style.backgroundColor = 'transparent';
+    el.removeAttribute('class');
+    // Keep readable text color for rich paste destinations
+    if (el.style) el.style.color = '#111111';
+  });
+  // Prefer plain text for most destinations; provide cleaned HTML as fallback
+  e.clipboardData.setData('text/plain', plain);
+  e.clipboardData.setData('text/html', `<div style="background:transparent;color:#111">${wrap.innerHTML}</div>`);
+  e.preventDefault();
+}
+
+async function loadHotfixContext() {
+  try {
+    const [settings, scaleFactor] = await Promise.all([
+      window.trim.loadSettings(),
+      window.trim.getDisplayScale(),
+    ]);
+    hotfixSettings = { ...hotfixSettings, ...(settings || {}) };
+    displayScaleFactor = Number(scaleFactor);
+  } catch {
+    hotfixSettings = { ...hotfixSettings, showHints: false };
+    displayScaleFactor = window.devicePixelRatio || null;
+  }
+}
+
+// HOTFIX: Placeholder rows are only needed to avoid the broken empty-state layout
+// at 100% Windows scaling. A future settings toggle can force these hints on by
+// setting showHints=true, without changing the rest of the renderer flow.
+function shouldShowHintRows() {
+  if (hotfixSettings.showHints) return true;
+  const scale = Number(displayScaleFactor || window.devicePixelRatio || 0);
+  return scale === HOTFIX_SCALE_FACTOR;
+}
+
+function getCurrentModeForHints(rawInput) {
+  if (window._inputRouter && typeof window._inputRouter.detectMode === 'function') {
+    return window._inputRouter.detectMode(rawInput || '');
+  }
+  return 'app';
+}
+
+function handleKeyboard(e) {
+  if (window._settings.isOpen()) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      window._settings.close();
+    }
+    return;
+  }
+
+  switch (e.key) {
+    case 'ArrowDown':
+      e.preventDefault();
+      selectNext();
+      break;
+    case 'ArrowUp':
+      e.preventDefault();
+      selectPrev();
+      break;
+    case 'Enter':
+      e.preventDefault();
+      // If file picker is showing, select the file instead of sending
+      if (window._inputRouter.isFilePickActive() && currentResults.length > 0 && currentResults[0].type === 'file-ref') {
+        const sel = currentResults[selectedIndex >= 0 ? selectedIndex : 0];
+        if (sel.action) sel.action();
+        break;
+      }
+      // Block double-submit while Gemini is thinking
+      if (window._aiQuery && window._aiQuery.isBusy && window._aiQuery.isBusy()) {
+        break;
+      }
+      // If in AI mode, fire the query
+      const input = document.getElementById('search-input').value;
+      const forceShow = window._chips && window._chips.isActive('force_code');
+      if (input.startsWith('??')) {
+        const query = input.slice(2).trim();
+        const resolvedQuery = window._inputRouter.resolveAIFileRefsInQuery(query);
+        if (query) {
+          const pastedImages = collectPastedImages();
+          window._aiQuery.prepareForQuery('ai_pro');
+          // Lock input to prefix immediately so Enter can't re-fire the same query
+          const searchInput = document.getElementById('search-input');
+          searchInput.value = '?? ';
+          if (window._inputRouter) window._inputRouter.refreshInputDecor(searchInput);
+          showAILoading('Asking Gemini Pro...', query);
+          window._aiQuery.execute(resolvedQuery, 'ai_pro', forceShow, (response) => {
+            renderAIResponse(response);
+          }, pastedImages);
+        } else {
+          executeSelected();
+        }
+      } else if (input.startsWith('?')) {
+        const query = input.slice(1).trim();
+        const resolvedQuery = window._inputRouter.resolveAIFileRefsInQuery(query);
+        if (query) {
+          const pastedImages = collectPastedImages();
+          window._aiQuery.prepareForQuery('ai');
+          const searchInput = document.getElementById('search-input');
+          searchInput.value = '? ';
+          if (window._inputRouter) window._inputRouter.refreshInputDecor(searchInput);
+          showAILoading('Asking Gemini...', query);
+          window._aiQuery.execute(resolvedQuery, 'ai', forceShow, (response) => {
+            renderAIResponse(response);
+          }, pastedImages);
+        } else {
+          executeSelected();
+        }
+      } else if (input.toLowerCase().startsWith('/do ')) {
+        const task = input.slice(4).trim();
+        if (task) {
+          executeDoTask(task);
+        }
+      } else if (doBrowserActive && !doTaskRunning && input.trim()) {
+        // Follow-up to an active /do browser session
+        const followUpText = input.trim();
+        document.getElementById('search-input').value = '';
+        executeDoFollowUp(followUpText);
+      } else {
+        const didExecute = executeSelected();
+        if (!didExecute && window._chips && window._chips.triggerVisibleAction) {
+          window._chips.triggerVisibleAction();
+        }
+      }
+      break;
+    case 'Escape':
+      e.preventDefault();
+      if (doTaskRunning) {
+        abortDoTask();
+      } else if (doBrowserActive) {
+        closeDoBrowser();
+      } else {
+        window.trim.hideWindow();
+      }
+      break;
+    case 'Tab':
+      e.preventDefault();
+      // Autocomplete for file references or commands
+      if (currentResults.length > 0 && currentResults[0].type === 'file-ref') {
+        const sel = currentResults[selectedIndex >= 0 ? selectedIndex : 0];
+        if (sel.action) sel.action();
+      } else if (currentResults.length > 0 && currentResults[0].type === 'command') {
+        const inputEl = document.getElementById('search-input');
+        inputEl.value = currentResults[selectedIndex >= 0 ? selectedIndex : 0].title;
+        if (window._inputRouter) window._inputRouter.refreshInputDecor(inputEl);
+      }
+      break;
+  }
+}
+
+function selectNext() {
+  if (currentResults.length === 0) return;
+  selectedIndex = Math.min(selectedIndex + 1, currentResults.length - 1);
+  updateSelection();
+}
+
+function selectPrev() {
+  if (currentResults.length === 0) return;
+  selectedIndex = Math.max(selectedIndex - 1, 0);
+  updateSelection();
+}
+
+function updateSelection() {
+  const items = document.querySelectorAll('.result-item');
+  items.forEach((el, i) => {
+    el.classList.toggle('selected', i === selectedIndex);
+  });
+  // Scroll into view
+  const selected = items[selectedIndex];
+  if (selected) selected.scrollIntoView({ block: 'nearest' });
+}
+
+function executeSelected() {
+  if (selectedIndex >= 0 && selectedIndex < currentResults.length) {
+    const result = currentResults[selectedIndex];
+    if (result.action) result.action();
+    if (result.type === 'ai-history' || result.type === 'placeholder') return true;
+    if (result.type !== 'command' && result.type !== 'calc' && result.type !== 'calc-symbolic' && result.type !== 'calc-plot' && result.type !== 'calc-loading') {
+      window.trim.hideWindow();
+    }
+    return true;
+  }
+  return false;
+}
+
+function getBarHeight() {
+  return document.getElementById('search-bar').offsetHeight;
+}
+
+let lastResultsKey = '';
+
+function getResultsKey(results) {
+  return results.map(r => `${r.type}:${r.name || r.title || ''}:${r.target || r.path || ''}`).join('\n');
+}
+
+function getPlaceholderKey(mode, kind, placeholder) {
+  return `placeholder:${mode}:${kind}:${placeholder.icon}:${placeholder.title}:${placeholder.subtitle}`;
+}
+
+function getPlaceholderResult(mode, kind) {
+  if (kind === 'empty') {
+    if (mode === 'ai') {
+      return {
+        type: 'placeholder',
+        icon: 'auto_awesome',
+        title: 'Ask Gemini Flash',
+        subtitle: 'Chat, generate images, read/write files, run code. Paste images with Ctrl+V (multiple OK)',
+      };
+    }
+
+    if (mode === 'ai_pro') {
+      return {
+        type: 'placeholder',
+        icon: 'auto_awesome',
+        title: 'Ask Gemini Pro',
+        subtitle: 'Same tools as Flash with stronger reasoning. Paste images with Ctrl+V (multiple OK)',
+      };
+    }
+
+    if (mode === 'calc') {
+      return {
+        type: 'placeholder',
+        icon: 'calculate',
+        title: 'Enter an expression',
+        subtitle: 'Try c: 2+2, c: x^2-4=0, c: derive x^3, or c: plot sin(x)',
+      };
+    }
+
+    if (mode === 'folder') {
+      return {
+        type: 'placeholder',
+        icon: 'folder_open',
+        title: 'Browse files and folders',
+        subtitle: 'Type a path or name — Enter to open, Tab to step into folders',
+      };
+    }
+
+    if (mode === 'command') {
+      return {
+        type: 'placeholder',
+        icon: 'terminal',
+        title: 'Run a command',
+        subtitle: '/settings, /clear (reset AI context), /reload, /help',
+      };
+    }
+
+    return {
+      type: 'placeholder',
+      icon: 'search',
+      title: 'Start typing to search',
+      subtitle: '? for AI, c: for math, f: for files, / for commands, or /help',
+    };
+  }
+
+  if (mode === 'ai') {
+    return {
+      type: 'placeholder',
+      icon: 'auto_awesome',
+      title: 'Press Enter to ask Gemini Flash',
+      subtitle: 'Use #filename to attach files — Ctrl+V to paste images',
+    };
+  }
+
+  if (mode === 'ai_pro') {
+    return {
+      type: 'placeholder',
+      icon: 'auto_awesome',
+      title: 'Press Enter to ask Gemini Pro',
+      subtitle: 'Use #filename to attach files — Ctrl+V to paste images',
+    };
+  }
+
+  if (mode === 'calc') {
+    return {
+      type: 'placeholder',
+      icon: 'calculate',
+      title: 'Expression not ready',
+      subtitle: 'Check for missing operators, brackets, or function arguments',
+    };
+  }
+
+  return {
+    type: 'placeholder',
+    icon: 'search_off',
+    title: 'No results found',
+    subtitle: 'Try a different query',
+  };
+}
+
+// HOTFIX: This helper isolates the fake-row workaround so the main result
+// rendering flow stays unchanged and the future showHints toggle only needs to
+// affect shouldShowHintRows().
+function renderPlaceholderState(kind, rawInput = '') {
+  if (!shouldShowHintRows()) {
+    lastResultsKey = '';
+    currentResults = [];
+    selectedIndex = -1;
+    const container = document.getElementById('results-container');
+    container.innerHTML = '';
+    container.classList.add('hidden');
+    document.getElementById('search-bar').classList.remove('has-results');
+    window.trim.resizeWindow(getBarHeight());
+    return;
+  }
+
+  const mode = getCurrentModeForHints(rawInput);
+  const placeholderResult = getPlaceholderResult(mode, kind);
+  const placeholderKey = getPlaceholderKey(mode, kind, placeholderResult);
+  const container = document.getElementById('results-container');
+  const needsRender =
+    lastResultsKey !== placeholderKey ||
+    container.childElementCount === 0 ||
+    !container.firstElementChild ||
+    !container.firstElementChild.classList.contains('result-placeholder');
+
+  currentResults = [];
+  selectedIndex = -1;
+  if (needsRender) {
+    const placeholder = createResultElement(placeholderResult);
+    placeholder.classList.add('result-placeholder');
+    placeholder.setAttribute('aria-hidden', 'true');
+    container.replaceChildren(placeholder);
+  }
+  lastResultsKey = placeholderKey;
+  container.classList.remove('hidden');
+  document.getElementById('search-bar').classList.add('has-results');
+
+  requestAnimationFrame(() => {
+    const barH = getBarHeight();
+    const resultsH = container.scrollHeight;
+    window.trim.resizeWindow(barH + resultsH + 2);
+  });
+}
+
+async function renderResults(results) {
+  const container = document.getElementById('results-container');
+  const aiContainer = document.getElementById('ai-response-container');
+  const settingsPanel = document.getElementById('settings-panel');
+
+  aiContainer.classList.add('hidden');
+  settingsPanel.classList.add('hidden');
+
+  currentResults = results;
+  selectedIndex = results.length > 0 ? 0 : -1;
+  if (window._chips) window._chips.setResultsCount(results.length);
+
+  if (results.length === 0) {
+    const rawInput = document.getElementById('search-input').value || '';
+    renderPlaceholderState(rawInput.trim() ? 'no-results' : 'empty', rawInput);
+    return;
+  }
+
+  // Check for special calc result types that need custom rendering
+  const firstResult = results[0];
+
+  // Loading spinner for heavy calc operations
+  if (firstResult.type === 'calc-loading') {
+    lastResultsKey = 'calc-loading';
+    const spinnerWrap = document.createElement('div');
+    spinnerWrap.className = 'calc-result';
+    spinnerWrap.style.padding = '16px 18px';
+    spinnerWrap.appendChild(createLoadingSpinner('Computing...'));
+    container.replaceChildren(spinnerWrap);
+    container.classList.remove('hidden');
+    document.getElementById('search-bar').classList.add('has-results');
+    requestAnimationFrame(() => {
+      window.trim.resizeWindow(getBarHeight() + container.scrollHeight + 2);
+    });
+    return;
+  }
+
+  if (firstResult.type === 'calc-symbolic' || firstResult.type === 'calc-plot') {
+    lastResultsKey = '';
+    const frag = document.createDocumentFragment();
+    for (const result of results) {
+      if (result.type === 'calc-symbolic') {
+        frag.appendChild(createCalcSymbolicElement(result));
+      } else if (result.type === 'calc-plot') {
+        frag.appendChild(createCalcPlotElement(result));
+      } else {
+        frag.appendChild(createResultElement(result));
+      }
+    }
+    container.replaceChildren(frag);
+    container.classList.remove('hidden');
+    document.getElementById('search-bar').classList.add('has-results');
+
+    // Render Plotly charts after DOM insertion
+    container.querySelectorAll('.calc-plot-container').forEach(el => {
+      try {
+        const data = JSON.parse(el.dataset.plotData);
+        const layout = JSON.parse(el.dataset.plotLayout);
+        const config = JSON.parse(el.dataset.plotConfig);
+        if (typeof Plotly !== 'undefined') {
+          Plotly.newPlot(el, data, layout, config);
+        }
+      } catch { /* ignore */ }
+    });
+
+    requestAnimationFrame(() => {
+      const barH = getBarHeight();
+      const resultsH = container.scrollHeight;
+      window.trim.resizeWindow(Math.min(barH + resultsH + 2, 500));
+    });
+    return;
+  }
+
+  const key = getResultsKey(results);
+  const unchanged = key === lastResultsKey;
+  lastResultsKey = key;
+
+  document.getElementById('search-bar').classList.add('has-results');
+
+  if (!unchanged) {
+    const frag = document.createDocumentFragment();
+    for (const result of results) {
+      const el = createResultElement(result);
+      frag.appendChild(el);
+    }
+    container.replaceChildren(frag);
+  }
+  container.classList.remove('hidden');
+
+  updateSelection();
+
+  // Measure after paint to get accurate heights
+  requestAnimationFrame(() => {
+    const barH = getBarHeight();
+    const resultsH = container.scrollHeight;
+    window.trim.resizeWindow(barH + resultsH + 2);
+  });
+
+  // Lazy-load app icons
+  for (const result of results) {
+    if (result.type === 'app' && result.iconPath && !result.icon) {
+      loadAppIcon(result);
+    }
+  }
+}
+
+function createResultElement(result) {
+  const el = document.createElement('div');
+  el.className = 'result-item';
+  el.addEventListener('click', () => {
+    if (result.action) result.action();
+    if (result.type === 'ai-history' || result.type === 'placeholder') return;
+    if (result.type !== 'command' && result.type !== 'calc' && result.type !== 'calc-symbolic' && result.type !== 'calc-plot' && result.type !== 'calc-loading') {
+      window.trim.hideWindow();
+    }
+  });
+
+  const iconDiv = document.createElement('div');
+  iconDiv.className = 'result-icon';
+
+  if (result.icon && result.icon.startsWith('data:')) {
+    const img = document.createElement('img');
+    img.src = result.icon;
+    iconDiv.appendChild(img);
+  } else {
+    const span = document.createElement('span');
+    span.className = 'material-symbols-rounded';
+    span.textContent = result.icon || 'apps';
+    iconDiv.appendChild(span);
+  }
+
+  const textDiv = document.createElement('div');
+  textDiv.className = 'result-text';
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'result-title';
+  titleEl.textContent = result.title;
+
+  const subtitleEl = document.createElement('div');
+  subtitleEl.className = 'result-subtitle';
+  subtitleEl.textContent = result.subtitle || '';
+
+  textDiv.appendChild(titleEl);
+  textDiv.appendChild(subtitleEl);
+
+  el.appendChild(iconDiv);
+  el.appendChild(textDiv);
+
+  if (result.type) {
+    const badge = document.createElement('span');
+    badge.className = 'result-badge';
+    const labels = { app: 'App', calc: 'Copy', folder: 'Open', command: 'Run', 'file-ref': 'Ref' };
+    badge.textContent = labels[result.type] || '';
+    if (badge.textContent) el.appendChild(badge);
+  }
+
+  const shortcut = document.createElement('span');
+  shortcut.className = 'result-shortcut';
+  const shortcutIcon = document.createElement('span');
+  shortcutIcon.className = 'material-symbols-rounded';
+  shortcutIcon.style.fontSize = '16px';
+  shortcutIcon.textContent = 'keyboard_return';
+  shortcut.appendChild(shortcutIcon);
+  el.appendChild(shortcut);
+
+  return el;
+}
+
+function createCalcSymbolicElement(result) {
+  const el = document.createElement('div');
+  el.className = 'calc-result';
+
+  // Main result in KaTeX
+  const mainDiv = document.createElement('div');
+  mainDiv.className = 'calc-main-result';
+  mainDiv.innerHTML = result.mainHtml;
+  el.appendChild(mainDiv);
+
+  // Variable awareness note
+  if (result.varsNote) {
+    const varsDiv = document.createElement('div');
+    varsDiv.className = 'calc-vars-note';
+    varsDiv.textContent = result.varsNote;
+    el.appendChild(varsDiv);
+  }
+
+  // Steps (collapsible)
+  if (result.steps && result.steps.length > 0) {
+    const stepsDiv = document.createElement('div');
+    stepsDiv.className = 'calc-steps collapsed';
+
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'calc-steps-toggle';
+    toggleBtn.innerHTML = '<span class="material-symbols-rounded" style="font-size:14px">expand_more</span> <span>Steps</span>';
+    toggleBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    toggleBtn.addEventListener('click', () => {
+      stepsDiv.classList.toggle('collapsed');
+      const chevron = toggleBtn.querySelector('.material-symbols-rounded');
+      chevron.textContent = stepsDiv.classList.contains('collapsed') ? 'expand_more' : 'expand_less';
+      requestAnimationFrame(() => {
+        const container = document.getElementById('results-container');
+        const barH = getBarHeight();
+        window.trim.resizeWindow(Math.min(barH + container.scrollHeight + 2, 500));
+      });
+    });
+    stepsDiv.appendChild(toggleBtn);
+
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'calc-steps-content';
+    for (const step of result.steps) {
+      const stepEl = document.createElement('div');
+      stepEl.className = 'calc-step';
+      const labelEl = document.createElement('span');
+      labelEl.className = 'calc-step-label';
+      labelEl.textContent = step.label;
+      const texEl = document.createElement('span');
+      texEl.className = 'calc-step-tex';
+      try {
+        texEl.innerHTML = katex.renderToString(step.tex, { displayMode: false, throwOnError: false });
+      } catch {
+        texEl.textContent = step.tex;
+      }
+      stepEl.appendChild(labelEl);
+      stepEl.appendChild(texEl);
+      contentDiv.appendChild(stepEl);
+    }
+    stepsDiv.appendChild(contentDiv);
+    el.appendChild(stepsDiv);
+  }
+
+  // Copy button
+  if (result.copyText) {
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'calc-copy-btn';
+    copyBtn.innerHTML = '<span class="material-symbols-rounded" style="font-size:14px">content_copy</span> <span>Copy</span>';
+    copyBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(result.copyText).then(() => {
+        const icon = copyBtn.querySelector('.material-symbols-rounded');
+        icon.textContent = 'check';
+        setTimeout(() => { icon.textContent = 'content_copy'; }, 1500);
+      });
+    });
+    el.appendChild(copyBtn);
+  }
+
+  return el;
+}
+
+function createCalcPlotElement(result) {
+  const el = document.createElement('div');
+  el.className = 'calc-result';
+
+  // Title in KaTeX
+  if (result.titleTex) {
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'calc-plot-title';
+    try {
+      titleDiv.innerHTML = katex.renderToString(result.titleTex, { displayMode: false, throwOnError: false });
+    } catch {
+      titleDiv.textContent = result.subtitle;
+    }
+    el.appendChild(titleDiv);
+  }
+
+  // Plotly container with action buttons wrapper
+  const plotWrapper = document.createElement('div');
+  plotWrapper.className = 'calc-plot-wrapper';
+  const plotDiv = document.createElement('div');
+  plotDiv.className = 'calc-plot-container';
+  plotDiv.dataset.plotData = JSON.stringify(result.plotData);
+  plotDiv.dataset.plotLayout = JSON.stringify(result.plotLayout);
+  plotDiv.dataset.plotConfig = JSON.stringify(result.plotConfig);
+  plotWrapper.appendChild(plotDiv);
+
+  // Copy/save action buttons
+  const actionsDiv = document.createElement('div');
+  actionsDiv.className = 'ai-image-actions';
+  actionsDiv.innerHTML = `<button class="ai-image-btn calc-plot-copy" title="Copy plot">
+      <span class="material-symbols-rounded" style="font-size:16px">content_copy</span>
+    </button>
+    <button class="ai-image-btn calc-plot-save" title="Save plot">
+      <span class="material-symbols-rounded" style="font-size:16px">download</span>
+    </button>`;
+  plotWrapper.appendChild(actionsDiv);
+
+  // Wire up calc plot copy/save
+  actionsDiv.querySelector('.calc-plot-copy').addEventListener('click', async () => {
+    try {
+      const dataUrl = await window.Plotly.toImage(plotDiv, { format: 'png', width: 800, height: 500 });
+      const ok = await window.trim.copyImageToClipboard(dataUrl);
+      const span = actionsDiv.querySelector('.calc-plot-copy span');
+      if (ok && span) { span.textContent = 'check'; setTimeout(() => span.textContent = 'content_copy', 1500); }
+    } catch { /* */ }
+  });
+  actionsDiv.querySelector('.calc-plot-save').addEventListener('click', async () => {
+    try {
+      const dataUrl = await window.Plotly.toImage(plotDiv, { format: 'png', width: 800, height: 500 });
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `plot_${Date.now()}.png`;
+      a.click();
+      const span = actionsDiv.querySelector('.calc-plot-save span');
+      if (span) { span.textContent = 'check'; setTimeout(() => span.textContent = 'download', 1500); }
+    } catch { /* */ }
+  });
+
+  el.appendChild(plotWrapper);
+
+  // Variable awareness note
+  if (result.varsNote) {
+    const varsDiv = document.createElement('div');
+    varsDiv.className = 'calc-vars-note';
+    varsDiv.textContent = result.varsNote;
+    el.appendChild(varsDiv);
+  }
+
+  return el;
+}
+
+async function loadAppIcon(result) {
+  try {
+    const icon = await window._appSearch.loadIcon(result.iconPath);
+    if (icon) {
+      result.icon = icon;
+      // Update the DOM if visible
+      const items = document.querySelectorAll('.result-item');
+      const idx = currentResults.indexOf(result);
+      if (idx >= 0 && items[idx]) {
+        const iconDiv = items[idx].querySelector('.result-icon');
+        const img = document.createElement('img');
+        img.src = icon;
+        iconDiv.replaceChildren(img);
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function createLoadingSpinner(statusText) {
+  const el = document.createElement('div');
+  el.className = 'ai-loading';
+  el.innerHTML = `<div class="spinner"></div><span>${escapeHtml(statusText || 'Loading...')}</span>`;
+  return el;
+}
+
+function showAILoading(statusText, queryOverride) {
+  const container = document.getElementById('results-container');
+  const aiContainer = document.getElementById('ai-response-container');
+  const settingsPanel = document.getElementById('settings-panel');
+
+  container.classList.add('hidden');
+  settingsPanel.classList.add('hidden');
+  aiContainer.classList.remove('hidden');
+  document.getElementById('search-bar').classList.add('has-results');
+
+  // Don't restart loading UI if a query is already in flight
+  if (aiContainer.querySelector('.ai-current-turn .ai-loading')) {
+    updateAIStatus(statusText || 'Asking Gemini...');
+    return;
+  }
+
+  const isFollowUp = window._aiQuery && window._aiQuery.isFollowUp();
+
+  if (!isFollowUp) {
+    aiContainer.innerHTML = '';
+  }
+
+  // Show the user's query as a header (first turn and follow-ups)
+  const queryText = queryOverride || (() => {
+    const input = document.getElementById('search-input').value;
+    return input.startsWith('??') ? input.slice(2).trim()
+      : input.startsWith('?') ? input.slice(1).trim() : input;
+  })();
+  if (queryText) {
+    const queryDiv = document.createElement('div');
+    queryDiv.className = 'ai-follow-up-query';
+    queryDiv.innerHTML = `<span class="material-symbols-rounded" style="font-size:14px">person</span> ${escapeHtml(queryText)}`;
+    aiContainer.appendChild(queryDiv);
+  }
+
+  // Add loading spinner in a turn container
+  const turnDiv = document.createElement('div');
+  turnDiv.className = 'ai-current-turn';
+  turnDiv.appendChild(createLoadingSpinner(statusText || 'Asking Gemini...'));
+  aiContainer.appendChild(turnDiv);
+
+  requestAnimationFrame(() => {
+    const h = getBarHeight() + aiContainer.scrollHeight;
+    window.trim.resizeWindow(Math.min(h, 500));
+    smartScroll(aiContainer);
+  });
+  currentResults = [];
+  selectedIndex = -1;
+}
+
+function updateAIStatus(statusText) {
+  const aiContainer = document.getElementById('ai-response-container');
+  const loadingEl = aiContainer.querySelector('.ai-loading');
+  if (loadingEl) {
+    const span = loadingEl.querySelector('span');
+    if (span) span.textContent = statusText;
+    requestAnimationFrame(() => {
+      const h = getBarHeight() + aiContainer.scrollHeight;
+      window.trim.resizeWindow(Math.min(h, 500));
+    });
+  }
+}
+
+function sanitizeHTML(html) {
+  if (typeof DOMPurify !== 'undefined') {
+    return DOMPurify.sanitize(html, {
+      ALLOWED_TAGS: [
+        'p', 'br', 'strong', 'em', 'b', 'i', 'u', 's', 'del', 'ins',
+        'ul', 'ol', 'li', 'code', 'pre', 'div', 'span', 'img', 'a', 'button',
+        'table', 'thead', 'tbody', 'tr', 'th', 'td',
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'blockquote', 'hr', 'sup', 'sub',
+      ],
+      ALLOWED_ATTR: ['class', 'style', 'alt', 'src', 'title', 'href', 'data-uri', 'target', 'rel', 'align'],
+      ALLOW_DATA_ATTR: false,
+    });
+  }
+  return html.replace(/<[^>]*>/g, '');
+}
+
+function imageActionButtons() {
+  return `<div class="ai-image-actions">
+    <button class="ai-image-btn ai-image-copy" title="Copy image">
+      <span class="material-symbols-rounded" style="font-size:16px">content_copy</span>
+    </button>
+    <button class="ai-image-btn ai-image-save" title="Save image">
+      <span class="material-symbols-rounded" style="font-size:16px">download</span>
+    </button>
+  </div>`;
+}
+
+function buildResponseHTML(response) {
+  const rawMarkdown = window._aiQuery.formatMarkdown(response.text);
+  let html = `<div class="ai-text">${sanitizeHTML(rawMarkdown)}</div>`;
+
+  // Generated images (native model image generation)
+  if (response.generatedImages && response.generatedImages.length > 0) {
+    for (const img of response.generatedImages) {
+      html += `<div class="ai-generated-image">
+        ${imageActionButtons()}
+        <img src="${escapeHtml(img.dataUri)}" alt="Generated image" data-mime="${escapeHtml(img.mimeType || 'image/png')}">
+      </div>`;
+    }
+  }
+
+  if (response.codeOutputs && response.codeOutputs.length > 0) {
+    for (const output of response.codeOutputs) {
+      html += `<div class="ai-code-output">`;
+      if (output.code) {
+        html += `<div class="ai-code-header">
+          <span class="material-symbols-rounded" style="font-size:14px">code</span>
+          <span>Python</span>
+          <button class="code-copy-btn code-output-copy">
+            <span class="material-symbols-rounded" style="font-size:14px">content_copy</span>
+          </button>
+        </div>
+        <pre class="ai-code-block"><code class="language-python">${escapeHtml(output.code)}</code></pre>`;
+      }
+      if (output.stdout) {
+        html += `<div class="ai-code-header">
+          <span class="material-symbols-rounded" style="font-size:14px">terminal</span>
+          <span>Output</span>
+        </div>
+        <pre class="ai-code-result"><code>${escapeHtml(output.stdout)}</code></pre>`;
+      }
+      if (output.plot) {
+        html += `<div class="ai-code-header">
+          <span class="material-symbols-rounded" style="font-size:14px">show_chart</span>
+          <span>Plot</span>
+        </div>
+        <div class="ai-plot">
+          ${imageActionButtons()}
+          <img src="${escapeHtml(output.plot)}" alt="Plot" data-mime="image/png">
+        </div>`;
+      }
+      if (output.error) {
+        html += `<pre class="ai-code-error"><code>${escapeHtml(output.error)}</code></pre>`;
+      }
+      html += `</div>`;
+    }
+  }
+
+  if (response.sources && response.sources.length > 0) {
+    html += `<div class="ai-sources">
+      <button class="ai-sources-toggle">
+        <span class="material-symbols-rounded" style="font-size:14px">link</span>
+        <span>${response.sources.length} source${response.sources.length > 1 ? 's' : ''}</span>
+        <span class="material-symbols-rounded ai-sources-chevron" style="font-size:16px">expand_more</span>
+      </button>
+      <div class="ai-sources-list">
+        ${response.sources.map(s => {
+          const safeTitle = escapeHtml(s.title || s.uri || 'Source');
+          return `<a class="ai-source-link" href="#" data-uri="${escapeHtml(s.uri || '')}">
+            <span class="material-symbols-rounded" style="font-size:14px">open_in_new</span>
+            ${safeTitle}
+          </a>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }
+
+  return html;
+}
+
+function renderAIResponse(response) {
+  const aiContainer = document.getElementById('ai-response-container');
+  const turnDiv = aiContainer.querySelector('.ai-current-turn');
+
+  if (response.type === 'ai-error') {
+    const errorHTML = `
+      <div class="ai-error">
+        <span class="material-symbols-rounded" style="font-size:18px">error</span>
+        ${escapeHtml(response.error)}
+      </div>
+    `;
+    if (turnDiv) {
+      turnDiv.innerHTML = errorHTML;
+      turnDiv.classList.remove('ai-current-turn');
+    } else {
+      aiContainer.innerHTML = errorHTML;
+    }
+    requestAnimationFrame(() => {
+      const h = getBarHeight() + aiContainer.scrollHeight;
+      window.trim.resizeWindow(Math.min(h, 500));
+      smartScroll(aiContainer);
+    });
+    return;
+  }
+
+  const html = buildResponseHTML(response);
+
+  if (turnDiv) {
+    turnDiv.innerHTML = html;
+    turnDiv.classList.remove('ai-current-turn');
+
+    // Add revert button if this turn modified files
+    if (response.hadFileChanges && response.turnIndex) {
+      const revertBar = document.createElement('div');
+      revertBar.className = 'ai-revert-bar';
+      revertBar.innerHTML = `
+        <button class="ai-revert-btn" data-turn="${response.turnIndex}">
+          <span class="material-symbols-rounded" style="font-size:14px">undo</span>
+          Revert to before this response
+        </button>
+      `;
+      revertBar.querySelector('.ai-revert-btn').addEventListener('mousedown', e => e.preventDefault());
+      revertBar.querySelector('.ai-revert-btn').addEventListener('click', async () => {
+        const btn = revertBar.querySelector('.ai-revert-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="material-symbols-rounded" style="font-size:14px">hourglass_empty</span> Reverting...';
+        const result = await window.trim.revertToTurn(response.turnIndex - 1);
+        if (result && result.reverted > 0) {
+          btn.innerHTML = `<span class="material-symbols-rounded" style="font-size:14px">check_circle</span> Reverted ${result.reverted} change${result.reverted > 1 ? 's' : ''}`;
+          btn.classList.add('reverted');
+
+          // Remove all DOM elements after this revert bar (subsequent turns)
+          while (revertBar.nextSibling) {
+            revertBar.nextSibling.remove();
+          }
+
+          // Resize to fit trimmed content
+          requestAnimationFrame(() => {
+            const contentH = getBarHeight() + aiContainer.scrollHeight;
+            window.trim.resizeWindow(Math.min(contentH, 500));
+          });
+        } else {
+          btn.innerHTML = '<span class="material-symbols-rounded" style="font-size:14px">info</span> Nothing to revert';
+        }
+      });
+      turnDiv.after(revertBar);
+    }
+  } else {
+    aiContainer.innerHTML = html;
+  }
+
+  // Syntax highlighting + copy buttons for markdown code blocks
+  postProcessCodeBlocks(aiContainer);
+
+  // Resize to fit content, capped
+  requestAnimationFrame(() => {
+    const contentH = getBarHeight() + aiContainer.scrollHeight;
+    window.trim.resizeWindow(Math.min(contentH, 500));
+    smartScroll(aiContainer);
+  });
+
+  // Prep input for follow-up: clear to just the prefix
+  const searchInput = document.getElementById('search-input');
+  const mode = window._aiQuery && window._aiQuery.getConversationPrefix
+    ? window._aiQuery.getConversationPrefix()
+    : null;
+  const prefix = mode === 'ai_pro' ? '?? '
+    : mode === 'ai' ? '? '
+    : (searchInput.value.startsWith('??') ? '?? ' : searchInput.value.startsWith('?') ? '? ' : '');
+  if (prefix) {
+    searchInput.value = prefix;
+    searchInput.setSelectionRange(prefix.length, prefix.length);
+    if (window._inputRouter) window._inputRouter.refreshInputDecor(searchInput);
+  }
+  searchInput.focus();
+}
+
+function postProcessCodeBlocks(container) {
+  // Syntax highlighting
+  if (window._aiQuery) window._aiQuery.highlightCodeBlocks(container);
+
+  // Add copy buttons to markdown code blocks (ai-text pre blocks that don't already have one)
+  container.querySelectorAll('.ai-text pre').forEach(pre => {
+    if (pre.querySelector('.code-copy-btn')) return;
+    const btn = document.createElement('button');
+    btn.className = 'code-copy-btn';
+    const icon = document.createElement('span');
+    icon.className = 'material-symbols-rounded';
+    icon.style.fontSize = '14px';
+    icon.textContent = 'content_copy';
+    btn.appendChild(icon);
+    btn.addEventListener('mousedown', (e) => e.preventDefault());
+    btn.addEventListener('click', () => {
+      const code = pre.querySelector('code');
+      if (code) navigator.clipboard.writeText(code.textContent).then(() => {
+        icon.textContent = 'check';
+        setTimeout(() => icon.textContent = 'content_copy', 1500);
+      });
+    });
+    pre.style.position = 'relative';
+    pre.appendChild(btn);
+  });
+
+  // Wire up code-output copy buttons (replaced inline onclick)
+  container.querySelectorAll('.code-output-copy').forEach(btn => {
+    btn.addEventListener('mousedown', (e) => e.preventDefault());
+    btn.addEventListener('click', () => {
+      const codeEl = btn.closest('.ai-code-output')?.querySelector('.ai-code-block code');
+      if (!codeEl) return;
+      navigator.clipboard.writeText(codeEl.textContent).then(() => {
+        const span = btn.querySelector('span');
+        if (span) { span.textContent = 'check'; setTimeout(() => span.textContent = 'content_copy', 1500); }
+      });
+    });
+  });
+
+  // Wire up sources toggle (replaced inline onclick)
+  container.querySelectorAll('.ai-sources-toggle').forEach(btn => {
+    btn.addEventListener('mousedown', (e) => e.preventDefault());
+    btn.addEventListener('click', () => {
+      btn.parentElement.classList.toggle('expanded');
+      setTimeout(() => {
+        const c = document.getElementById('ai-response-container');
+        const h = document.getElementById('search-bar').offsetHeight + c.scrollHeight;
+        window.trim.resizeWindow(Math.min(h, 500));
+      }, 10);
+    });
+  });
+
+  // Wire up source links (replaced inline onclick)
+  container.querySelectorAll('.ai-source-link').forEach(link => {
+    link.addEventListener('click', (e) => e.preventDefault());
+    link.title = link.dataset.uri || '';
+  });
+
+  // Wire up image copy/save buttons (generated images + plots)
+  container.querySelectorAll('.ai-image-btn').forEach(btn => {
+    btn.addEventListener('mousedown', (e) => e.preventDefault());
+    btn.addEventListener('click', async () => {
+      const imgEl = btn.closest('.ai-generated-image, .ai-plot')?.querySelector('img');
+      if (!imgEl) return;
+      const span = btn.querySelector('span');
+      if (btn.classList.contains('ai-image-copy')) {
+        try {
+          const ok = await window.trim.copyImageToClipboard(imgEl.src);
+          if (ok && span) { span.textContent = 'check'; setTimeout(() => span.textContent = 'content_copy', 1500); }
+        } catch (err) {
+          console.error('Image copy failed:', err);
+        }
+      } else if (btn.classList.contains('ai-image-save')) {
+        const a = document.createElement('a');
+        a.href = imgEl.src;
+        const ext = (imgEl.dataset.mime || 'image/png').split('/')[1] || 'png';
+        a.download = `image_${Date.now()}.${ext}`;
+        a.click();
+        if (span) { span.textContent = 'check'; setTimeout(() => span.textContent = 'download', 1500); }
+      }
+    });
+  });
+}
+
+function clearResults() {
+  const resultsContainer = document.getElementById('results-container');
+  resultsContainer.classList.remove('hidden');
+  document.getElementById('ai-response-container').innerHTML = '';
+  document.getElementById('ai-response-container').classList.add('hidden');
+  document.getElementById('settings-panel').classList.add('hidden');
+  if (window._chips) window._chips.setResultsCount(0);
+  const rawInput = document.getElementById('search-input').value || '';
+  renderPlaceholderState('empty', rawInput);
+  // Clear conversation history flags (fast-chat: deleting ? starts a new convo)
+  if (window._aiQuery) window._aiQuery.clearConversation();
+  // Clear any pasted images
+  if (window._inputRouter) window._inputRouter.clearPastedImage();
+  // Close browser session if active
+  if (doBrowserActive) closeDoBrowser();
+}
+
+function collectPastedImages() {
+  if (!window._inputRouter) return [];
+  const imgs = window._inputRouter.getPastedImages
+    ? window._inputRouter.getPastedImages()
+    : (window._inputRouter.getPastedImage() ? [window._inputRouter.getPastedImage()] : []);
+  if (!imgs.length) return [];
+  window._inputRouter.clearPastedImage();
+  return imgs;
+}
+
+function renderImageAttachments() {
+  const el = document.getElementById('image-attachments');
+  if (!el) return;
+  const imgs = (window._inputRouter && window._inputRouter.getPastedImages)
+    ? window._inputRouter.getPastedImages()
+    : [];
+  if (!imgs.length) {
+    el.innerHTML = '';
+    el.classList.add('hidden');
+    return;
+  }
+  el.classList.remove('hidden');
+  el.innerHTML = imgs.map((img, i) => `
+    <div class="image-attach-thumb" data-index="${i}" title="Remove image">
+      <img src="${escapeHtml(img.dataUri)}" alt="Pasted ${i + 1}">
+      <button type="button" class="image-attach-remove" aria-label="Remove">
+        <span class="material-symbols-rounded" style="font-size:12px">close</span>
+      </button>
+    </div>
+  `).join('');
+  el.querySelectorAll('.image-attach-thumb').forEach(thumb => {
+    thumb.addEventListener('mousedown', (e) => e.preventDefault());
+    thumb.addEventListener('click', () => {
+      const idx = Number(thumb.dataset.index);
+      if (window._inputRouter) window._inputRouter.removePastedImage(idx);
+    });
+  });
+}
+
+async function persistCurrentConversation() {
+  if (!window._aiQuery || !window._aiQuery.isFollowUp()) return;
+  const meta = window._aiQuery.getSessionMeta();
+  if (!meta || !meta.id) return;
+  const aiContainer = document.getElementById('ai-response-container');
+  const textEl = aiContainer.querySelector('.ai-text');
+  const preview = textEl ? textEl.textContent.trim().slice(0, 160) : '';
+  try {
+    await window.trim.saveConversation({
+      id: meta.id,
+      title: meta.title || 'Untitled',
+      mode: meta.mode || 'ai',
+      preview,
+      html: aiContainer.innerHTML,
+    });
+  } catch (err) {
+    console.error('Failed to save conversation:', err);
+  }
+}
+
+async function archiveCurrentConversation() {
+  if (!window._aiQuery || !window._aiQuery.isFollowUp()) return;
+  await persistCurrentConversation();
+}
+
+async function showConversationHistory(mode) {
+  const list = await window.trim.listConversations().catch(() => []);
+  const filtered = (list || []);
+  if (!filtered.length) {
+    restoreAIArea();
+    return;
+  }
+
+  const results = filtered.slice(0, 8).map(c => {
+    const when = formatRelativeTime(c.updatedAt);
+    return {
+      type: 'ai-history',
+      icon: 'history',
+      title: c.title || 'Untitled chat',
+      subtitle: `${c.mode === 'ai_pro' ? 'Pro' : 'Flash'}${when ? ` · ${when}` : ''}${c.preview ? ` — ${c.preview}` : ''}`,
+      action: () => openConversation(c.id),
+    };
+  });
+
+  // Keep a "new chat" row at top
+  results.unshift({
+    type: 'placeholder',
+    icon: 'edit_square',
+    title: mode === 'ai_pro' ? 'New Pro chat' : 'New chat',
+    subtitle: 'Just keep typing to start a new chat',
+  });
+
+  renderResults(results);
+}
+
+function formatRelativeTime(ts) {
+  if (!ts) return '';
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(ts).toLocaleDateString();
+}
+
+async function openConversation(id) {
+  const entry = await window.trim.loadConversation(id);
+  if (!entry || entry.error) return;
+
+  if (window._aiQuery) {
+    window._aiQuery.restoreSession({
+      id: entry.id,
+      title: entry.title,
+      mode: entry.mode,
+    });
+  }
+
+  const aiContainer = document.getElementById('ai-response-container');
+  const container = document.getElementById('results-container');
+  const settingsPanel = document.getElementById('settings-panel');
+  container.classList.add('hidden');
+  settingsPanel.classList.add('hidden');
+  aiContainer.classList.remove('hidden');
+  aiContainer.innerHTML = entry.html || '<div class="ai-text"><p>Empty conversation.</p></div>';
+  document.getElementById('search-bar').classList.add('has-results');
+  postProcessCodeBlocks(aiContainer);
+
+  const prefix = entry.mode === 'ai_pro' ? '?? ' : '? ';
+  const searchInput = document.getElementById('search-input');
+  searchInput.value = prefix;
+  if (window._inputRouter) window._inputRouter.refreshInputDecor(searchInput);
+  searchInput.setSelectionRange(prefix.length, prefix.length);
+  searchInput.focus();
+
+  requestAnimationFrame(() => {
+    const h = getBarHeight() + aiContainer.scrollHeight;
+    window.trim.resizeWindow(Math.min(h, 500));
+    smartScroll(aiContainer);
+  });
+}
+
+function smartScroll(aiContainer) {
+  const followUps = aiContainer.querySelectorAll('.ai-follow-up-query');
+  if (followUps.length === 0) {
+    // Single request - always top-aligned
+    aiContainer.scrollTop = 0;
+    return;
+  }
+  // Follow-up - anchor the latest follow-up query to the top,
+  // unless remaining content is shorter than the viewport (fill it instead)
+  const lastQuery = followUps[followUps.length - 1];
+  const queryTop = lastQuery.offsetTop;
+  const remainingHeight = aiContainer.scrollHeight - queryTop;
+  if (remainingHeight >= aiContainer.clientHeight) {
+    aiContainer.scrollTop = queryTop;
+  } else {
+    aiContainer.scrollTop = aiContainer.scrollHeight - aiContainer.clientHeight;
+  }
+}
+
+function showConfirmation(details) {
+  const aiContainer = document.getElementById('ai-response-container');
+  const turnDiv = aiContainer.querySelector('.ai-current-turn');
+  if (!turnDiv) return;
+
+  let icon, title, body;
+  if (details.tool === 'continue_processing') {
+    icon = 'autorenew';
+    title = 'Continue processing?';
+    body = `<div class="confirm-path">Used ${details.roundsUsed} rounds. Allow another batch?</div>`;
+  } else if (details.tool === 'write_file') {
+    icon = 'edit_document';
+    title = 'Write file';
+    body = `<div class="confirm-path">${escapeHtml(details.path)}</div>`;
+    if (details.contentPreview) {
+      body += `<pre class="confirm-preview"><code>${escapeHtml(details.contentPreview)}</code></pre>`;
+      if (details.contentLength > 500) {
+        body += `<div class="confirm-truncated">${details.contentLength.toLocaleString()} chars total</div>`;
+      }
+    }
+  } else if (details.tool === 'edit_file') {
+    icon = 'find_replace';
+    title = 'Edit file';
+    body = `<div class="confirm-path">${escapeHtml(details.path)}</div>`;
+    body += `<div class="confirm-diff">`;
+    body += `<div class="confirm-diff-old"><span class="confirm-diff-label">-</span><code>${escapeHtml(details.oldText || '')}</code></div>`;
+    body += `<div class="confirm-diff-new"><span class="confirm-diff-label">+</span><code>${escapeHtml(details.newText || '')}</code></div>`;
+    body += `</div>`;
+  } else if (details.tool === 'delete_file') {
+    icon = 'delete';
+    title = details.isDirectory ? 'Move folder to trash' : 'Move to trash';
+    body = `<div class="confirm-path">${escapeHtml(details.path)}</div>`;
+  } else {
+    icon = 'warning';
+    title = details.tool;
+    body = `<div class="confirm-path">${escapeHtml(details.path || '')}</div>`;
+  }
+
+  const isContinue = details.tool === 'continue_processing';
+  const approveLabel = isContinue ? 'Continue' : 'Approve';
+  const denyLabel = isContinue ? 'Stop' : 'Deny';
+  const approveIcon = isContinue ? 'play_arrow' : 'check';
+  const denyIcon = isContinue ? 'stop' : 'close';
+
+  turnDiv.innerHTML = `
+    <div class="confirm-action">
+      <div class="confirm-header">
+        <span class="material-symbols-rounded confirm-icon">${icon}</span>
+        <span class="confirm-title">${title}</span>
+      </div>
+      ${body}
+      <div class="confirm-buttons">
+        <button class="confirm-btn confirm-deny" id="confirm-deny-btn">
+          <span class="material-symbols-rounded" style="font-size:16px">${denyIcon}</span>
+          ${denyLabel}
+        </button>
+        <button class="confirm-btn confirm-approve" id="confirm-approve-btn">
+          <span class="material-symbols-rounded" style="font-size:16px">${approveIcon}</span>
+          ${approveLabel}
+        </button>
+      </div>
+    </div>
+  `;
+
+  // Prevent buttons from stealing focus
+  turnDiv.querySelectorAll('.confirm-btn').forEach(btn => {
+    btn.addEventListener('mousedown', (e) => e.preventDefault());
+  });
+
+  document.getElementById('confirm-approve-btn').addEventListener('click', () => {
+    window.trim.respondConfirmAction(true);
+    const msg = isContinue ? 'Continuing...' : `Executing ${escapeHtml(details.tool.replace(/_/g, ' '))}...`;
+    turnDiv.innerHTML = `
+      <div class="ai-loading">
+        <div class="spinner"></div>
+        <span>${msg}</span>
+      </div>
+    `;
+  });
+
+  document.getElementById('confirm-deny-btn').addEventListener('click', () => {
+    window.trim.respondConfirmAction(false);
+    const deniedMsg = isContinue ? 'Processing stopped' : 'Operation denied';
+    const deniedIcon = isContinue ? 'stop_circle' : 'block';
+    turnDiv.innerHTML = `
+      <div class="confirm-denied">
+        <span class="material-symbols-rounded" style="font-size:16px">${deniedIcon}</span>
+        ${deniedMsg}
+      </div>
+    `;
+  });
+
+  requestAnimationFrame(() => {
+    const h = getBarHeight() + aiContainer.scrollHeight;
+    window.trim.resizeWindow(Math.min(h, 500));
+    smartScroll(aiContainer);
+  });
+}
+
+function restoreAIArea() {
+  const rc = document.getElementById('results-container');
+  const aiContainer = document.getElementById('ai-response-container');
+  rc.classList.add('hidden');
+  // If there's AI content, show it again
+  if (aiContainer.innerHTML) {
+    aiContainer.classList.remove('hidden');
+    document.getElementById('search-bar').classList.add('has-results');
+    requestAnimationFrame(() => {
+      const h = getBarHeight() + aiContainer.scrollHeight;
+      window.trim.resizeWindow(Math.min(h, 500));
+    });
+  } else {
+    const rawInput = document.getElementById('search-input').value || '';
+    renderPlaceholderState(rawInput.trim() ? 'no-results' : 'empty', rawInput);
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ─── /do — Browser automation progress tracker ────────────────────────
+
+const DO_ICONS = {
+  launch:   'rocket_launch',
+  check:    'check_circle',
+  think:    'psychology',
+  navigate: 'language',
+  read:     'article',
+  click:    'ads_click',
+  type:     'keyboard',
+  select:   'checklist',
+  scroll:   'swap_vert',
+  back:     'arrow_back',
+  done:     'task_alt',
+  error:    'error',
+  abort:    'block',
+  ask:      'help',
+};
+
+let doTaskRunning = false;
+let doBrowserActive = false; // browser still open, accepting follow-ups
+let doTracker = null;        // current tracker DOM reference
+let doLog = null;            // current log DOM reference
+
+async function executeDoTask(task) {
+  if (doTaskRunning) return;
+  doTaskRunning = true;
+
+  const container = document.getElementById('results-container');
+  const aiContainer = document.getElementById('ai-response-container');
+  const settingsPanel = document.getElementById('settings-panel');
+
+  container.classList.add('hidden');
+  settingsPanel.classList.add('hidden');
+  aiContainer.classList.remove('hidden');
+  aiContainer.innerHTML = '';
+  document.getElementById('search-bar').classList.add('has-results');
+
+  // Build progress tracker
+  const tracker = document.createElement('div');
+  tracker.className = 'do-tracker';
+  doTracker = tracker;
+
+  const header = document.createElement('div');
+  header.className = 'do-tracker-header';
+  header.innerHTML = `<span class="material-symbols-rounded do-tracker-icon">smart_toy</span><span class="do-tracker-title">${escapeHtml(task)}</span>`;
+  tracker.appendChild(header);
+
+  const log = document.createElement('div');
+  log.className = 'do-tracker-log';
+  tracker.appendChild(log);
+  doLog = log;
+
+  const footer = document.createElement('div');
+  footer.className = 'do-tracker-footer';
+  const abortBtn = document.createElement('button');
+  abortBtn.className = 'do-abort-btn';
+  abortBtn.innerHTML = '<span class="material-symbols-rounded">stop_circle</span> Abort';
+  footer.appendChild(abortBtn);
+  tracker.appendChild(footer);
+
+  aiContainer.appendChild(tracker);
+
+  // Resize
+  requestAnimationFrame(() => {
+    const h = getBarHeight() + aiContainer.scrollHeight;
+    window.trim.resizeWindow(Math.min(h, 500));
+  });
+
+  // Suppress blur so Trim stays visible while browser is active
+  window.trim.suppressBlur(true);
+
+  // Listen for status updates
+  wireDoStatusListeners(log);
+
+  // Abort handler
+  let aborted = false;
+  abortBtn.addEventListener('click', () => {
+    if (!aborted && doTaskRunning) {
+      aborted = true;
+      window.trim.doAbort();
+      abortBtn.disabled = true;
+      abortBtn.innerHTML = '<span class="material-symbols-rounded">stop_circle</span> Aborting...';
+    }
+  });
+
+  // Global hotkey abort (Trim toggle key aborts during /do)
+  window.trim.offDoAbortHotkey();
+  window.trim.onDoAbortHotkey(() => {
+    if (!aborted && doTaskRunning) {
+      aborted = true;
+      window.trim.doAbort();
+      abortBtn.disabled = true;
+      abortBtn.innerHTML = '<span class="material-symbols-rounded">stop_circle</span> Aborting...';
+    }
+  });
+
+  try {
+    const result = await window.trim.doTask(task);
+
+    if (result.error) {
+      addDoLogEntry(log, 'error', result.error);
+      doBrowserActive = false;
+    } else {
+      if (result.text) {
+        const summary = document.createElement('div');
+        summary.className = 'do-tracker-summary';
+        const rawMd = window._aiQuery.formatMarkdown(result.text);
+        summary.innerHTML = sanitizeHTML(rawMd);
+        window._aiQuery.highlightCodeBlocks(summary);
+        tracker.insertBefore(summary, footer);
+      }
+      // Browser stays open for follow-ups (unless aborted)
+      doBrowserActive = !aborted;
+    }
+  } catch (err) {
+    addDoLogEntry(log, 'error', err.message || 'Unexpected error');
+    doBrowserActive = false;
+  } finally {
+    doTaskRunning = false;
+    window.trim.offDoStatus();
+    window.trim.offDoAskUser();
+
+    if (doBrowserActive) {
+      // Show "Close browser" button + hint about follow-ups
+      abortBtn.innerHTML = '<span class="material-symbols-rounded">close</span> Close browser';
+      abortBtn.classList.add('do-abort-done');
+      abortBtn.disabled = false;
+      // Re-bind as close button
+      abortBtn.replaceWith(abortBtn.cloneNode(true));
+      const closeBtn = footer.querySelector('.do-abort-btn');
+      closeBtn.addEventListener('click', () => {
+        closeDoBrowser();
+      });
+      // Release blur suppression — window can hide normally,
+      // session persists and restores on next show
+      window.trim.suppressBlur(false);
+    } else {
+      abortBtn.disabled = true;
+      abortBtn.innerHTML = '<span class="material-symbols-rounded">check_circle</span> Done';
+      abortBtn.classList.add('do-abort-done');
+      window.trim.offDoAbortHotkey();
+      window.trim.suppressBlur(false);
+    }
+
+    requestAnimationFrame(() => {
+      const h = getBarHeight() + aiContainer.scrollHeight;
+      window.trim.resizeWindow(Math.min(h, 500));
+      requestAnimationFrame(() => { log.scrollTop = log.scrollHeight; });
+    });
+  }
+}
+
+// Follow-up: user typed something while browser is still open
+async function executeDoFollowUp(text) {
+  if (doTaskRunning || !doBrowserActive) return;
+  doTaskRunning = true;
+
+  const log = doLog;
+  const tracker = doTracker;
+  if (!log || !tracker) return;
+
+  // Suppress blur while follow-up runs
+  window.trim.suppressBlur(true);
+
+  // Add a visual separator for the follow-up
+  addDoLogEntry(log, 'think', `Follow-up: ${text}`);
+
+  wireDoStatusListeners(log);
+
+  try {
+    const result = await window.trim.doFollowUp(text);
+
+    if (result.error) {
+      addDoLogEntry(log, 'error', result.error);
+      doBrowserActive = false;
+    } else if (result.text) {
+      const footer = tracker.querySelector('.do-tracker-footer');
+      // Remove previous summary if any
+      const oldSummary = tracker.querySelector('.do-tracker-summary');
+      if (oldSummary) oldSummary.remove();
+      const summary = document.createElement('div');
+      summary.className = 'do-tracker-summary';
+      const rawMd = window._aiQuery.formatMarkdown(result.text);
+      summary.innerHTML = sanitizeHTML(rawMd);
+      window._aiQuery.highlightCodeBlocks(summary);
+      tracker.insertBefore(summary, footer);
+    }
+  } catch (err) {
+    addDoLogEntry(log, 'error', err.message || 'Unexpected error');
+  } finally {
+    doTaskRunning = false;
+    window.trim.offDoStatus();
+    window.trim.offDoAskUser();
+    window.trim.suppressBlur(false);
+
+    requestAnimationFrame(() => {
+      const aiContainer = document.getElementById('ai-response-container');
+      const h = getBarHeight() + aiContainer.scrollHeight;
+      window.trim.resizeWindow(Math.min(h, 500));
+      requestAnimationFrame(() => { log.scrollTop = log.scrollHeight; });
+    });
+  }
+}
+
+function wireDoStatusListeners(log) {
+  window.trim.offDoStatus();
+  window.trim.offDoAskUser();
+  window.trim.onDoStatus(({ icon, text }) => {
+    addDoLogEntry(log, icon, text);
+    doResizeAndScroll(log);
+  });
+  window.trim.onDoAskUser(({ question, type, options }) => {
+    showDoQuestion(log, question, type, options || []);
+    doResizeAndScroll(log);
+  });
+}
+
+function doResizeAndScroll(log) {
+  requestAnimationFrame(() => {
+    const aiContainer = document.getElementById('ai-response-container');
+    const h = getBarHeight() + aiContainer.scrollHeight;
+    window.trim.resizeWindow(Math.min(h, 500));
+    // Triple-ensure scroll sticks after resize-triggered reflows
+    requestAnimationFrame(() => {
+      log.scrollTop = log.scrollHeight;
+      setTimeout(() => { log.scrollTop = log.scrollHeight; }, 50);
+    });
+  });
+}
+
+function showDoQuestion(log, question, type, options) {
+  // Mark previous entries as done
+  const prev = log.querySelectorAll('.do-log-entry:not(.do-log-done)');
+  for (const p of prev) {
+    const spinner = p.querySelector('.do-spinner');
+    if (spinner) {
+      const check = document.createElement('span');
+      check.className = 'material-symbols-rounded do-log-icon do-log-icon-check';
+      check.textContent = 'check_circle';
+      spinner.replaceWith(check);
+    }
+    p.classList.add('do-log-done');
+  }
+
+  const block = document.createElement('div');
+  block.className = 'do-question-block';
+
+  const label = document.createElement('div');
+  label.className = 'do-question-label';
+  label.innerHTML = `<span class="material-symbols-rounded do-question-icon">help</span>${escapeHtml(question)}`;
+  block.appendChild(label);
+
+  const actions = document.createElement('div');
+  actions.className = 'do-question-actions';
+
+  function sendAnswer(answer) {
+    block.classList.add('do-question-answered');
+    // Disable all interactive elements
+    block.querySelectorAll('button, input').forEach(el => { el.disabled = true; });
+    // Show the chosen answer as a subtle note
+    const note = document.createElement('div');
+    note.className = 'do-question-answered-text';
+    note.textContent = answer;
+    block.appendChild(note);
+    window.trim.doAnswer(answer);
+    doResizeAndScroll(log);
+  }
+
+  if (type === 'yes_no') {
+    const yesBtn = document.createElement('button');
+    yesBtn.className = 'do-question-btn do-question-btn-yes';
+    yesBtn.innerHTML = '<span class="material-symbols-rounded">check</span> Yes';
+    yesBtn.addEventListener('click', () => sendAnswer('Yes'));
+    actions.appendChild(yesBtn);
+
+    const noBtn = document.createElement('button');
+    noBtn.className = 'do-question-btn do-question-btn-no';
+    noBtn.innerHTML = '<span class="material-symbols-rounded">close</span> No';
+    noBtn.addEventListener('click', () => sendAnswer('No'));
+    actions.appendChild(noBtn);
+  } else if (type === 'choice' && options.length > 0) {
+    for (const opt of options) {
+      const btn = document.createElement('button');
+      btn.className = 'do-question-btn do-question-btn-choice';
+      btn.textContent = opt;
+      btn.addEventListener('click', () => sendAnswer(opt));
+      actions.appendChild(btn);
+    }
+  } else {
+    // Free text
+    const inputWrap = document.createElement('div');
+    inputWrap.className = 'do-question-input-wrap';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'do-question-input';
+    input.placeholder = 'Type your answer...';
+    const sendBtn = document.createElement('button');
+    sendBtn.className = 'do-question-btn do-question-btn-send';
+    sendBtn.innerHTML = '<span class="material-symbols-rounded">send</span>';
+    sendBtn.addEventListener('click', () => {
+      if (input.value.trim()) sendAnswer(input.value.trim());
+    });
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // prevent Trim hotkeys from firing
+      if (e.key === 'Enter' && input.value.trim()) sendAnswer(input.value.trim());
+    });
+    inputWrap.appendChild(input);
+    inputWrap.appendChild(sendBtn);
+    actions.appendChild(inputWrap);
+    // Auto-focus the input
+    requestAnimationFrame(() => input.focus());
+  }
+
+  block.appendChild(actions);
+  log.appendChild(block);
+}
+
+function closeDoBrowser() {
+  doBrowserActive = false;
+  doTracker = null;
+  doLog = null;
+  window.trim.doCloseBrowser();
+  window.trim.offDoAbortHotkey();
+  window.trim.suppressBlur(false);
+
+  // Update the button to "Done"
+  const footer = document.querySelector('.do-tracker-footer');
+  if (footer) {
+    const btn = footer.querySelector('.do-abort-btn');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="material-symbols-rounded">check_circle</span> Done';
+    }
+  }
+}
+
+function addDoLogEntry(log, iconKey, text) {
+  const entry = document.createElement('div');
+  const isTerminal = iconKey === 'done' || iconKey === 'error' || iconKey === 'abort' || iconKey === 'check' || iconKey === 'ask';
+  entry.className = `do-log-entry${isTerminal ? ' do-log-done' : ''}`;
+
+  const icon = DO_ICONS[iconKey] || 'circle';
+  const showSpinner = !isTerminal;
+
+  entry.innerHTML = showSpinner
+    ? `<div class="spinner do-spinner"></div><span class="do-log-text">${escapeHtml(text)}</span>`
+    : `<span class="material-symbols-rounded do-log-icon do-log-icon-${iconKey}">${icon}</span><span class="do-log-text">${escapeHtml(text)}</span>`;
+
+  // Mark previous entries as completed (replace spinner with checkmark)
+  const prev = log.querySelectorAll('.do-log-entry:not(.do-log-done)');
+  for (const p of prev) {
+    const spinner = p.querySelector('.do-spinner');
+    if (spinner) {
+      const check = document.createElement('span');
+      check.className = 'material-symbols-rounded do-log-icon do-log-icon-check';
+      check.textContent = 'check_circle';
+      spinner.replaceWith(check);
+    }
+    p.classList.add('do-log-done');
+  }
+
+  log.appendChild(entry);
+}
+
+function isDoTaskRunning() {
+  return doTaskRunning;
+}
+
+function abortDoTask() {
+  if (doTaskRunning) {
+    window.trim.doAbort();
+  }
+}
+
+window._ui = {
+  init,
+  renderResults,
+  showAILoading,
+  updateAIStatus,
+  renderAIResponse,
+  clearResults,
+  restoreAIArea,
+  showConfirmation,
+  loadHotfixContext,
+  createLoadingSpinner,
+  isDoTaskRunning,
+  abortDoTask,
+  isDoBrowserActive: () => doBrowserActive,
+  closeDoBrowser,
+  persistCurrentConversation,
+  archiveCurrentConversation,
+  showConversationHistory,
+  renderImageAttachments,
+};
