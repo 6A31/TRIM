@@ -25,13 +25,13 @@ Start typing to find apps. Results sort by how often you use them, and fuzzy mat
 
 Prefix with `?` for Gemini Flash or `??` for Gemini Pro. Answers use live Google Search and render Markdown with syntax highlighting, LaTeX, and copy buttons on code blocks.
 
-Conversations stick around when you hide the window. Backspace the prefix to start a new chat.
+Follow-ups stay in the same chat. Clear the `?` (or run `/clear`) to archive and start fresh. Type `?` alone — or `/history` — to browse past conversations. Paste one or more screenshots with Ctrl+V; they stack as attachments until you send.
 
 ![AI Chat](assets/screenshots/ai-chat.png)
 
 ### Python Execution
 
-The AI can install packages, run scripts, and return real output, not just plots. **Force Code** makes every query run Python instead of letting the model guess.
+The AI can install packages, run scripts, and return real output, not just plots. Packages live in a persistent environment so common libs (numpy, matplotlib, and friends) don't reinstall every query. **Force Code** makes every query run Python instead of letting the model guess.
 
 Windows, macOS, and Linux builds can ship with a bundled Python runtime. Set `TRIM_SKIP_BUNDLED_PYTHON=1` to use system Python during development.
 
@@ -92,10 +92,10 @@ If your expression has variables, they show under the result (handy for catching
 | `ln` | Natural logarithm | `c: ln(e)` → 1 |
 | `exp` | Exponential (e^x) | `c: exp(1)` → 2.71828 |
 | `round` `ceil` `floor` | Rounding | `c: floor(3.7)` → 3 |
-| `gcd` / `ggT` | Greatest common divisor | `c: gcd(12, 8)` → 4 |
-| `lcm` / `kgV` | Least common multiple | `c: lcm(4, 6)` → 12 |
+| `gcd` / `ggT` | Greatest common divisor (2+ integers) | `c: ggt(12, 8, 4)` → 4 |
+| `lcm` / `kgV` | Least common multiple (2+ integers) | `c: lcm(2, 3, 4)` → 12 |
 
-Functions can be nested: `c: sin(gcd(4, 5))`, `c: sqrt(gcd(16, 64))` → 4
+Functions nest freely: `c: sin(gcd(4, 5))`, `c: sqrt(abs(ggt(lcm(4, 6), 9)))`. Non-integers or too few args for `ggt`/`kgV` blank out instead of guessing.
 
 #### Symbolic Operations
 | Prefix | Description | Example |
@@ -136,7 +136,7 @@ Expressions with variables are plotted automatically:
 | `??` | AI Pro | | **Up/Down** | Navigate |
 | `c:` | Math | | **Enter** | Execute |
 | `f:` | Folders | | **Tab** | Autocomplete |
-| | | | `/` | Commands |
+| `/` | Commands (`/settings`, `/clear`, `/history`, …) | | **Ctrl+V** | Paste images into AI |
 
 On Linux, bind your compositor to `"$APPIMAGE" --toggle` (or the full AppImage path). See **Install**.
 
