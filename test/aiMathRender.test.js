@@ -2,22 +2,25 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const katex = require('katex');
 const {
-  isCurrencyLikeDollarMath,
+  shouldRenderDollarMath,
   getAiHtmlSanitizeConfig,
 } = require('../src/shared/aiSanitize');
 
-describe('isCurrencyLikeDollarMath', () => {
-  it('treats bare amounts as currency', () => {
-    assert.equal(isCurrencyLikeDollarMath('5'), true);
-    assert.equal(isCurrencyLikeDollarMath('12.99'), true);
-    assert.equal(isCurrencyLikeDollarMath('12,50'), true);
+describe('shouldRenderDollarMath', () => {
+  it('renders real math including bare numbers and letters', () => {
+    assert.equal(shouldRenderDollarMath('5'), true);
+    assert.equal(shouldRenderDollarMath('x'), true);
+    assert.equal(shouldRenderDollarMath('3^{\\frac{1}{3}}'), true);
+    assert.equal(shouldRenderDollarMath('2x'), true);
+    assert.equal(shouldRenderDollarMath('\\sqrt{n}'), true);
+    assert.equal(shouldRenderDollarMath('x \\cdot x \\cdot x = 3'), true);
+    assert.equal(shouldRenderDollarMath('f(x)=2x'), true);
+    assert.equal(shouldRenderDollarMath('3\\cdot(a+b)'), true);
   });
 
-  it('does not treat real math as currency', () => {
-    assert.equal(isCurrencyLikeDollarMath('3^{\\frac{1}{3}}'), false);
-    assert.equal(isCurrencyLikeDollarMath('2x'), false);
-    assert.equal(isCurrencyLikeDollarMath('\\sqrt{n}'), false);
-    assert.equal(isCurrencyLikeDollarMath('x \\cdot x \\cdot x = 3'), false);
+  it('skips spaced prose captured between dollar signs', () => {
+    assert.equal(shouldRenderDollarMath('5 and '), false);
+    assert.equal(shouldRenderDollarMath('5 and 10 more'), false);
   });
 });
 

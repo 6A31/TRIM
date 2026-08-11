@@ -885,6 +885,10 @@ function requestConfirmation(event, details) {
 
 const SYSTEM_INSTRUCTION = `You are a concise assistant inside a desktop launcher called Trim. Give short, direct answers - a few sentences max. Include all key facts but skip filler, introductions, and unnecessary detail. Use Markdown for structure (headings, lists, code fences, bold). Use bullet points for lists. Never repeat the question.
 
+Math vs money (important):
+- Math: wrap expressions in $...$ or \\(...\\) for inline, $$...$$ or \\[...\\] for display. Examples: $5$, $x$, $3\\cdot(a+b)$, $f(x)=2x$.
+- Money/currency: never use paired math delimiters. Write plain text like $5, €12.50, or 5 USD. A single $ before an amount is fine; never write $5$ to mean five dollars.
+
 You have access to these tools:
 
 **run_python** - Execute Python code locally for computation, data processing, plotting:

@@ -2,9 +2,36 @@
  * AI response HTML sanitize + inline-math helpers (shared by renderer + tests).
  */
 
+/**
+ * Decide whether paired $...$ content should go through KaTeX.
+ * Renders real math (including $5$, $x$) but skips accidental prose
+ * captured between two dollar signs (e.g. "$5 and $10" → "5 and ").
+ */
+function shouldRenderDollarMath(expr) {
+  const t = String(expr).trim();
+  if (!t) return false;
+
+  // Single number or single-letter identifier: $5$, $42$, $3.14$, $x$
+  if (/^([A-Za-z]|(\d+([.,]\d+)?))$/.test(t)) return true;
+
+  // TeX commands, operators, relations, braces
+  if (/[\\^_={}<>]|[+\-*/×÷·±]/.test(t)) return true;
+
+  // Spaced content: only math if it still has math structure (e.g. "x = 2")
+  if (/\s/.test(t)) {
+    if (/[=\\^_{}+*/<>()]|\\[a-zA-Z]+/.test(t)) return true;
+    return false; // prose like "5 and "
+  }
+
+  // Compact identifiers / calls: 2x, f(x), abc
+  if (/[A-Za-z()]/.test(t)) return true;
+
+  return true;
+}
+
+/** @deprecated use shouldRenderDollarMath; kept for older call sites */
 function isCurrencyLikeDollarMath(expr) {
-  // Only treat bare amounts as currency ($5, $12.99). Do NOT skip real math like $3^{\frac{1}{3}}$.
-  return /^\d+([.,]\d{1,2})?$/.test(String(expr).trim());
+  return !shouldRenderDollarMath(expr) && /^\d+([.,]\d{1,2})?$/.test(String(expr).trim());
 }
 
 function getAiHtmlSanitizeConfig() {
@@ -33,7 +60,7 @@ function getAiHtmlSanitizeConfig() {
   };
 }
 
-const api = { isCurrencyLikeDollarMath, getAiHtmlSanitizeConfig };
+const api = { shouldRenderDollarMath, isCurrencyLikeDollarMath, getAiHtmlSanitizeConfig };
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = api;
