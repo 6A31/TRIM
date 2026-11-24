@@ -1,563 +1,483 @@
-// Unified c: math engine - evaluate, solve, differentiate, integrate, factor, expand, plot
-// Auto-detects input type and returns appropriate results with KaTeX rendering
+// Module scope: renderer scripts are classic <script>s, so without this wrapper
+// every top-level function becomes a global and modules overwrite each other
+// (and builtins like window.open / window.close).
+(function () {
+// c: calculator, a thin client for the SymPy math engine in the main process
+// (src/main/cas/cas_worker.py). All parsing, evaluation and solving happens in
+// SymPy; this file turns its replies into result rows, cards, plots and the
+// worksheet (CAS editor).
+//
+// Two presentations:
+// - Plain arithmetic (digits, + - * / ^ % ! brackets, sqrt, pi, e) gets a quick
+//   result row; Enter copies it.
+// - Anything else (variables, :=, =, ggT/kgV, nested functions, $n, ans) opens
+//   the worksheet: numbered rows like GeoGebra's CAS view. Enter adds the line
+//   as a row, ↑/↓ edit earlier rows, $n / ans reuse results.
 
-// --- Detection keywords ---
-const KEYWORD_OPS = {
-  derive: 'diff', diff: 'diff', differentiate: 'diff',
-  integrate: 'integrate', integral: 'integrate',
-  factor: 'factor',
-  expand: 'expand',
-  simplify: 'simplify',
-};
-const PLOT_KEYWORDS = ['plot', 'graph'];
+let generation = 0;
+let engineStatus = null;
+let sheet = { rows: [] };
+let sheetLoaded = false;
+let sheetLoading = null;
+let editingIndex = null;   // row being edited (0-based) or null for a new line
+let editorVisible = false; // last render was the worksheet
+let lastPreview = null;    // { input, res } for the line being typed
+let flash = null;          // { message } shown once after a rejected Enter
 
-// Variable pattern - single letters commonly used in math (not function names)
-const FUNC_NAMES = new Set([
-  'sin', 'cos', 'tan', 'asin', 'acos', 'atan',
-  'sqrt', 'cbrt', 'abs', 'log', 'ln', 'exp',
-  'round', 'ceil', 'floor', 'pi',
-  'gcd', 'lcm', 'ggt', 'kgv',
-]);
-
-function hasVariables(expr) {
-  // Match standalone letters that aren't function names or constants
-  const tokens = expr.match(/[a-zA-Z]+/g);
-  if (!tokens) return false;
-  return tokens.some(t => !FUNC_NAMES.has(t.toLowerCase()) && t.toLowerCase() !== 'e');
-}
-
-function getVariables(expr) {
-  const tokens = expr.match(/[a-zA-Z]+/g);
-  if (!tokens) return [];
-  const vars = [];
-  for (const t of tokens) {
-    const lower = t.toLowerCase();
-    if (!FUNC_NAMES.has(lower) && lower !== 'e' && !vars.includes(t)) {
-      vars.push(t);
-    }
-  }
-  return vars;
-}
-
-// --- Expression preprocessing for nerdamer compatibility ---
-// Nerdamer uses 'log' for natural logarithm. Our calculator convention:
-//   ln(x)  = natural log  → nerdamer: log(x)
-//   log(x) = base-10 log  → nerdamer: log(x)/log(10)
-function prepareForNerdamer(expr) {
-  // Alias German terms before other transformations
-  expr = expr.replace(/\bggt\(/gi, 'gcd(').replace(/\bkgv\(/gi, 'lcm(');
-  const lower = expr.toLowerCase();
-  let result = '';
-  let i = 0;
-  while (i < expr.length) {
-    const prevIsAlnum = i > 0 && /[a-zA-Z0-9_]/.test(expr[i - 1]);
-    if (!prevIsAlnum && lower.slice(i, i + 3) === 'ln(') {
-      const closeIdx = findClosingParen(expr, i + 3);
-      if (closeIdx === -1) { result += expr[i]; i++; continue; }
-      const inner = prepareForNerdamer(expr.slice(i + 3, closeIdx));
-      result += `log(${inner})`;
-      i = closeIdx + 1;
-    } else if (!prevIsAlnum && lower.slice(i, i + 4) === 'log(') {
-      const closeIdx = findClosingParen(expr, i + 4);
-      if (closeIdx === -1) { result += expr[i]; i++; continue; }
-      const inner = prepareForNerdamer(expr.slice(i + 4, closeIdx));
-      result += `(log(${inner})/log(10))`;
-      i = closeIdx + 1;
-    } else {
-      result += expr[i];
-      i++;
-    }
-  }
-  return result;
-}
-
-function findClosingParen(str, start) {
-  let depth = 1;
-  for (let i = start; i < str.length; i++) {
-    if (str[i] === '(') depth++;
-    if (str[i] === ')') { depth--; if (depth === 0) return i; }
-  }
-  return -1;
-}
-
-// --- Internal debounce for heavy operations ---
-let heavyTimer = null;
-let lastHeavyResult = null;
-let heavyGeneration = 0; // monotonic counter to discard stale results
-const HEAVY_DEBOUNCE_MS = 300;
-const MAX_EXPONENT = 1000;
-
-// Extract the sub-expression immediately after a '^' operator.
-// Handles: ^123, ^pi, ^(expr), ^func(expr)
-function extractExponentAfterCaret(expr, caretIdx) {
-  let i = caretIdx + 1;
-  while (i < expr.length && expr[i] === ' ') i++; // skip whitespace
-  if (i >= expr.length) return null;
-
-  // Parenthesised group: ^(...)
-  if (expr[i] === '(') {
-    const close = findClosingParen(expr, i + 1);
-    if (close === -1) return null;
-    return expr.slice(i + 1, close);
-  }
-
-  // Identifier (possibly followed by parens): ^pi, ^kgv(...)
-  if (/[a-zA-Z]/.test(expr[i])) {
-    let end = i;
-    while (end < expr.length && /[a-zA-Z]/.test(expr[end])) end++;
-    // Function call: ^lcm(...)
-    if (end < expr.length && expr[end] === '(') {
-      const close = findClosingParen(expr, end + 1);
-      if (close === -1) return null;
-      return expr.slice(i, close + 1);
-    }
-    return expr.slice(i, end); // constant like pi, e
-  }
-
-  // Bare number: ^1234
-  if (/[0-9.]/.test(expr[i])) {
-    let end = i;
-    while (end < expr.length && /[0-9.]/.test(expr[end])) end++;
-    return expr.slice(i, end);
-  }
-
-  return null;
-}
-
-// Quick pre-check: reject expressions with exponents that would choke
-// the symbolic engine. Catches literal numbers, constants (pi, e), and
-// constant function calls like kgv(1900000,123945).
-function hasHugeExponent(expr) {
-  for (let i = 0; i < expr.length; i++) {
-    if (expr[i] !== '^') continue;
-    const sub = extractExponentAfterCaret(expr, i);
-    if (sub === null) continue;
-
-    // Fast path: pure digits
-    const asInt = parseInt(sub, 10);
-    if (/^\d+$/.test(sub)) {
-      if (asInt > MAX_EXPONENT) return true;
-      continue;
-    }
-
-    // Try to numerically evaluate the exponent sub-expression
-    try {
-      const val = evaluate(sub);
-      if (val !== undefined && Math.abs(val) > MAX_EXPONENT) return true;
-    } catch { /* ignore - might contain variables, let nerdamer handle it */ }
-  }
-  return false;
-}
-
-function search(expression, onHeavyResult) {
-  if (!expression.trim()) return [];
-  const trimmed = expression.trim();
-  const detected = detectMathMode(trimmed);
-
-  // Pure numeric - instant, no debounce
-  if (detected.mode === 'evaluate') {
-    clearTimeout(heavyTimer);
-    lastHeavyResult = null;
-    return handleEvaluate(trimmed);
-  }
-
-  // Heavy operations - show loading, compute async
-  clearTimeout(heavyTimer);
-  const gen = ++heavyGeneration;
-  heavyTimer = setTimeout(() => {
-    const results = handleHeavy(detected);
-    if (gen === heavyGeneration && typeof onHeavyResult === 'function') {
-      onHeavyResult(results);
-    }
-  }, HEAVY_DEBOUNCE_MS);
-  return [{ type: 'calc-loading' }];
-}
-
-function detectMathMode(expr) {
-  const lower = expr.toLowerCase();
-
-  // 1. Check for plot/graph keyword
-  for (const kw of PLOT_KEYWORDS) {
-    if (lower.startsWith(kw + ' ') || lower.startsWith(kw + '(')) {
-      return { mode: 'plot', expr: expr.slice(kw.length).trim(), explicit: true };
-    }
-  }
-
-  // 2. Check for symbolic operation keyword
-  for (const [keyword, op] of Object.entries(KEYWORD_OPS)) {
-    if (lower.startsWith(keyword + ' ') || lower.startsWith(keyword + '(')) {
-      return { mode: 'symbolic', op, expr: expr.slice(keyword.length).trim() };
-    }
-  }
-
-  // 3. Has = and variables → solve
-  if (expr.includes('=') && hasVariables(expr)) {
-    return { mode: 'solve', expr };
-  }
-
-  // 4. Has variables, no = → plot
-  if (hasVariables(expr)) {
-    const vars = getVariables(expr);
-    return { mode: 'plot', expr, explicit: false, vars };
-  }
-
-  // 5. Pure numeric
-  return { mode: 'evaluate', expr };
-}
-
-// --- Evaluate (existing recursive-descent parser) ---
-
-function handleEvaluate(expression) {
-  try {
-    const result = evaluate(expression);
-    if (result === undefined || result === null || !isFinite(result)) return [];
-    const formatted = typeof result === 'number'
-      ? Number.isInteger(result) ? result.toString() : parseFloat(result.toPrecision(12)).toString()
-      : String(result);
-
-    return [{
-      type: 'calc',
-      icon: 'calculate',
-      title: formatted,
-      subtitle: expression.trim(),
-      action: () => navigator.clipboard.writeText(formatted),
-    }];
-  } catch {
-    return [];
-  }
-}
-
-// --- Heavy operations (symbolic, solve, plot) ---
-
-function handleHeavy(detected) {
-  if (typeof nerdamer === 'undefined') return [];
-
-  // Bail early on expressions with exponents too large for the symbolic engine
-  if (hasHugeExponent(detected.expr)) return [];
-
-  try {
-    switch (detected.mode) {
-      case 'solve': return handleSolve(detected);
-      case 'symbolic': return handleSymbolic(detected);
-      case 'plot': return handlePlot(detected);
-      default: return [];
-    }
-  } catch {
-    return [];
-  }
-}
-
-// --- Solve equations ---
-
-function handleSolve(detected) {
-  const expr = detected.expr;
-  const nExpr = prepareForNerdamer(expr);
-  const vars = getVariables(expr);
-  const solveVar = vars[0] || 'x';
-
-  let solutions;
-  try {
-    solutions = nerdamer.solve(nExpr, solveVar);
-  } catch {
-    return [];
-  }
-
-  const solStr = solutions.toString();
-  if (!solStr || solStr === '[]') return [];
-
-  // Parse solutions from [a,b,c] format
-  const solArray = solStr.replace(/^\[|\]$/g, '').split(',').map(s => s.trim()).filter(Boolean);
-
-  // Build KaTeX HTML for the main result
-  const solTexParts = solArray.map(s => {
-    try { return nerdamer(s).toTeX(); } catch { return s; }
+if (typeof window !== 'undefined' && window.trim && window.trim.onCasStatus) {
+  window.trim.onCasStatus((status) => {
+    engineStatus = status;
+    // Update a visible "Computing..." spinner with setup progress
+    const span = document.querySelector('#results-container .ai-loading span');
+    if (span && status && status.message) span.textContent = status.message;
   });
-  const mainTex = solTexParts.length === 1
-    ? `${solveVar} = ${solTexParts[0]}`
-    : solTexParts.map(t => `${solveVar} = ${t}`).join(', \\quad ');
+}
 
-  const mainHtml = renderKaTeX(mainTex, true);
+function loadingMessage() {
+  if (engineStatus && (engineStatus.state === 'installing' || engineStatus.state === 'starting')) {
+    return engineStatus.message;
+  }
+  return 'Computing...';
+}
 
-  // Build steps
-  const steps = buildSolveSteps(nExpr, solveVar, solArray);
+/** Plain arithmetic that doesn't need the worksheet. */
+function isSimple(body) {
+  const s = (body || '').trim();
+  if (!s || /[$=:,]/.test(s)) return false;
+  const withoutWords = s.replace(/\b(sqrt|pi|e)\b/gi, '1');
+  // also typed symbols: π √ ² ³ × · ÷ − (unicode minus)
+  return /^[\d\s.+\-*/^%()!π√²³×·÷−]+$/.test(withoutWords);
+}
 
-  const copyText = solTexParts.length === 1
-    ? `${solveVar} = ${solArray[0]}`
-    : solArray.map(s => `${solveVar} = ${s}`).join(', ');
+function ensureSheet(onLoaded) {
+  if (sheetLoaded) return Promise.resolve(sheet);
+  if (!sheetLoading) {
+    sheetLoading = window.trim.casWorksheet().then((s) => {
+      sheet = s && Array.isArray(s.rows) ? s : { rows: [] };
+      sheetLoaded = true;
+      return sheet;
+    }).catch(() => {
+      sheetLoaded = true;
+      return sheet;
+    }).finally(() => { sheetLoading = null; });
+  }
+  if (onLoaded) sheetLoading.then(onLoaded);
+  return sheetLoading;
+}
 
+/**
+ * Evaluate a calculator line. Returns results right away (quick row, worksheet
+ * with a pending preview, or a loading row) and calls onResult with the
+ * engine's answer.
+ */
+function search(expression, onResult) {
+  const input = (expression || '').trim();
+  const gen = ++generation;
+  const deliver = (results) => { if (gen === generation && typeof onResult === 'function') onResult(results); };
+
+  if (editingIndex === null && isSimple(input)) {
+    editorVisible = false;
+    window.trim.casEval(input, false).then((res) => {
+      if (!res || res.superseded) return;
+      deliver(toResults(res, input));
+    }).catch((err) => deliver(toResults({ ok: false, error: err.message || String(err) }, input)));
+    return [{ type: 'calc-loading', message: loadingMessage() }];
+  }
+
+  // Worksheet (CAS editor)
+  if (!sheetLoaded) {
+    ensureSheet(() => { if (gen === generation) deliver(worksheetResults(input, input ? { pending: true } : null)); });
+    if (input) startPreview(input, gen, deliver);
+    return [{ type: 'calc-loading', message: loadingMessage() }];
+  }
+  if (!input) {
+    lastPreview = null;
+    if (!sheet.rows.length && editingIndex === null) { editorVisible = false; return []; }
+    return worksheetResults('', null);
+  }
+  startPreview(input, gen, deliver);
+  const cached = lastPreview && lastPreview.input === input ? lastPreview.res : { pending: true };
+  return worksheetResults(input, cached);
+}
+
+function startPreview(input, gen, deliver) {
+  window.trim.casEval(input, false).then((res) => {
+    if (!res || res.superseded) return;
+    lastPreview = { input, res };
+    if (gen === generation) deliver(worksheetResults(input, res));
+  }).catch((err) => deliver(worksheetResults(input, { ok: false, error: err.message || String(err) })));
+}
+
+function worksheetResults(input, preview) {
+  editorVisible = true;
   return [{
-    type: 'calc-symbolic',
-    icon: 'function',
-    mainHtml,
-    steps,
-    copyText,
-    subtitle: expr,
-    varsNote: vars.length > 0 ? `Variables: ${vars.join(', ')}` : null,
+    type: 'calc-worksheet',
+    title: 'Worksheet',
+    render: () => buildSheet(input, preview),
+    afterMount: (el) => {
+      const rows = el.querySelector('.cas-rows');
+      if (!rows) return;
+      const target = editingIndex !== null ? rows.querySelector(`.cas-row[data-index="${editingIndex}"]`) : null;
+      if (target) target.scrollIntoView({ block: 'nearest' });
+      else rows.scrollTop = rows.scrollHeight;
+    },
+    action: () => commitCurrent(),
   }];
 }
 
-function buildSolveSteps(nExpr, variable, solutions) {
-  const steps = [];
+// --- rendering helpers ---
 
-  // Step 1: Original equation
+function renderKaTeX(tex, displayMode) {
+  if (typeof katex === 'undefined') return escapeHtml(tex);
   try {
-    const origTex = nExpr.includes('=')
-      ? nExpr.split('=').map(s => { try { return nerdamer(s.trim()).toTeX(); } catch { return s.trim(); } }).join(' = ')
-      : nerdamer(nExpr).toTeX() + ' = 0';
-    steps.push({ label: 'Given', tex: origTex });
+    return katex.renderToString(tex, { displayMode: !!displayMode, throwOnError: false });
   } catch {
-    steps.push({ label: 'Given', tex: nExpr });
-  }
-
-  // Step 2: Simplify/rearrange if equation form
-  if (nExpr.includes('=')) {
-    const [lhs, rhs] = nExpr.split('=').map(s => s.trim());
-    try {
-      const simplified = nerdamer(`${lhs}-(${rhs})`).toTeX();
-      steps.push({ label: 'Rearranged', tex: `${simplified} = 0` });
-    } catch { /* skip */ }
-  }
-
-  // Step 3: Show solutions
-  for (let i = 0; i < solutions.length; i++) {
-    try {
-      const tex = nerdamer(solutions[i]).toTeX();
-      steps.push({ label: solutions.length > 1 ? `Solution ${i + 1}` : 'Solution', tex: `${variable} = ${tex}` });
-    } catch {
-      steps.push({ label: `Solution ${i + 1}`, tex: `${variable} = ${solutions[i]}` });
-    }
-  }
-
-  return steps;
-}
-
-// --- Symbolic operations (diff, integrate, factor, expand, simplify) ---
-
-function handleSymbolic(detected) {
-  const { op, expr } = detected;
-  const vars = getVariables(expr);
-  const mainVar = vars[0] || 'x';
-  const nExpr = prepareForNerdamer(expr);
-
-  let result;
-  try {
-    if (op === 'diff') {
-      result = nerdamer(`diff(${nExpr}, ${mainVar})`);
-    } else if (op === 'integrate') {
-      // Strip trailing dx, dt, etc.
-      const cleanExpr = nExpr.replace(new RegExp(`\\s*d${mainVar}$`), '').trim();
-      result = nerdamer(`integrate(${cleanExpr}, ${mainVar})`);
-    } else {
-      result = nerdamer(`${op}(${nExpr})`);
-    }
-  } catch {
-    return [];
-  }
-
-  const resultTex = result.toTeX();
-  let inputTex;
-  try { inputTex = nerdamer(nExpr).toTeX(); } catch { inputTex = expr; }
-
-  // Build display with operation notation
-  let displayTex;
-  if (op === 'diff') {
-    displayTex = `\\frac{d}{d${mainVar}}\\left(${inputTex}\\right) = ${resultTex}`;
-  } else if (op === 'integrate') {
-    displayTex = `\\int ${inputTex} \\, d${mainVar} = ${resultTex} + C`;
-  } else if (op === 'factor') {
-    displayTex = `\\text{factor}\\left(${inputTex}\\right) = ${resultTex}`;
-  } else if (op === 'expand') {
-    displayTex = `\\text{expand}\\left(${inputTex}\\right) = ${resultTex}`;
-  } else if (op === 'simplify') {
-    displayTex = `\\text{simplify}\\left(${inputTex}\\right) = ${resultTex}`;
-  } else {
-    displayTex = `${inputTex} = ${resultTex}`;
-  }
-
-  const mainHtml = renderKaTeX(displayTex, true);
-
-  // Steps for calculus operations
-  const steps = [];
-  if (op === 'diff') {
-    steps.push({ label: 'Input', tex: `f(${mainVar}) = ${inputTex}` });
-    steps.push({ label: 'Derivative', tex: `f'(${mainVar}) = ${resultTex}` });
-  } else if (op === 'integrate') {
-    steps.push({ label: 'Input', tex: `f(${mainVar}) = ${inputTex}` });
-    steps.push({ label: 'Integral', tex: `F(${mainVar}) = ${resultTex} + C` });
-  }
-
-  const copyText = result.toString();
-
-  return [{
-    type: 'calc-symbolic',
-    icon: 'function',
-    mainHtml,
-    steps,
-    copyText,
-    subtitle: `${op}(${expr})`,
-  }];
-}
-
-// --- Plot ---
-
-function handlePlot(detected) {
-  if (typeof Plotly === 'undefined') return [];
-
-  const expr = detected.expr;
-  const vars = detected.vars || getVariables(expr);
-
-  // Determine 2D vs 3D
-  const is3D = vars.length >= 2;
-
-  if (is3D) {
-    return buildPlot3D(expr, vars);
-  }
-  return buildPlot2D(expr, vars[0] || 'x');
-}
-
-function safeBuildFunction(nExpr, vars) {
-  try {
-    const fn = nerdamer(nExpr).buildFunction(vars);
-    // Smoke-test with a safe value to make sure it returns a number
-    const test = fn(...vars.map(() => 1));
-    if (typeof test !== 'number') return null;
-    return fn;
-  } catch {
-    return null;
+    return escapeHtml(tex);
   }
 }
 
-function buildPlot2D(expr, variable) {
-  const nExpr = prepareForNerdamer(expr);
-  // Generate data points
-  const xMin = -10, xMax = 10, steps = 500;
-  const xVals = [], yVals = [];
-  const step = (xMax - xMin) / steps;
-
-  // Prefer a compiled native function (orders of magnitude faster than
-  // calling nerdamer().evaluate() per point)
-  const fastFn = safeBuildFunction(nExpr, [variable]);
-  const TIME_BUDGET = 2000; // ms – bail if nerdamer fallback is too slow
-  const startTime = Date.now();
-
-  for (let i = 0; i <= steps; i++) {
-    const xVal = xMin + i * step;
-    try {
-      let yNum;
-      if (fastFn) {
-        yNum = fastFn(xVal);
-      } else {
-        // Slow path – check time budget
-        if (Date.now() - startTime > TIME_BUDGET) break;
-        yNum = Number(nerdamer(nExpr, { [variable]: xVal }).evaluate().valueOf());
-      }
-      xVals.push(xVal);
-      yVals.push(isFinite(yNum) ? yNum : null);
-    } catch {
-      xVals.push(xVal);
-      yVals.push(null);
-    }
-  }
-
-  // If too few points were generated the expression is too heavy to plot
-  if (xVals.length < 10) return [];
-
-  // Build LaTeX title
-  let titleTex = '';
-  try { titleTex = nerdamer(nExpr).toTeX(); } catch { titleTex = expr; }
-
-  const plotData = [{
-    x: xVals,
-    y: yVals,
-    type: 'scatter',
-    mode: 'lines',
-    line: { color: '#7c8aff', width: 2.5 },
-    hovertemplate: `${variable}: %{x:.3f}<br>f(${variable}): %{y:.3f}<extra></extra>`,
-    connectgaps: false,
-  }];
-
-  const vars = getVariables(expr);
-  return [{
-    type: 'calc-plot',
-    icon: 'show_chart',
-    plotData,
-    plotLayout: makePlotLayout2D(variable),
-    plotConfig: PLOT_CONFIG,
-    titleTex,
-    subtitle: expr,
-    varsNote: vars.length > 0 ? `Variables: ${vars.join(', ')}` : null,
-  }];
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function buildPlot3D(expr, vars) {
-  const nExpr = prepareForNerdamer(expr);
-  const xVar = vars[0], yVar = vars[1];
-  const min = -5, max = 5, n = 60;
-  const step = (max - min) / n;
+function copyText(text) {
+  if (window.trim && window.trim.copyText) return window.trim.copyText(String(text));
+  if (navigator.clipboard) return navigator.clipboard.writeText(String(text)).catch(() => {});
+  return Promise.resolve();
+}
 
-  const zData = [];
-  const xRange = [], yRange = [];
+/** TeX for a successful engine reply (shared by cards and worksheet rows). */
+function resultTex(res) {
+  let tex = res.latex || '';
+  if (res.kind === 'number' && res.decimal) tex += ` \\approx ${res.decimal.replace(/i/g, '\\,i')}`;
+  if (res.kind === 'definition' && res.decimal && !tex.includes('\\approx') && res.decimal !== res.text.split(':=').pop().trim()) {
+    tex += ` \\approx ${res.decimal}`;
+  }
+  return tex;
+}
 
-  for (let i = 0; i <= n; i++) xRange.push(min + i * step);
-  for (let j = 0; j <= n; j++) yRange.push(min + j * step);
+function copyValue(res) {
+  if (!res || !res.ok) return '';
+  if (res.kind === 'number' && res.decimal) return res.decimal;
+  return (res.text || '').replace(/\*\*/g, '^').replace(/\bI\b/g, 'i');
+}
 
-  const fastFn = safeBuildFunction(nExpr, [xVar, yVar]);
-  const TIME_BUDGET = 4000; // ms – 3D grid is larger, allow a bit more
-  const startTime = Date.now();
-  let timedOut = false;
+function varsNote(res) {
+  const parts = [];
+  if (res.vars && res.vars.length) parts.push(`Variables: ${res.vars.join(', ')}`);
+  if (res.solveFor && res.vars && res.vars.length > 1) parts.push(`solved for ${res.solveFor}`);
+  if (res.note) parts.push(res.note);
+  return parts.length ? parts.join(' · ') : null;
+}
 
-  for (let j = 0; j <= n; j++) {
-    const row = [];
-    for (let i = 0; i <= n; i++) {
-      try {
-        let zNum;
-        if (fastFn) {
-          zNum = fastFn(xRange[i], yRange[j]);
-        } else {
-          if (timedOut) { row.push(null); continue; }
-          if (Date.now() - startTime > TIME_BUDGET) { timedOut = true; row.push(null); continue; }
-          zNum = Number(nerdamer(nExpr, { [xVar]: xRange[i], [yVar]: yRange[j] }).evaluate().valueOf());
+function iconButton(icon, title, onClick) {
+  const b = document.createElement('button');
+  b.className = 'cas-icon-btn';
+  b.title = title;
+  b.innerHTML = `<span class="material-symbols-rounded">${icon}</span>`;
+  b.addEventListener('mousedown', (e) => e.preventDefault());
+  b.addEventListener('click', (e) => { e.stopPropagation(); onClick(b); });
+  return b;
+}
+
+function outputElement(res) {
+  const out = document.createElement('div');
+  out.className = 'cas-out';
+  if (!res) return out;
+  if (res.pending) {
+    out.classList.add('cas-pending');
+    out.textContent = loadingMessage();
+    return out;
+  }
+  if (!res.ok) {
+    out.classList.add('cas-error');
+    out.textContent = res.error || 'Something went wrong';
+    return out;
+  }
+  out.innerHTML = renderKaTeX(resultTex(res), false);
+  const note = varsNote(res);
+  if (note) {
+    const n = document.createElement('div');
+    n.className = 'cas-note';
+    n.textContent = note;
+    out.appendChild(n);
+  }
+  return out;
+}
+
+function plotElementFor(res) {
+  if (!res || !res.ok || !res.plot || !window._ui || !window._ui.createCalcPlotElement) return null;
+  const plot = toPlot(res);
+  delete plot.titleTex; // the row already shows the expression
+  return window._ui.createCalcPlotElement(plot);
+}
+
+function buildSheet(input, preview) {
+  const root = document.createElement('div');
+  root.className = 'cas-sheet';
+
+  const rowsEl = document.createElement('div');
+  rowsEl.className = 'cas-rows';
+  sheet.rows.forEach((row, i) => {
+    const el = document.createElement('div');
+    el.className = 'cas-row' + (i === editingIndex ? ' editing' : '');
+    el.dataset.index = String(i);
+    el.title = 'Click to edit';
+
+    const num = document.createElement('span');
+    num.className = 'cas-num';
+    num.textContent = `$${i + 1}`;
+    const io = document.createElement('div');
+    io.className = 'cas-io';
+    const inEl = document.createElement('div');
+    inEl.className = 'cas-in';
+    inEl.textContent = row.input;
+    io.appendChild(inEl);
+    io.appendChild(outputElement(row.result));
+
+    const actions = document.createElement('div');
+    actions.className = 'cas-row-actions';
+    if (row.result && row.result.ok && row.result.plot) {
+      actions.appendChild(iconButton('show_chart', 'Show plot', () => {
+        const existing = el.querySelector('.calc-plot-wrapper');
+        if (existing) { existing.remove(); }
+        else {
+          const plot = plotElementFor(row.result);
+          if (plot) {
+            io.appendChild(plot);
+            if (window._ui.renderPlotsIn) window._ui.renderPlotsIn(io);
+          }
         }
-        row.push(isFinite(zNum) ? zNum : null);
-      } catch {
-        row.push(null);
-      }
+        if (window._ui.resizeToContent) window._ui.resizeToContent();
+      }));
     }
-    zData.push(row);
+    if (row.result && row.result.ok) {
+      actions.appendChild(iconButton('content_copy', 'Copy result', (b) => {
+        copyText(copyValue(row.result)).then(() => {
+          const s = b.querySelector('span');
+          s.textContent = 'check';
+          setTimeout(() => { s.textContent = 'content_copy'; }, 1200);
+        });
+      }));
+    }
+    actions.appendChild(iconButton('delete', 'Delete row', () => deleteRow(i)));
+
+    el.appendChild(num);
+    el.appendChild(io);
+    el.appendChild(actions);
+    el.addEventListener('mousedown', (e) => { if (!e.target.closest('button')) e.preventDefault(); });
+    el.addEventListener('click', () => editRow(i));
+    rowsEl.appendChild(el);
+  });
+  if (sheet.rows.length) root.appendChild(rowsEl);
+
+  // The line being typed
+  const line = document.createElement('div');
+  line.className = 'cas-preview' + (editingIndex !== null ? ' editing' : '');
+  const num = document.createElement('span');
+  num.className = 'cas-num';
+  num.textContent = `$${editingIndex !== null ? editingIndex + 1 : sheet.rows.length + 1}`;
+  const io = document.createElement('div');
+  io.className = 'cas-io';
+  if (flash) {
+    io.appendChild(outputElement({ ok: false, error: flash.message }));
+    flash = null;
+  } else if (input) {
+    io.appendChild(outputElement(preview));
+    const plot = plotElementFor(preview);
+    if (plot) io.appendChild(plot);
+  } else {
+    const hint = document.createElement('div');
+    hint.className = 'cas-out cas-pending';
+    hint.textContent = editingIndex !== null ? 'Type the new version of this row' : 'Type an expression, equation or definition';
+    io.appendChild(hint);
   }
+  line.appendChild(num);
+  line.appendChild(io);
+  root.appendChild(line);
 
-  // If the computation was too slow and everything is null, bail
-  if (timedOut && zData.every(row => row.every(v => v === null))) return [];
+  const help = document.createElement('div');
+  help.className = 'cas-help';
+  help.textContent = editingIndex !== null
+    ? `Editing $${editingIndex + 1}: Enter saves and recalculates · Esc cancels · ↑↓ other rows`
+    : 'Enter adds a row · ↑↓ edit rows · reuse results with $1 or ans · f(x) := … defines · "reset" clears';
+  root.appendChild(help);
+  return root;
+}
 
-  let titleTex = '';
-  try { titleTex = nerdamer(nExpr).toTeX(); } catch { titleTex = expr; }
+// --- worksheet actions ---
 
-  const plotData = [{
-    z: zData,
-    x: xRange,
-    y: yRange,
-    type: 'surface',
-    colorscale: [
-      [0, '#1e1e3f'],
-      [0.25, '#3d3d8f'],
-      [0.5, '#7c8aff'],
-      [0.75, '#a8b4ff'],
-      [1, '#e0e4ff'],
-    ],
-    hovertemplate: `${xVar}: %{x:.2f}<br>${yVar}: %{y:.2f}<br>f: %{z:.2f}<extra></extra>`,
-  }];
+function setInput(text) {
+  const inputEl = document.getElementById('search-input');
+  inputEl.value = text;
+  inputEl.setSelectionRange(text.length, text.length);
+  inputEl.focus();
+  inputEl.dispatchEvent(new Event('input'));
+}
 
-  const allVars = getVariables(expr);
-  return [{
+function rerender(input) {
+  if (!window._ui) return;
+  const body = input === undefined ? currentBody() : input;
+  const preview = lastPreview && lastPreview.input === body ? lastPreview.res : (body ? { pending: true } : null);
+  window._ui.renderResults(worksheetResults(body, preview));
+}
+
+function currentBody() {
+  const raw = document.getElementById('search-input').value;
+  return window._inputRouter ? window._inputRouter.stripPrefix(raw).trim() : raw.replace(/^\s*c:\s*/i, '').trim();
+}
+
+async function commitCurrent() {
+  const body = currentBody();
+  if (!body) {
+    if (editingIndex !== null) cancelEdit();
+    return;
+  }
+  const index = editingIndex;
+  let res;
+  try {
+    res = await window.trim.casCommit(body, index);
+  } catch (err) {
+    res = { ok: false, error: err.message || String(err) };
+  }
+  if (res && Array.isArray(res.rows)) { sheet = { rows: res.rows }; sheetLoaded = true; }
+  if (res && res.ok) {
+    editingIndex = null;
+    lastPreview = null;
+    setInput('c: ');
+    return;
+  }
+  // Rejected: keep the input so it can be fixed, show why
+  flash = { message: (res && res.error) || 'Could not add this row' };
+  rerender(body);
+}
+
+function editRow(i) {
+  if (i < 0 || i >= sheet.rows.length) return;
+  editingIndex = i;
+  lastPreview = null;
+  setInput(`c: ${sheet.rows[i].input}`);
+}
+
+function cancelEdit() {
+  editingIndex = null;
+  lastPreview = null;
+  setInput('c: ');
+}
+
+async function deleteRow(i) {
+  let res;
+  try {
+    res = await window.trim.casDeleteRow(i);
+  } catch {
+    return;
+  }
+  if (res && Array.isArray(res.rows)) sheet = { rows: res.rows };
+  if (editingIndex !== null) {
+    if (editingIndex === i) { cancelEdit(); return; }
+    if (editingIndex > i) editingIndex -= 1;
+  }
+  rerender();
+}
+
+/** Keyboard handling while the calculator is active. Returns true when the key was used. */
+function handleKey(e) {
+  if (e.key === 'Escape' && editingIndex !== null) {
+    cancelEdit();
+    return true;
+  }
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return false;
+  if (!sheet.rows.length) return false;
+  const bodyEmpty = !currentBody();
+  if (!(editingIndex !== null || editorVisible || bodyEmpty)) return false;
+  if (e.key === 'ArrowUp') {
+    editRow(editingIndex === null ? sheet.rows.length - 1 : Math.max(0, editingIndex - 1));
+  } else {
+    if (editingIndex === null) return false;
+    if (editingIndex + 1 >= sheet.rows.length) cancelEdit();
+    else editRow(editingIndex + 1);
+  }
+  return true;
+}
+
+function resetEditing() {
+  editingIndex = null;
+  lastPreview = null;
+  flash = null;
+}
+
+// --- quick results (plain arithmetic) ---
+
+function toResults(res, input) {
+  if (!res || !res.ok) {
+    return [{
+      type: 'calc-error',
+      icon: res && res.unavailable ? 'warning' : 'error',
+      title: (res && res.error) || 'Something went wrong',
+      subtitle: input,
+    }];
+  }
+  if (res.kind === 'number' && !res.decimal) {
+    const title = copyValue(res);
+    return [{ type: 'calc', icon: 'calculate', title, subtitle: input, action: () => copyText(title) }];
+  }
+  if (res.kind === 'bool') {
+    return [{ type: 'calc', icon: 'calculate', title: res.text, subtitle: res.detail || input, action: () => copyText(res.text) }];
+  }
+  const results = [];
+  const plotOnly = res.plot && (res.kind === 'plot' || res.kind === 'expr');
+  if (!plotOnly) {
+    const card = {
+      type: 'calc-symbolic',
+      icon: 'function',
+      mainHtml: renderKaTeX(resultTex(res), true),
+      steps: [],
+      copyText: copyValue(res),
+      subtitle: input,
+      varsNote: varsNote(res),
+    };
+    card.action = () => copyText(card.copyText);
+    results.push(card);
+  }
+  if (res.plot) results.push(toPlot(res));
+  return results;
+}
+
+function toPlot(res) {
+  const p = res.plot;
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#7c8aff';
+  if (p.type === '2d') {
+    const v = p.vars[0];
+    return {
+      type: 'calc-plot',
+      icon: 'show_chart',
+      plotData: [{
+        x: p.x, y: p.y, type: 'scatter', mode: 'lines', connectgaps: false,
+        line: { color: accent, width: 2.5 },
+        hovertemplate: `${v}: %{x:.3f}<br>f(${v}): %{y:.3f}<extra></extra>`,
+      }],
+      plotLayout: makePlotLayout2D(v),
+      plotConfig: PLOT_CONFIG,
+      titleTex: res.latex,
+      subtitle: res.text,
+      varsNote: varsNote(res),
+    };
+  }
+  const [xv, yv] = p.vars;
+  return {
     type: 'calc-plot',
     icon: 'show_chart',
-    plotData,
-    plotLayout: makePlotLayout3D(xVar, yVar),
+    plotData: [{
+      z: p.z, x: p.x, y: p.y, type: 'surface',
+      colorscale: [[0, '#1e1e3f'], [0.25, '#3d3d8f'], [0.5, '#7c8aff'], [0.75, '#a8b4ff'], [1, '#e0e4ff']],
+      hovertemplate: `${xv}: %{x:.2f}<br>${yv}: %{y:.2f}<br>f: %{z:.2f}<extra></extra>`,
+    }],
+    plotLayout: makePlotLayout3D(xv, yv),
     plotConfig: PLOT_CONFIG,
-    titleTex,
-    subtitle: expr,
-    varsNote: allVars.length > 0 ? `Variables: ${allVars.join(', ')}` : null,
-  }];
+    titleTex: res.latex,
+    subtitle: res.text,
+    varsNote: varsNote(res),
+  };
 }
 
 const PLOT_CONFIG = {
@@ -617,288 +537,42 @@ function makePlotLayout3D(xVar, yVar) {
   };
 }
 
-// --- KaTeX rendering helper ---
+// --- Syntax highlighting for the input overlay (cosmetic only, no evaluation) ---
 
-function renderKaTeX(tex, displayMode) {
-  if (typeof katex === 'undefined') return tex;
-  try {
-    return katex.renderToString(tex, { displayMode: !!displayMode, throwOnError: false });
-  } catch {
-    return tex;
-  }
-}
+const HIGHLIGHT_FUNCS = new Set([
+  'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'sec', 'csc', 'cot',
+  'sqrt', 'cbrt', 'abs', 'log', 'ln', 'lg', 'exp', 'round', 'ceil', 'floor',
+  'gcd', 'lcm', 'ggt', 'kgv', 'factorial', 'binomial', 'mod',
+  'diff', 'derive', 'integrate', 'expand', 'factor', 'simplify', 'solve', 'limit', 'series',
+  'apart', 'together', 'cancel', 'trigsimp', 'subs', 'plot', 'graph', 'Matrix', 'det',
+]);
+const HIGHLIGHT_CONSTS = new Set(['pi', 'e', 'i', 'oo', 'E', 'I', 'ans']);
 
-// --- Existing recursive-descent parser (kept for fast numeric eval) ---
-
-const MATH_FUNCS = {
-  sin: Math.sin, cos: Math.cos, tan: Math.tan,
-  asin: Math.asin, acos: Math.acos, atan: Math.atan,
-  sqrt: Math.sqrt, cbrt: Math.cbrt, abs: Math.abs,
-  log: Math.log10, ln: Math.log, exp: Math.exp,
-  round: Math.round, ceil: Math.ceil, floor: Math.floor,
-};
-
-function _gcdPair(a, b) {
-  if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isInteger(a) || !Number.isInteger(b)) return NaN;
-  a = Math.abs(a);
-  b = Math.abs(b);
-  while (b) {
-    [a, b] = [b, a % b];
-  }
-  return a;
-}
-
-function _lcmPair(a, b) {
-  if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isInteger(a) || !Number.isInteger(b)) return NaN;
-  a = Math.abs(a);
-  b = Math.abs(b);
-  if (!a || !b) return 0;
-  return (a / _gcdPair(a, b)) * b;
-}
-
-/** N-ary GCD: requires ≥2 integers; any non-integer → NaN (fail closed). */
-function _gcd(...nums) {
-  if (nums.length < 2) return NaN;
-  let acc = nums[0];
-  for (let i = 1; i < nums.length; i++) {
-    acc = _gcdPair(acc, nums[i]);
-    if (!Number.isFinite(acc)) return NaN;
-  }
-  return acc;
-}
-
-/** N-ary LCM: requires ≥2 integers; any non-integer → NaN (fail closed). */
-function _lcm(...nums) {
-  if (nums.length < 2) return NaN;
-  let acc = nums[0];
-  for (let i = 1; i < nums.length; i++) {
-    acc = _lcmPair(acc, nums[i]);
-    if (!Number.isFinite(acc)) return NaN;
-  }
-  return acc;
-}
-
-const MATH_FUNCS_2 = {
-  gcd: _gcd, ggt: _gcd,
-  lcm: _lcm, kgv: _lcm,
-};
-
-const MATH_CONSTS = { pi: Math.PI, e: Math.E };
-
-function evaluate(expr) {
-  try {
-    const tokens = tokenize(expr);
-    if (!tokens || tokens.length === 0) return undefined;
-    const ctx = { tokens, pos: 0 };
-    const result = parseExpr(ctx);
-    if (ctx.pos < ctx.tokens.length) return undefined;
-    // Never return NaN or Infinity - those are domain errors, not valid results
-    if (typeof result !== 'number' || !isFinite(result)) return undefined;
-    return result;
-  } catch {
-    return undefined;
-  }
-}
-
-function tokenize(expr) {
-  const out = [];
-  const s = expr.replace(/\s+/g, '');
-  let i = 0;
-  while (i < s.length) {
-    const ch = s[i];
-    if ((ch >= '0' && ch <= '9') || (ch === '.' && i + 1 < s.length && s[i + 1] >= '0' && s[i + 1] <= '9')) {
-      let num = '';
-      let dots = 0;
-      while (i < s.length && ((s[i] >= '0' && s[i] <= '9') || s[i] === '.')) {
-        if (s[i] === '.') dots++;
-        if (dots > 1) return null; // e.g. "1.2.3" - invalid number
-        num += s[i++];
-      }
-      if (i < s.length && (s[i] === 'e' || s[i] === 'E')) {
-        const next = s[i + 1];
-        const sign = next === '+' || next === '-';
-        const digitIdx = sign ? i + 2 : i + 1;
-        if (digitIdx < s.length && s[digitIdx] >= '0' && s[digitIdx] <= '9') {
-          return null;
-        }
-      }
-      out.push({ type: 'num', value: parseFloat(num) });
-    } else if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) {
-      let id = '';
-      while (i < s.length && ((s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z'))) { id += s[i++]; }
-      const lower = id.toLowerCase();
-      if (MATH_CONSTS[lower] !== undefined) {
-        out.push({ type: 'num', value: MATH_CONSTS[lower] });
-      } else if (MATH_FUNCS[lower] || MATH_FUNCS_2[lower]) {
-        out.push({ type: 'func', name: lower });
-      } else {
-        return null;
-      }
-    } else if ('+-*/^%(),'.includes(ch)) {
-      out.push({ type: 'op', value: ch });
-      i++;
-    } else {
-      return null;
-    }
-  }
-  // Insert implicit multiplication tokens between adjacent value-producing tokens
-  return insertImplicitMul(out);
-}
-
-// Detect adjacencies that imply multiplication and insert * tokens
-function insertImplicitMul(tokens) {
-  if (!tokens || tokens.length < 2) return tokens;
-  const result = [tokens[0]];
-  for (let i = 1; i < tokens.length; i++) {
-    const prev = tokens[i - 1];
-    const cur = tokens[i];
-    const needsMul =
-      // num followed by func: 2sin(...)
-      (prev.type === 'num' && cur.type === 'func') ||
-      // num followed by (: 2(3+4)
-      (prev.type === 'num' && cur.type === 'op' && cur.value === '(') ||
-      // num followed by num (constant): 2pi
-      (prev.type === 'num' && cur.type === 'num') ||
-      // ) followed by (: (2+3)(4+5)
-      (prev.type === 'op' && prev.value === ')' && cur.type === 'op' && cur.value === '(') ||
-      // ) followed by func: (2)sin(pi)
-      (prev.type === 'op' && prev.value === ')' && cur.type === 'func') ||
-      // ) followed by num: (2+3)4
-      (prev.type === 'op' && prev.value === ')' && cur.type === 'num') ||
-      // % followed by num/func/(: 50%2 → 0.5*2
-      (prev.type === 'op' && prev.value === '%' && (cur.type === 'num' || cur.type === 'func' || (cur.type === 'op' && cur.value === '(')));
-    if (needsMul) {
-      result.push({ type: 'op', value: '*' });
-    }
-    result.push(cur);
-  }
-  return result;
-}
-
-function peek(ctx) { return ctx.pos < ctx.tokens.length ? ctx.tokens[ctx.pos] : null; }
-function consume(ctx) { return ctx.tokens[ctx.pos++]; }
-
-function parseExpr(ctx) {
-  let left = parseTerm(ctx);
-  while (peek(ctx) && peek(ctx).type === 'op' && (peek(ctx).value === '+' || peek(ctx).value === '-')) {
-    const op = consume(ctx).value;
-    const right = parseTerm(ctx);
-    left = op === '+' ? left + right : left - right;
-  }
-  return left;
-}
-
-function parseTerm(ctx) {
-  let left = parseUnary(ctx);
-  while (peek(ctx) && peek(ctx).type === 'op' && (peek(ctx).value === '*' || peek(ctx).value === '/')) {
-    const op = consume(ctx).value;
-    const right = parseUnary(ctx);
-    left = op === '*' ? left * right : left / right;
-  }
-  return left;
-}
-
-function parseExponent(ctx) {
-  const base = parsePostfix(ctx);
-  if (peek(ctx) && peek(ctx).type === 'op' && peek(ctx).value === '^') {
-    consume(ctx);
-    const exp = parseUnary(ctx);
-    return Math.pow(base, exp);
-  }
-  return base;
-}
-
-function parseUnary(ctx) {
-  if (peek(ctx) && peek(ctx).type === 'op' && peek(ctx).value === '-') {
-    consume(ctx);
-    return -parseUnary(ctx);
-  }
-  if (peek(ctx) && peek(ctx).type === 'op' && peek(ctx).value === '+') {
-    consume(ctx);
-    return parseUnary(ctx);
-  }
-  return parseExponent(ctx);
-}
-
-function parsePostfix(ctx) {
-  let val = parsePrimary(ctx);
-  while (peek(ctx) && peek(ctx).type === 'op' && peek(ctx).value === '%') {
-    consume(ctx);
-    val = val / 100;
-  }
-  return val;
-}
-
-function parsePrimary(ctx) {
-  const tok = peek(ctx);
-  if (!tok) throw new Error('unexpected end');
-
-  if (tok.type === 'func') {
-    consume(ctx);
-    const fnN = MATH_FUNCS_2[tok.name];
-    const fn = MATH_FUNCS[tok.name];
-    if (!peek(ctx) || peek(ctx).value !== '(') throw new Error('expected ( after function');
-    consume(ctx);
-    const args = [parseExpr(ctx)];
-    while (peek(ctx) && peek(ctx).value === ',') {
-      consume(ctx);
-      args.push(parseExpr(ctx));
-    }
-    if (!peek(ctx) || peek(ctx).value !== ')') throw new Error('expected )');
-    consume(ctx);
-    if (fnN) {
-      if (args.length < 2) throw new Error('expected at least 2 args');
-      return fnN(...args);
-    }
-    if (args.length !== 1) throw new Error('expected 1 arg');
-    return fn(args[0]);
-  }
-
-  if (tok.type === 'num') {
-    consume(ctx);
-    return tok.value;
-  }
-
-  if (tok.type === 'op' && tok.value === '(') {
-    consume(ctx);
-    const val = parseExpr(ctx);
-    if (!peek(ctx) || peek(ctx).value !== ')') throw new Error('expected )');
-    consume(ctx);
-    return val;
-  }
-
-  throw new Error('unexpected token');
-}
-
-// Return token info for syntax highlighting in the input overlay.
-// Each token: { text, type: 'func'|'const'|'number'|'op'|'unknown', start, end, name? }
+// Each token: { text, type: 'func'|'const'|'number'|'op'|'unknown', start, end }
 function getCalcTokens(expr) {
   const tokens = [];
   const s = expr;
   let i = 0;
   while (i < s.length) {
     const ch = s[i];
-    if (ch === ' ' || ch === '\t') {
+    if (ch === ' ' || ch === '\t') { i++; continue; }
+    if (ch === '$' && i + 1 < s.length && /\d/.test(s[i + 1])) {
+      const start = i;
       i++;
-      continue;
-    }
-    if ((ch >= '0' && ch <= '9') || (ch === '.' && i + 1 < s.length && s[i + 1] >= '0' && s[i + 1] <= '9')) {
+      while (i < s.length && /\d/.test(s[i])) i++;
+      tokens.push({ text: s.slice(start, i), type: 'const', start, end: i });
+    } else if ((ch >= '0' && ch <= '9') || (ch === '.' && i + 1 < s.length && s[i + 1] >= '0' && s[i + 1] <= '9')) {
       const start = i;
       while (i < s.length && ((s[i] >= '0' && s[i] <= '9') || s[i] === '.')) i++;
       tokens.push({ text: s.slice(start, i), type: 'number', start, end: i });
-    } else if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) {
+    } else if (/[A-Za-z_]/.test(ch)) {
       const start = i;
-      while (i < s.length && ((s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z'))) i++;
+      while (i < s.length && /[A-Za-z_0-9]/.test(s[i])) i++;
       const word = s.slice(start, i);
-      const lower = word.toLowerCase();
-      if (MATH_CONSTS[lower] !== undefined) {
-        tokens.push({ text: word, type: 'const', start, end: i, name: lower });
-      } else if (MATH_FUNCS[lower] || MATH_FUNCS_2[lower]) {
-        tokens.push({ text: word, type: 'func', start, end: i, name: lower });
-      } else {
-        tokens.push({ text: word, type: 'unknown', start, end: i });
-      }
-    } else if ('+-*/^%(),'.includes(ch)) {
+      const type = HIGHLIGHT_CONSTS.has(word) ? 'const'
+        : HIGHLIGHT_FUNCS.has(word.toLowerCase()) ? 'func' : 'unknown';
+      tokens.push({ text: word, type, start, end: i });
+    } else if ('+-*/^%(),=:!'.includes(ch)) {
       tokens.push({ text: ch, type: 'op', start: i, end: i + 1 });
       i++;
     } else {
@@ -910,10 +584,10 @@ function getCalcTokens(expr) {
 }
 
 if (typeof window !== 'undefined') {
-  window._calculator = { search, getCalcTokens };
+  window._calculator = { search, getCalcTokens, toResults, handleKey, resetEditing, isSimple };
 }
 
-// Allow tests to import internals directly
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { search, evaluate, prepareForNerdamer, findClosingParen, hasVariables, getVariables, detectMathMode, tokenize, hasHugeExponent };
+  module.exports = { getCalcTokens, toResults, isSimple };
 }
+})();

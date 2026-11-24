@@ -1,8 +1,15 @@
+// Module scope: renderer scripts are classic <script>s, so without this wrapper
+// every top-level function becomes a global and modules overwrite each other
+// (and builtins like window.open / window.close).
+(function () {
 let isQuerying = false;
 let hasConversation = false;
 let conversationPrefix = null; // 'ai' or 'ai_pro'
 let currentSessionId = null;
 let sessionTitle = null;
+let queryGeneration = 0; // bumped on abort so late results are ignored
+let activeRenderFn = null;
+let inflightMode = null; // mode of the query currently running
 
 async function search(query) {
   if (!query.trim()) return [];
@@ -16,6 +23,9 @@ function newSessionId() {
 async function execute(query, mode, forceShow, renderFn, pastedImages) {
   if (isQuerying) return;
   isQuerying = true;
+  const generation = ++queryGeneration;
+  activeRenderFn = renderFn;
+  inflightMode = mode;
 
   const usePro = mode === 'ai_pro';
   const followUp = hasConversation && conversationPrefix === mode;
@@ -33,7 +43,8 @@ async function execute(query, mode, forceShow, renderFn, pastedImages) {
   try {
     const result = await window.trim.aiQuery(query, usePro, forceShow, followUp, pastedImages || []);
 
-    if (result.error === '__aborted__') return;
+    // Stopped by the user (or superseded): abort() already updated the UI
+    if (generation !== queryGeneration || (result && result.error === '__aborted__')) return;
 
     if (result.error) {
       renderFn({ type: 'ai-error', error: result.error });
@@ -58,11 +69,30 @@ async function execute(query, mode, forceShow, renderFn, pastedImages) {
       });
     }
   } catch (err) {
+    if (generation !== queryGeneration) return;
     renderFn({ type: 'ai-error', error: err.message || 'Failed to reach Gemini' });
   } finally {
-    isQuerying = false;
-    window.trim.offAIStatus();
+    if (generation === queryGeneration) {
+      isQuerying = false;
+      activeRenderFn = null;
+      inflightMode = null;
+      window.trim.offAIStatus();
+    }
   }
+}
+
+/** Stop the in-flight query. Returns true if something was running. */
+function abort() {
+  if (!isQuerying) return false;
+  queryGeneration++;
+  isQuerying = false;
+  inflightMode = null;
+  const renderFn = activeRenderFn;
+  activeRenderFn = null;
+  window.trim.offAIStatus();
+  try { window.trim.abortAIQuery(); } catch {}
+  if (renderFn) renderFn({ type: 'ai-stopped' });
+  return true;
 }
 
 function prepareForQuery(mode) {
@@ -75,6 +105,7 @@ function prepareForQuery(mode) {
 }
 
 function clearConversation() {
+  if (isQuerying) abort();
   hasConversation = false;
   conversationPrefix = null;
   currentSessionId = null;
@@ -91,6 +122,11 @@ function isBusy() {
 
 function getConversationPrefix() {
   return conversationPrefix;
+}
+
+/** Mode of the active chat, or of the query still running before the first answer. */
+function getActiveMode() {
+  return conversationPrefix || inflightMode || 'ai';
 }
 
 function getSessionMeta() {
@@ -222,8 +258,11 @@ window._aiQuery = {
   clearConversation,
   isFollowUp,
   isBusy,
+  abort,
   getConversationPrefix,
+  getActiveMode,
   getSessionMeta,
   restoreSession,
   highlightCodeBlocks,
 };
+})();

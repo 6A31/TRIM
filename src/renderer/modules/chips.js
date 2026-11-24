@@ -1,3 +1,7 @@
+// Module scope: renderer scripts are classic <script>s, so without this wrapper
+// every top-level function becomes a global and modules overwrite each other
+// (and builtins like window.open / window.close).
+(function () {
 // Modular chip toggle system for the search bar
 // Chips appear contextually based on input mode
 
@@ -17,6 +21,7 @@ function register(id, opts) {
     action: typeof opts.action === 'function' ? opts.action : null,
     visibleWhen: typeof opts.visibleWhen === 'function' ? opts.visibleWhen : null,
     dismissable: opts.dismissable || false,
+    enterTrigger: opts.enterTrigger !== false,
   });
   activeToggles[id] = opts.default || false;
 }
@@ -62,7 +67,7 @@ register('ai_explain', {
   action: () => {
     if (!inputEl) return;
     const raw = (inputEl.value || '').trim();
-    const expr = raw.replace(/^c:\s*/, '').trim();
+    const expr = window._inputRouter ? window._inputRouter.stripPrefix(raw).trim() : raw.replace(/^c:\s*/i, '').trim();
     if (!expr) return;
     inputEl.value = `? Explain this math step by step, use LaTeX notation ($$...$$ for display, $...$ for inline): ${expr}`;
     if (window._inputRouter) window._inputRouter.refreshInputDecor(inputEl);
@@ -84,6 +89,7 @@ register('update_available', {
   icon: 'download',
   default: false,
   modes: ['app'],
+  enterTrigger: false, // never restart the app just because Enter found no result
   visibleWhen: () => updateReady,
   action: () => { window.trim.quitAndInstall(); },
 });
@@ -94,6 +100,7 @@ register('pasted_image', {
   default: false,
   modes: ['ai', 'ai_pro'],
   dismissable: true,
+  enterTrigger: false,
   visibleWhen: () => {
     if (!window._inputRouter || !window._inputRouter.getPastedImages) return false;
     return window._inputRouter.getPastedImages().length > 0;
@@ -214,7 +221,7 @@ function setResultsCount(count) {
 
 function triggerVisibleAction() {
   for (const [, chip] of chips) {
-    if (!chip.action) continue;
+    if (!chip.action || chip.enterTrigger === false) continue;
     if (!chip.modes.includes(chipMode)) continue;
     if (chip.visibleWhen && !chip.visibleWhen({ rawInput: currentRawInput, mode: chipMode, resultsCount: currentResultsCount })) {
       continue;
@@ -226,3 +233,4 @@ function triggerVisibleAction() {
 }
 
 window._chips = { init, updateMode, isActive, register, toggle, deactivate, setResultsCount, triggerVisibleAction, renderChips() { renderChips(chipMode); } };
+})();

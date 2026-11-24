@@ -1,3 +1,7 @@
+// Module scope: renderer scripts are classic <script>s, so without this wrapper
+// every top-level function becomes a global and modules overwrite each other
+// (and builtins like window.open / window.close).
+(function () {
 let isOpen = false;
 
 const ACCENT_PRESETS = [
@@ -47,6 +51,9 @@ async function open() {
   const panel = document.getElementById('settings-panel');
   const results = document.getElementById('results-container');
   const aiContainer = document.getElementById('ai-response-container');
+
+  // A debounced search firing now would hide the panel behind our back
+  if (window._inputRouter && window._inputRouter.cancelPendingRoute) window._inputRouter.cancelPendingRoute();
 
   results.classList.add('hidden');
   aiContainer.classList.add('hidden');
@@ -915,10 +922,11 @@ async function applyOnBoot() {
     // Apply saved transparency type
     const type = settings.transparencyType || APPEARANCE_DEFAULTS.transparencyType;
     const appColor = settings.appColor || APPEARANCE_DEFAULTS.appColor;
-    if (type !== 'acrylic' && window.trim.setBackgroundMaterial) {
+    if ((type !== 'acrylic' || appColor.toLowerCase() !== APPEARANCE_DEFAULTS.appColor) && window.trim.setBackgroundMaterial) {
       window.trim.setBackgroundMaterial(type, appColor);
     }
   } catch { /* defaults are fine from CSS */ }
 }
 
 window._settings = { open, close, dismiss, isOpen: () => isOpen, applyOnBoot };
+})();

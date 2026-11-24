@@ -352,6 +352,25 @@
   font-size: 13px;
 }
 
+.ai-stop-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ai-stop-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
 .ai-loading .spinner {
   width: 18px;
   height: 18px;
@@ -1190,4 +1209,143 @@ pre:hover .code-copy-btn,
 
 .calc-num-text {
   color: var(--text-primary);
+}
+
+/* ---- Calculator worksheet (CAS editor) ---- */
+
+.cas-sheet {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0 4px;
+}
+
+.cas-rows {
+  max-height: 290px;
+  overflow-y: auto;
+}
+
+.cas-row,
+.cas-preview {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 7px 16px;
+  border-left: 2px solid transparent;
+}
+
+.cas-row {
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+
+.cas-row:hover {
+  background: var(--bg-hover);
+}
+
+.cas-row.editing {
+  background: var(--accent-glow);
+  border-left-color: var(--accent);
+}
+
+.cas-preview {
+  background: var(--bg-hover);
+  border-left-color: var(--accent);
+}
+
+.cas-preview.editing {
+  background: var(--accent-glow);
+}
+
+.cas-num {
+  flex: 0 0 34px;
+  color: var(--accent);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  padding-top: 3px;
+}
+
+.cas-io {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cas-in {
+  color: var(--text-secondary);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cas-out {
+  color: var(--text-primary);
+  font-size: 14px;
+  padding-top: 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.cas-out .katex {
+  font-size: 1.1em;
+}
+
+.cas-preview .cas-out .katex {
+  font-size: 1.25em;
+}
+
+.cas-out.cas-error {
+  color: #ff8a8a;
+  font-size: 13px;
+}
+
+.cas-out.cas-pending {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.cas-note {
+  color: var(--text-muted);
+  font-size: 11px;
+  padding-top: 2px;
+}
+
+.cas-row-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.cas-row:hover .cas-row-actions,
+.cas-row.editing .cas-row-actions {
+  opacity: 1;
+}
+
+.cas-icon-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 6px;
+  padding: 2px 4px;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.cas-icon-btn .material-symbols-rounded {
+  font-size: 16px;
+}
+
+.cas-icon-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-selected);
+}
+
+.cas-help {
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 6px 16px 2px;
+}
+
+.cas-io .calc-plot-wrapper {
+  margin-top: 6px;
 }

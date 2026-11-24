@@ -1,3 +1,7 @@
+// Module scope: renderer scripts are classic <script>s, so without this wrapper
+// every top-level function becomes a global and modules overwrite each other
+// (and builtins like window.open / window.close).
+(function () {
 const MODE_ICONS = {
   app: 'search',
   ai: 'auto_awesome',
@@ -17,6 +21,8 @@ const MODE_HINTS = {
 };
 
 let debounceTimer = null;
+let debouncePending = false; // a route() is scheduled but hasn't run yet
+let routeSeq = 0; // discard results of routes superseded by newer input
 let DEBUG_SEARCH = false;
 function dbg(...args) { if (DEBUG_SEARCH) console.log(...args); }
 
@@ -80,7 +86,7 @@ function init() {
     }
 
     if (mode === 'folder') {
-      const q = currentRaw.trim().slice(2).trim();
+      const q = stripPrefix(currentRaw).trim();
       if (data.requestId !== activeFolderRequestId || data.query !== q) {
         dbg(`[F: UPDATE] Stale: reqId ${data.requestId} vs ${activeFolderRequestId}, query "${data.query}" vs "${q}"`);
         return;
@@ -88,6 +94,7 @@ function init() {
       dbg(`[F: UPDATE] Rendering ${data.results.length} streamed results for "${q}"`);
       const mapped = data.results.map(entry => ({
         type: 'folder',
+        isDirectory: !!entry.isDirectory,
         icon: entry.isDirectory ? 'folder' : 'description',
         title: entry.name,
         subtitle: entry.path,
@@ -130,7 +137,7 @@ function init() {
 
     // Empty input - archive active chat and reset session (saved history is kept)
     if (!raw.trim()) {
-      clearTimeout(debounceTimer);
+      cancelPendingRoute();
       if (window._ui && window._ui.resetAISession) {
         window._ui.resetAISession();
       } else if (window._ui) {
@@ -142,7 +149,7 @@ function init() {
 
     // AI modes only fire on Enter, not on typing
     if (mode === 'ai' || mode === 'ai_pro') {
-      clearTimeout(debounceTimer);
+      cancelPendingRoute();
 
       // Check for #file references - show file picker
       const hashMatch = raw.match(/#([^#\\\/\s][^#\\\/]*)$/);
@@ -178,7 +185,7 @@ function init() {
 
       // Prefix-only with no active conversation: show history + empty hint
       const prefixOnly = /^(\?\??\s*)$/.test(raw);
-      const inConversation = window._aiQuery && window._aiQuery.isFollowUp();
+      const inConversation = window._aiQuery && (window._aiQuery.isFollowUp() || window._aiQuery.isBusy());
       if (prefixOnly && !inConversation && window._ui && window._ui.showConversationHistory) {
         window._ui.showConversationHistory(mode);
         return;
@@ -196,25 +203,64 @@ function init() {
 
     const delay = getDebounceDelay(raw);
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => route(raw), delay);
+    debouncePending = true;
+    debounceTimer = setTimeout(() => { debouncePending = false; route(raw); }, delay);
   });
 
   refreshInputDecor(input);
 }
 
 function getDebounceDelay(raw) {
-  if (raw.startsWith('c:')) return 150;
-  if (raw.startsWith('?')) return 300;
+  const mode = detectMode(raw);
+  if (mode === 'calc') return 150;
+  if (mode === 'command') return 0;
   return 120;
 }
 
+function cancelPendingRoute() {
+  clearTimeout(debounceTimer);
+  debouncePending = false;
+  routeSeq++;
+}
+
+function hasPendingRoute() {
+  return debouncePending;
+}
+
+/** Run any debounced route for the current input right now (used by Enter). */
+async function flushPendingRoute() {
+  if (!debouncePending) return;
+  clearTimeout(debounceTimer);
+  debouncePending = false;
+  await route(document.getElementById('search-input').value);
+}
+
+// Prefixes: "c:" / "f:" (lowercase always). Capitals work too, except when they
+// look like a Windows drive path ("C:\..." / "F:/...")
+const CALC_PREFIX_RE = /^(?:c:|C:(?![\\/]))/;
+const FOLDER_PREFIX_RE = /^(?:f:|F:(?![\\/]))/;
+
 function detectMode(raw) {
-  if (raw.startsWith('/')) return 'command';
-  if (raw.startsWith('??')) return 'ai_pro';
-  if (raw.startsWith('?')) return 'ai';
-  if (raw.startsWith('f:')) return 'folder';
-  if (raw.startsWith('c:')) return 'calc';
+  const s = (raw || '').replace(/^\s+/, '');
+  if (s.startsWith('/')) return 'command';
+  if (s.startsWith('??')) return 'ai_pro';
+  if (s.startsWith('?')) return 'ai';
+  if (FOLDER_PREFIX_RE.test(s)) return 'folder';
+  if (CALC_PREFIX_RE.test(s)) return 'calc';
   return 'app';
+}
+
+/** The text after the mode prefix, e.g. "c: 2+2" → "2+2" (not trimmed). */
+function stripPrefix(raw) {
+  const s = (raw || '').replace(/^\s+/, '');
+  switch (detectMode(s)) {
+    case 'command': return s;
+    case 'ai_pro': return s.slice(2);
+    case 'ai': return s.slice(1);
+    case 'folder':
+    case 'calc': return s.slice(2);
+    default: return s;
+  }
 }
 
 function updateModeIndicator(raw) {
@@ -233,11 +279,16 @@ function updateModeIndicator(raw) {
 
 async function route(rawInput) {
   const input = rawInput.trim();
+  const seq = ++routeSeq;
+  const isStale = () => seq !== routeSeq
+    || document.getElementById('search-input').value !== rawInput
+    || (window._settings && window._settings.isOpen());
 
   if (!input) {
     window._ui.clearResults();
     return;
   }
+  if (window._settings && window._settings.isOpen()) return;
 
   const mode = detectMode(input);
 
@@ -248,11 +299,11 @@ async function route(rawInput) {
   }
 
   if (mode === 'calc') {
-    const results = window._calculator.search(input.slice(2), (heavyResults) => {
+    const results = window._calculator.search(stripPrefix(input), (heavyResults) => {
       // Callback for heavy operations (plot, solve, symbolic)
       // Only render if we're still in calc mode with the same input
       const currentRaw = document.getElementById('search-input').value;
-      if (currentRaw === rawInput) {
+      if (currentRaw === rawInput && !(window._settings && window._settings.isOpen())) {
         window._ui.renderResults(heavyResults);
       }
     });
@@ -261,11 +312,13 @@ async function route(rawInput) {
   }
 
   if (mode === 'folder') {
-    const folderQuery = input.slice(2);
+    const folderQuery = stripPrefix(input).trim();
     dbg(`[F:] Searching for "${folderQuery}"`);
     const payload = await window.trim.searchFolders(folderQuery);
+    if (isStale()) return;
     const results = (Array.isArray(payload) ? payload : (payload?.results || [])).map(entry => ({
       type: 'folder',
+      isDirectory: !!entry.isDirectory,
       icon: entry.isDirectory ? 'folder' : 'description',
       title: entry.name,
       subtitle: entry.path,
@@ -285,6 +338,7 @@ async function route(rawInput) {
 
   // Default: app search
   const results = await window._appSearch.search(input);
+  if (isStale()) return;
   window._ui.renderResults(results);
 }
 
@@ -391,7 +445,7 @@ function renderInputOverlay(inputEl) {
 
   // Check for conversation follow-up hint: input is just the prefix (e.g. "? " or "?? ")
   const prefixOnly = /^(\?\??\s*)$/.test(raw);
-  const inConversation = window._aiQuery && window._aiQuery.isFollowUp();
+  const inConversation = window._aiQuery && (window._aiQuery.isFollowUp() || window._aiQuery.isBusy());
 
   if (!hasRefs && !prefixOnly) {
     inputOverlayEl.innerHTML = '';
@@ -444,9 +498,9 @@ function renderInputOverlay(inputEl) {
 }
 
 function renderCalcOverlay(inputEl, raw) {
-  // "c:" prefix is rendered as plain text, only highlight the expression part
-  const prefix = raw.slice(0, 2); // "c:"
-  const exprPart = raw.slice(2);
+  // "c:" prefix (plus any leading spaces) is rendered as plain text
+  const exprPart = stripPrefix(raw);
+  const prefix = raw.slice(0, raw.length - exprPart.length);
 
   if (!exprPart.trim()) {
     inputOverlayEl.innerHTML = '';
@@ -522,7 +576,7 @@ function isFilePickActive() {
   return filePickActive;
 }
 
-window._inputRouter = { init, route, detectMode, isFilePickActive, resolveAIFileRefsInQuery, refreshInputDecor, setCalcSyntax(v) { calcSyntaxEnabled = v; },
+window._inputRouter = { init, route, detectMode, stripPrefix, hasPendingRoute, flushPendingRoute, cancelPendingRoute, isFilePickActive, resolveAIFileRefsInQuery, refreshInputDecor, setCalcSyntax(v) { calcSyntaxEnabled = v; },
   getPastedImage() { return pastedImages[0] || null; },
   getPastedImages() { return pastedImages.slice(); },
   clearPastedImage() {
@@ -537,3 +591,4 @@ window._inputRouter = { init, route, detectMode, isFilePickActive, resolveAIFile
     if (window._ui && window._ui.renderImageAttachments) window._ui.renderImageAttachments();
   },
 };
+})();

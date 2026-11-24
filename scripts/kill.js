@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 
 const pidFile = path.join(__dirname, '..', '.trim-dev.pid');
 const isWin = process.platform === 'win32';
@@ -44,13 +44,25 @@ function killOrphans() {
   let killed = 0;
   try {
     if (isWin) {
-      // Find electron.exe processes whose command line references this project
-      const out = execSync(
-        'wmic process where "name=\'electron.exe\'" get ProcessId,CommandLine /format:csv',
-        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] },
-      );
-      for (const line of out.split('\n')) {
-        if (!line.includes(projectDir.replace(/\\/g, '\\\\'))) continue;
+      // Find electron.exe processes whose command line references this project.
+      // wmic is gone on recent Windows 11, so prefer CIM via PowerShell.
+      let out = '';
+      const psScript = "Get-CimInstance Win32_Process -Filter \"Name='electron.exe'\" | ForEach-Object { \"$($_.CommandLine),$($_.ProcessId)\" }";
+      try {
+        out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', psScript], {
+          encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'],
+        });
+      } catch {
+        try {
+          out = execSync(
+            'wmic process where "name=\'electron.exe\'" get ProcessId,CommandLine /format:csv',
+            { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] },
+          );
+        } catch { /* nothing to kill */ }
+      }
+      const needle = projectDir.toLowerCase();
+      for (const line of out.split(/\r?\n/)) {
+        if (!line.toLowerCase().includes(needle)) continue;
         const match = line.match(/,(\d+)\s*$/);
         if (match) {
           const pid = Number(match[1]);

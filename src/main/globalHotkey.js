@@ -4,7 +4,7 @@ const { DEFAULT_SHORTCUT } = require('../shared/constants');
 
 let currentShortcut = null;
 
-function register(shortcut) {
+function register(shortcut, { silent = false } = {}) {
   if (process.platform === 'linux') {
     currentShortcut = shortcut || DEFAULT_SHORTCUT;
     return true;
@@ -28,6 +28,8 @@ function register(shortcut) {
   }
   if (!ok) {
     console.error(`Failed to register global shortcut: ${shortcut}`);
+    // The settings panel shows its own inline error; only startup needs a dialog
+    if (silent) return false;
     dialog.showErrorBox(
       'TRIM - Shortcut Conflict',
       `Could not register ${shortcut}. Another app may be using it.\n\nClose the conflicting app and restart TRIM.`,

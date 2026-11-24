@@ -10,6 +10,9 @@ const PYTHON_VERSION_MAC = '3.12.13';
 const PYTHON_VERSION_LINUX = '3.12.13';
 const PBS_RELEASE = '20260408';
 
+// The c: calculator runs on SymPy; keep in sync with src/main/casEngine.js
+const CAS_REQUIREMENT = 'sympy==1.14.0';
+
 const WIN_ARCHS = {
   x64:   { packageId: 'python',      resourceDir: 'windows-x64' },
   arm64: { packageId: 'pythonarm64', resourceDir: 'windows-arm64' },
@@ -95,7 +98,7 @@ async function prepareWindows(vendorRoot) {
 
   if (fs.existsSync(pythonExe) && isCached(runtimeRoot, PYTHON_VERSION_WIN)) {
     log(`Using cached Python ${PYTHON_VERSION_WIN} from ${runtimeRoot}`);
-    return;
+    return pythonExe;
   }
 
   fs.rmSync(runtimeRoot, { recursive: true, force: true });
@@ -119,6 +122,7 @@ async function prepareWindows(vendorRoot) {
   writeMarker(runtimeRoot, PYTHON_VERSION_WIN);
   fs.rmSync(archivePath, { force: true });
   log(`Bundled Python ${PYTHON_VERSION_WIN} ready.`);
+  return pythonExe;
 }
 
 // ---- macOS (python-build-standalone from astral-sh) ----
@@ -140,7 +144,7 @@ async function prepareMac(vendorRoot) {
 
   if (fs.existsSync(pythonBin) && isCached(runtimeRoot, PYTHON_VERSION_MAC)) {
     log(`Using cached Python ${PYTHON_VERSION_MAC} from ${runtimeRoot}`);
-    return;
+    return pythonBin;
   }
 
   fs.rmSync(runtimeRoot, { recursive: true, force: true });
@@ -169,6 +173,7 @@ async function prepareMac(vendorRoot) {
   writeMarker(runtimeRoot, PYTHON_VERSION_MAC);
   fs.rmSync(archivePath, { force: true });
   log(`Bundled Python ${PYTHON_VERSION_MAC} ready.`);
+  return pythonBin;
 }
 
 // ---- Linux (python-build-standalone from astral-sh) ----
@@ -182,7 +187,7 @@ async function prepareLinux(vendorRoot) {
 
   if (fs.existsSync(pythonBin) && isCached(runtimeRoot, PYTHON_VERSION_LINUX)) {
     log(`Using cached Python ${PYTHON_VERSION_LINUX} from ${runtimeRoot}`);
-    return;
+    return pythonBin;
   }
 
   fs.rmSync(runtimeRoot, { recursive: true, force: true });
@@ -210,6 +215,20 @@ async function prepareLinux(vendorRoot) {
   writeMarker(runtimeRoot, PYTHON_VERSION_LINUX);
   fs.rmSync(archivePath, { force: true });
   log(`Bundled Python ${PYTHON_VERSION_LINUX} ready.`);
+  return pythonBin;
+}
+
+// ---- Calculator engine (SymPy) ----
+
+function ensureCasPackages(pythonExe) {
+  const check = spawnSync(pythonExe, ['-I', '-c', `import sympy, sys; sys.exit(0 if sympy.__version__ == '${CAS_REQUIREMENT.split('==')[1]}' else 1)`], { stdio: 'pipe' });
+  if (check.status === 0) {
+    log(`${CAS_REQUIREMENT} already installed.`);
+    return;
+  }
+  log(`Installing ${CAS_REQUIREMENT} for the calculator...`);
+  const pip = spawnSync(pythonExe, ['-I', '-m', 'pip', 'install', '--disable-pip-version-check', '--no-input', '--quiet', CAS_REQUIREMENT], { stdio: 'inherit' });
+  if (pip.status !== 0) throw new Error(`Installing ${CAS_REQUIREMENT} failed (exit ${pip.status})`);
 }
 
 // ---- Entry point ----
@@ -223,15 +242,17 @@ async function main() {
   const vendorRoot = path.join(__dirname, '..', 'vendor', 'python');
   ensureDir(vendorRoot);
 
+  let pythonExe = null;
   if (process.platform === 'win32') {
-    await prepareWindows(vendorRoot);
+    pythonExe = await prepareWindows(vendorRoot);
   } else if (process.platform === 'darwin') {
-    await prepareMac(vendorRoot);
+    pythonExe = await prepareMac(vendorRoot);
   } else if (process.platform === 'linux') {
-    await prepareLinux(vendorRoot);
+    pythonExe = await prepareLinux(vendorRoot);
   } else {
     log(`No bundled Python for platform "${process.platform}", skipping.`);
   }
+  if (pythonExe) ensureCasPackages(pythonExe);
 }
 
 main().catch((error) => {

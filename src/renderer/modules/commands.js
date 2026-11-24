@@ -1,3 +1,7 @@
+// Module scope: renderer scripts are classic <script>s, so without this wrapper
+// every top-level function becomes a global and modules overwrite each other
+// (and builtins like window.open / window.close).
+(function () {
 const registry = new Map();
 
 function register(name, opts) {
@@ -14,9 +18,10 @@ register('/help', {
       { type: 'command', icon: 'auto_awesome', title: '? question', subtitle: 'Gemini Flash — chat, generate images, read/write files, run Python' },
       { type: 'command', icon: 'auto_awesome', title: '?? question', subtitle: 'Gemini Pro — same tools, stronger reasoning' },
       { type: 'command', icon: 'image', title: 'Ctrl+V images', subtitle: 'Paste one or more screenshots/images into AI chat (accumulates)' },
+      { type: 'command', icon: 'stop_circle', title: 'Esc', subtitle: 'Stop a running AI answer (press again to hide TRIM)' },
       { type: 'command', icon: 'history', title: '? history', subtitle: 'Type ? alone to browse past chats — clear ? to start a new convo' },
       { type: 'command', icon: 'attach_file', title: '#filename', subtitle: 'Attach a file to your AI query (Tab to autocomplete)' },
-      { type: 'command', icon: 'calculate', title: 'c: expression', subtitle: 'Math: evaluate, solve, plot, derive, integrate, factor' },
+      { type: 'command', icon: 'calculate', title: 'c: expression', subtitle: 'Math (SymPy). Quick results for arithmetic; a CAS worksheet for the rest ($1, ans, f(x) := ...)' },
       { type: 'command', icon: 'folder_open', title: 'f: path', subtitle: 'Browse and open files and folders on your system' },
       { type: 'command', icon: 'terminal', title: '/ command', subtitle: '/settings, /clear (reset AI chat), /history, /reload, /help' },
     ];
@@ -83,3 +88,4 @@ function search(input) {
 }
 
 window._commands = { search, register };
+})();

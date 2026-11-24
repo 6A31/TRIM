@@ -1,4 +1,8 @@
-﻿let selectedIndex = -1;
+﻿// Module scope: renderer scripts are classic <script>s, so without this wrapper
+// every top-level function becomes a global and modules overwrite each other
+// (and builtins like window.open / window.close).
+(function () {
+let selectedIndex = -1;
 let currentResults = [];
 const MAX_VISIBLE = 8;
 const HOTFIX_SCALE_FACTOR = 1;
@@ -7,8 +11,31 @@ let displayScaleFactor = window.devicePixelRatio || null;
 
 function init() {
   document.addEventListener('keydown', handleKeyboard);
+  // Links (AI answers, sources, rendered markdown) open in the system browser,
+  // never inside the launcher window
+  document.addEventListener('click', handleLinkClick, true);
+  document.addEventListener('auxclick', handleLinkClick, true);
   document.addEventListener('copy', handleAICopy);
   void loadHotfixContext();
+}
+
+/** Copy via the main process (navigator.clipboard throws when the window isn't focused). */
+function copyTextToClipboard(text) {
+  if (window.trim && window.trim.copyText) return window.trim.copyText(String(text)).then(() => undefined);
+  return navigator.clipboard.writeText(String(text));
+}
+
+function handleLinkClick(e) {
+  const link = e.target && e.target.closest ? e.target.closest('a') : null;
+  if (!link) return;
+  const href = link.dataset.uri || link.getAttribute('href') || '';
+  // Leave download links (image/plot save buttons) alone
+  if (link.hasAttribute('download')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (/^(https?:|mailto:)/i.test(href.trim())) {
+    window.trim.openExternal(href.trim());
+  }
 }
 
 /** Copy AI answers as plain text / clean HTML so Word/docs don't get a dark background */
@@ -77,6 +104,15 @@ function handleKeyboard(e) {
     return;
   }
 
+  // The calculator worksheet owns arrows/Escape/Delete while it is showing
+  if (window._calculator && window._calculator.handleKey) {
+    const raw = document.getElementById('search-input').value;
+    if (window._inputRouter.detectMode(raw) === 'calc' && window._calculator.handleKey(e)) {
+      e.preventDefault();
+      return;
+    }
+  }
+
   switch (e.key) {
     case 'ArrowDown':
       e.preventDefault();
@@ -101,48 +137,49 @@ function handleKeyboard(e) {
       // If in AI mode, fire the query
       const input = document.getElementById('search-input').value;
       const forceShow = window._chips && window._chips.isActive('force_code');
-      if (input.startsWith('??')) {
-        const query = input.slice(2).trim();
-        const resolvedQuery = window._inputRouter.resolveAIFileRefsInQuery(query);
+      const enterMode = window._inputRouter.detectMode(input);
+      if (enterMode === 'ai' || enterMode === 'ai_pro') {
+        const query = window._inputRouter.stripPrefix(input).trim();
         if (query) {
+          const resolvedQuery = window._inputRouter.resolveAIFileRefsInQuery(query);
+          const prefix = enterMode === 'ai_pro' ? '?? ' : '? ';
           const pastedImages = collectPastedImages();
-          window._aiQuery.prepareForQuery('ai_pro');
+          window._aiQuery.prepareForQuery(enterMode);
           // Lock input to prefix immediately so Enter can't re-fire the same query
           const searchInput = document.getElementById('search-input');
-          searchInput.value = '?? ';
+          searchInput.value = prefix;
           if (window._inputRouter) window._inputRouter.refreshInputDecor(searchInput);
-          showAILoading('Asking Gemini Pro...', query);
-          window._aiQuery.execute(resolvedQuery, 'ai_pro', forceShow, (response) => {
-            renderAIResponse(response);
-          }, pastedImages);
-        } else {
-          executeSelected();
-        }
-      } else if (input.startsWith('?')) {
-        const query = input.slice(1).trim();
-        const resolvedQuery = window._inputRouter.resolveAIFileRefsInQuery(query);
-        if (query) {
-          const pastedImages = collectPastedImages();
-          window._aiQuery.prepareForQuery('ai');
-          const searchInput = document.getElementById('search-input');
-          searchInput.value = '? ';
-          if (window._inputRouter) window._inputRouter.refreshInputDecor(searchInput);
-          showAILoading('Asking Gemini...', query);
-          window._aiQuery.execute(resolvedQuery, 'ai', forceShow, (response) => {
+          showAILoading(enterMode === 'ai_pro' ? 'Asking Gemini Pro...' : 'Asking Gemini...', query);
+          window._aiQuery.execute(resolvedQuery, enterMode, forceShow, (response) => {
             renderAIResponse(response);
           }, pastedImages);
         } else {
           executeSelected();
         }
       } else {
-        const didExecute = executeSelected();
-        if (!didExecute && window._chips && window._chips.triggerVisibleAction) {
-          window._chips.triggerVisibleAction();
+        // Results may still be for an older keystroke (debounce): refresh first,
+        // otherwise Enter runs nothing (e.g. "/settings") or launches the wrong app.
+        const run = () => {
+          if (document.getElementById('search-input').value !== input) return;
+          const didExecute = executeSelected();
+          if (!didExecute && window._chips && window._chips.triggerVisibleAction) {
+            window._chips.triggerVisibleAction();
+          }
+        };
+        if (window._inputRouter.hasPendingRoute && window._inputRouter.hasPendingRoute()) {
+          window._inputRouter.flushPendingRoute().then(run, run);
+        } else {
+          run();
         }
       }
       break;
     case 'Escape':
       e.preventDefault();
+      // First Escape stops a running AI query; the next one hides the window
+      if (window._aiQuery && window._aiQuery.isBusy && window._aiQuery.isBusy()) {
+        window._aiQuery.abort();
+        break;
+      }
       window.trim.hideWindow();
       break;
     case 'Tab':
@@ -151,10 +188,19 @@ function handleKeyboard(e) {
       if (currentResults.length > 0 && currentResults[0].type === 'file-ref') {
         const sel = currentResults[selectedIndex >= 0 ? selectedIndex : 0];
         if (sel.action) sel.action();
-      } else if (currentResults.length > 0 && currentResults[0].type === 'command') {
+      } else if (currentResults.length > 0 && currentResults[0].type === 'folder') {
+        // Step into the selected folder: "f: <path>/"
+        const sel = currentResults[selectedIndex >= 0 ? selectedIndex : 0];
+        if (sel && sel.isDirectory && sel.subtitle) {
+          const inputEl = document.getElementById('search-input');
+          const sep = sel.subtitle.includes('\\') && !sel.subtitle.includes('/') ? '\\' : '/';
+          inputEl.value = `f: ${sel.subtitle.replace(/[\\/]+$/, '')}${sep}`;
+          inputEl.dispatchEvent(new Event('input'));
+        }
+      } else if (currentResults.length > 0 && currentResults[0].type === 'command' && currentResults[0].action) {
         const inputEl = document.getElementById('search-input');
         inputEl.value = currentResults[selectedIndex >= 0 ? selectedIndex : 0].title;
-        if (window._inputRouter) window._inputRouter.refreshInputDecor(inputEl);
+        inputEl.dispatchEvent(new Event('input'));
       }
       break;
   }
@@ -187,7 +233,7 @@ function executeSelected() {
     const result = currentResults[selectedIndex];
     if (result.action) result.action();
     if (result.type === 'ai-history' || result.type === 'placeholder') return true;
-    if (result.type !== 'command' && result.type !== 'calc' && result.type !== 'calc-symbolic' && result.type !== 'calc-plot' && result.type !== 'calc-loading') {
+    if (!['command', 'calc', 'calc-symbolic', 'calc-plot', 'calc-loading', 'calc-error', 'calc-worksheet'].includes(result.type)) {
       window.trim.hideWindow();
     }
     return true;
@@ -202,7 +248,7 @@ function getBarHeight() {
 let lastResultsKey = '';
 
 function getResultsKey(results) {
-  return results.map(r => `${r.type}:${r.name || r.title || ''}:${r.target || r.path || ''}`).join('\n');
+  return results.map(r => `${r.type}:${r.name || r.title || ''}:${r.subtitle || ''}:${r.target || r.path || ''}`).join('\n');
 }
 
 function getPlaceholderKey(mode, kind, placeholder) {
@@ -234,7 +280,7 @@ function getPlaceholderResult(mode, kind) {
         type: 'placeholder',
         icon: 'calculate',
         title: 'Enter an expression',
-        subtitle: 'Try c: 2+2, c: x^2-4=0, c: derive x^3, or c: plot sin(x)',
+        subtitle: 'Try 2+2, x^2-4=0, expand((a+b)^2), sin(x), or f(x) := x^2 then f(3)',
       };
     }
 
@@ -349,8 +395,12 @@ async function renderResults(results) {
   const aiContainer = document.getElementById('ai-response-container');
   const settingsPanel = document.getElementById('settings-panel');
 
+  // Never hide an open settings panel underneath its isOpen flag (that left
+  // the window unresponsive: keys were swallowed by the settings handler)
+  if (window._settings && window._settings.isOpen()) return;
+
   aiContainer.classList.add('hidden');
-  settingsPanel.classList.add('hidden');
+  hideSettingsPanel();
 
   currentResults = results;
   selectedIndex = results.length > 0 ? 0 : -1;
@@ -358,12 +408,28 @@ async function renderResults(results) {
 
   if (results.length === 0) {
     const rawInput = document.getElementById('search-input').value || '';
-    renderPlaceholderState(rawInput.trim() ? 'no-results' : 'empty', rawInput);
+    renderPlaceholderState(hasQueryText(rawInput) ? 'no-results' : 'empty', rawInput);
     return;
   }
 
   // Check for special calc result types that need custom rendering
   const firstResult = results[0];
+
+  // Calculator worksheet (CAS editor)
+  if (firstResult.type === 'calc-worksheet') {
+    lastResultsKey = '';
+    const el = firstResult.render();
+    container.replaceChildren(el);
+    container.classList.remove('hidden');
+    document.getElementById('search-bar').classList.add('has-results');
+    renderPlotsIn(container);
+    requestAnimationFrame(() => {
+      fitWorksheetRows(el);
+      if (firstResult.afterMount) firstResult.afterMount(el);
+      window.trim.resizeWindow(getBarHeight() + container.scrollHeight + 2, true);
+    });
+    return;
+  }
 
   // Loading spinner for heavy calc operations
   if (firstResult.type === 'calc-loading') {
@@ -371,7 +437,7 @@ async function renderResults(results) {
     const spinnerWrap = document.createElement('div');
     spinnerWrap.className = 'calc-result';
     spinnerWrap.style.padding = '16px 18px';
-    spinnerWrap.appendChild(createLoadingSpinner('Computing...'));
+    spinnerWrap.appendChild(createLoadingSpinner(firstResult.message || 'Computing...'));
     container.replaceChildren(spinnerWrap);
     container.classList.remove('hidden');
     document.getElementById('search-bar').classList.add('has-results');
@@ -397,22 +463,12 @@ async function renderResults(results) {
     container.classList.remove('hidden');
     document.getElementById('search-bar').classList.add('has-results');
 
-    // Render Plotly charts after DOM insertion
-    container.querySelectorAll('.calc-plot-container').forEach(el => {
-      try {
-        const data = JSON.parse(el.dataset.plotData);
-        const layout = JSON.parse(el.dataset.plotLayout);
-        const config = JSON.parse(el.dataset.plotConfig);
-        if (typeof Plotly !== 'undefined') {
-          Plotly.newPlot(el, data, layout, config);
-        }
-      } catch { /* ignore */ }
-    });
+    renderPlotsIn(container);
 
     requestAnimationFrame(() => {
       const barH = getBarHeight();
       const resultsH = container.scrollHeight;
-      window.trim.resizeWindow(Math.min(barH + resultsH + 2, 500));
+      window.trim.resizeWindow(barH + resultsH + 2);
     });
     return;
   }
@@ -450,13 +506,39 @@ async function renderResults(results) {
   }
 }
 
+/** Let the worksheet's row list use the enlarged window: 960 wide, golden-ratio tall, max 80% of the screen. */
+function fitWorksheetRows(sheetEl) {
+  const rows = sheetEl.querySelector('.cas-rows');
+  if (!rows) return;
+  const maxWindow = Math.min(Math.round(960 / 1.618), Math.round((window.screen.availHeight || 900) * 0.8));
+  rows.style.maxHeight = 'none';
+  const rest = sheetEl.scrollHeight - rows.scrollHeight;
+  rows.style.maxHeight = `${Math.max(120, maxWindow - getBarHeight() - rest - 6)}px`;
+}
+
+/** Draw every not-yet-drawn Plotly placeholder inside `root` (they need to be in the DOM first). */
+function renderPlotsIn(root) {
+  root.querySelectorAll('.calc-plot-container').forEach(el => {
+    if (el.dataset.rendered) return;
+    try {
+      const data = JSON.parse(el.dataset.plotData);
+      const layout = JSON.parse(el.dataset.plotLayout);
+      const config = JSON.parse(el.dataset.plotConfig);
+      if (typeof Plotly !== 'undefined') {
+        Plotly.newPlot(el, data, layout, config);
+        el.dataset.rendered = '1';
+      }
+    } catch { /* ignore */ }
+  });
+}
+
 function createResultElement(result) {
   const el = document.createElement('div');
   el.className = 'result-item';
   el.addEventListener('click', () => {
     if (result.action) result.action();
     if (result.type === 'ai-history' || result.type === 'placeholder') return;
-    if (result.type !== 'command' && result.type !== 'calc' && result.type !== 'calc-symbolic' && result.type !== 'calc-plot' && result.type !== 'calc-loading') {
+    if (!['command', 'calc', 'calc-symbolic', 'calc-plot', 'calc-loading', 'calc-error', 'calc-worksheet'].includes(result.type)) {
       window.trim.hideWindow();
     }
   });
@@ -546,7 +628,7 @@ function createCalcSymbolicElement(result) {
       requestAnimationFrame(() => {
         const container = document.getElementById('results-container');
         const barH = getBarHeight();
-        window.trim.resizeWindow(Math.min(barH + container.scrollHeight + 2, 500));
+        window.trim.resizeWindow(barH + container.scrollHeight + 2);
       });
     });
     stepsDiv.appendChild(toggleBtn);
@@ -581,7 +663,7 @@ function createCalcSymbolicElement(result) {
     copyBtn.innerHTML = '<span class="material-symbols-rounded" style="font-size:14px">content_copy</span> <span>Copy</span>';
     copyBtn.addEventListener('mousedown', (e) => e.preventDefault());
     copyBtn.addEventListener('click', () => {
-      navigator.clipboard.writeText(result.copyText).then(() => {
+      copyTextToClipboard(result.copyText).then(() => {
         const icon = copyBtn.querySelector('.material-symbols-rounded');
         icon.textContent = 'check';
         setTimeout(() => { icon.textContent = 'content_copy'; }, 1500);
@@ -697,7 +779,7 @@ function showAILoading(statusText, queryOverride) {
   const settingsPanel = document.getElementById('settings-panel');
 
   container.classList.add('hidden');
-  settingsPanel.classList.add('hidden');
+  hideSettingsPanel();
   aiContainer.classList.remove('hidden');
   document.getElementById('search-bar').classList.add('has-results');
 
@@ -729,12 +811,22 @@ function showAILoading(statusText, queryOverride) {
   // Add loading spinner in a turn container
   const turnDiv = document.createElement('div');
   turnDiv.className = 'ai-current-turn';
-  turnDiv.appendChild(createLoadingSpinner(statusText || 'Asking Gemini...'));
+  const spinner = createLoadingSpinner(statusText || 'Asking Gemini...');
+  const stopBtn = document.createElement('button');
+  stopBtn.className = 'ai-stop-btn';
+  stopBtn.title = 'Stop (Esc)';
+  stopBtn.innerHTML = '<span class="material-symbols-rounded" style="font-size:14px">stop</span> Stop';
+  stopBtn.addEventListener('mousedown', (e) => e.preventDefault());
+  stopBtn.addEventListener('click', () => {
+    if (window._aiQuery && window._aiQuery.abort) window._aiQuery.abort();
+  });
+  spinner.appendChild(stopBtn);
+  turnDiv.appendChild(spinner);
   aiContainer.appendChild(turnDiv);
 
   requestAnimationFrame(() => {
     const h = getBarHeight() + aiContainer.scrollHeight;
-    window.trim.resizeWindow(Math.min(h, 500));
+    window.trim.resizeWindow(h);
     smartScroll(aiContainer);
   });
   currentResults = [];
@@ -745,11 +837,11 @@ function updateAIStatus(statusText) {
   const aiContainer = document.getElementById('ai-response-container');
   const loadingEl = aiContainer.querySelector('.ai-loading');
   if (loadingEl) {
-    const span = loadingEl.querySelector('span');
+    const span = loadingEl.querySelector(':scope > span');
     if (span) span.textContent = statusText;
     requestAnimationFrame(() => {
       const h = getBarHeight() + aiContainer.scrollHeight;
-      window.trim.resizeWindow(Math.min(h, 500));
+      window.trim.resizeWindow(h);
     });
   }
 }
@@ -867,6 +959,24 @@ function renderAIResponse(response) {
   const aiContainer = document.getElementById('ai-response-container');
   const turnDiv = aiContainer.querySelector('.ai-current-turn');
 
+  if (response.type === 'ai-stopped') {
+    const stoppedHTML = `
+      <div class="confirm-denied">
+        <span class="material-symbols-rounded" style="font-size:16px">stop_circle</span>
+        Stopped
+      </div>
+    `;
+    if (turnDiv) {
+      turnDiv.innerHTML = stoppedHTML;
+      turnDiv.classList.remove('ai-current-turn');
+    }
+    requestAnimationFrame(() => {
+      const h = getBarHeight() + aiContainer.scrollHeight;
+      window.trim.resizeWindow(h);
+    });
+    return;
+  }
+
   if (response.type === 'ai-error') {
     const errorHTML = `
       <div class="ai-error">
@@ -882,7 +992,7 @@ function renderAIResponse(response) {
     }
     requestAnimationFrame(() => {
       const h = getBarHeight() + aiContainer.scrollHeight;
-      window.trim.resizeWindow(Math.min(h, 500));
+      window.trim.resizeWindow(h);
       smartScroll(aiContainer);
     });
     return;
@@ -904,6 +1014,7 @@ function renderAIResponse(response) {
           Revert to before this response
         </button>
       `;
+      wiredElements.add(revertBar.querySelector('.ai-revert-btn'));
       revertBar.querySelector('.ai-revert-btn').addEventListener('mousedown', e => e.preventDefault());
       revertBar.querySelector('.ai-revert-btn').addEventListener('click', async () => {
         const btn = revertBar.querySelector('.ai-revert-btn');
@@ -922,7 +1033,7 @@ function renderAIResponse(response) {
           // Resize to fit trimmed content
           requestAnimationFrame(() => {
             const contentH = getBarHeight() + aiContainer.scrollHeight;
-            window.trim.resizeWindow(Math.min(contentH, 500));
+            window.trim.resizeWindow(contentH);
           });
         } else {
           btn.innerHTML = '<span class="material-symbols-rounded" style="font-size:14px">info</span> Nothing to revert';
@@ -940,7 +1051,7 @@ function renderAIResponse(response) {
   // Resize to fit content, capped
   requestAnimationFrame(() => {
     const contentH = getBarHeight() + aiContainer.scrollHeight;
-    window.trim.resizeWindow(Math.min(contentH, 500));
+    window.trim.resizeWindow(contentH);
     smartScroll(aiContainer);
   });
 
@@ -960,87 +1071,109 @@ function renderAIResponse(response) {
   searchInput.focus();
 }
 
+// Elements that already have listeners. postProcessCodeBlocks runs over the
+// whole chat after every turn, and restored history HTML has buttons with no
+// listeners at all, so track wiring per element instead of by markup.
+const wiredElements = new WeakSet();
+
+function wireOnce(el, fn) {
+  if (!el || wiredElements.has(el)) return;
+  wiredElements.add(el);
+  fn(el);
+}
+
+function flashIcon(span, doneIcon, idleIcon) {
+  if (!span) return;
+  span.textContent = doneIcon;
+  setTimeout(() => { span.textContent = idleIcon; }, 1500);
+}
+
 function postProcessCodeBlocks(container) {
   // Syntax highlighting
   if (window._aiQuery) window._aiQuery.highlightCodeBlocks(container);
 
-  // Add copy buttons to markdown code blocks (ai-text pre blocks that don't already have one)
+  // Copy buttons on markdown code blocks (create if missing, wire if restored)
   container.querySelectorAll('.ai-text pre').forEach(pre => {
-    if (pre.querySelector('.code-copy-btn')) return;
-    const btn = document.createElement('button');
-    btn.className = 'code-copy-btn';
-    const icon = document.createElement('span');
-    icon.className = 'material-symbols-rounded';
-    icon.style.fontSize = '14px';
-    icon.textContent = 'content_copy';
-    btn.appendChild(icon);
-    btn.addEventListener('mousedown', (e) => e.preventDefault());
-    btn.addEventListener('click', () => {
-      const code = pre.querySelector('code');
-      if (code) navigator.clipboard.writeText(code.textContent).then(() => {
-        icon.textContent = 'check';
-        setTimeout(() => icon.textContent = 'content_copy', 1500);
+    let btn = pre.querySelector('.code-copy-btn');
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.className = 'code-copy-btn';
+      const icon = document.createElement('span');
+      icon.className = 'material-symbols-rounded';
+      icon.style.fontSize = '14px';
+      icon.textContent = 'content_copy';
+      btn.appendChild(icon);
+      pre.style.position = 'relative';
+      pre.appendChild(btn);
+    }
+    wireOnce(btn, (b) => {
+      b.addEventListener('mousedown', (e) => e.preventDefault());
+      b.addEventListener('click', () => {
+        const code = pre.querySelector('code');
+        if (code) copyTextToClipboard(code.textContent).then(() => flashIcon(b.querySelector('span'), 'check', 'content_copy'));
       });
     });
-    pre.style.position = 'relative';
-    pre.appendChild(btn);
   });
 
-  // Wire up code-output copy buttons (replaced inline onclick)
-  container.querySelectorAll('.code-output-copy').forEach(btn => {
-    btn.addEventListener('mousedown', (e) => e.preventDefault());
-    btn.addEventListener('click', () => {
-      const codeEl = btn.closest('.ai-code-output')?.querySelector('.ai-code-block code');
+  // Code-output copy buttons
+  container.querySelectorAll('.code-output-copy').forEach(btn => wireOnce(btn, (b) => {
+    b.addEventListener('mousedown', (e) => e.preventDefault());
+    b.addEventListener('click', () => {
+      const codeEl = b.closest('.ai-code-output')?.querySelector('.ai-code-block code');
       if (!codeEl) return;
-      navigator.clipboard.writeText(codeEl.textContent).then(() => {
-        const span = btn.querySelector('span');
-        if (span) { span.textContent = 'check'; setTimeout(() => span.textContent = 'content_copy', 1500); }
-      });
+      copyTextToClipboard(codeEl.textContent).then(() => flashIcon(b.querySelector('span'), 'check', 'content_copy'));
     });
-  });
+  }));
 
-  // Wire up sources toggle (replaced inline onclick)
-  container.querySelectorAll('.ai-sources-toggle').forEach(btn => {
-    btn.addEventListener('mousedown', (e) => e.preventDefault());
-    btn.addEventListener('click', () => {
-      btn.parentElement.classList.toggle('expanded');
+  // Sources toggle
+  container.querySelectorAll('.ai-sources-toggle').forEach(btn => wireOnce(btn, (b) => {
+    b.addEventListener('mousedown', (e) => e.preventDefault());
+    b.addEventListener('click', () => {
+      b.parentElement.classList.toggle('expanded');
       setTimeout(() => {
         const c = document.getElementById('ai-response-container');
         const h = document.getElementById('search-bar').offsetHeight + c.scrollHeight;
-        window.trim.resizeWindow(Math.min(h, 500));
+        window.trim.resizeWindow(h);
       }, 10);
     });
-  });
+  }));
 
-  // Wire up source links (replaced inline onclick)
+  // Source links open via the global link handler; just show the URL on hover
   container.querySelectorAll('.ai-source-link').forEach(link => {
-    link.addEventListener('click', (e) => e.preventDefault());
     link.title = link.dataset.uri || '';
   });
 
-  // Wire up image copy/save buttons (generated images + plots)
-  container.querySelectorAll('.ai-image-btn').forEach(btn => {
-    btn.addEventListener('mousedown', (e) => e.preventDefault());
-    btn.addEventListener('click', async () => {
-      const imgEl = btn.closest('.ai-generated-image, .ai-plot')?.querySelector('img');
+  // Image copy/save buttons (generated images + plots)
+  container.querySelectorAll('.ai-image-btn').forEach(btn => wireOnce(btn, (b) => {
+    b.addEventListener('mousedown', (e) => e.preventDefault());
+    b.addEventListener('click', async () => {
+      const imgEl = b.closest('.ai-generated-image, .ai-plot')?.querySelector('img');
       if (!imgEl) return;
-      const span = btn.querySelector('span');
-      if (btn.classList.contains('ai-image-copy')) {
+      const span = b.querySelector('span');
+      if (b.classList.contains('ai-image-copy')) {
         try {
           const ok = await window.trim.copyImageToClipboard(imgEl.src);
-          if (ok && span) { span.textContent = 'check'; setTimeout(() => span.textContent = 'content_copy', 1500); }
+          if (ok) flashIcon(span, 'check', 'content_copy');
         } catch (err) {
           console.error('Image copy failed:', err);
         }
-      } else if (btn.classList.contains('ai-image-save')) {
+      } else if (b.classList.contains('ai-image-save')) {
         const a = document.createElement('a');
         a.href = imgEl.src;
         const ext = (imgEl.dataset.mime || 'image/png').split('/')[1] || 'png';
         a.download = `image_${Date.now()}.${ext}`;
         a.click();
-        if (span) { span.textContent = 'check'; setTimeout(() => span.textContent = 'download', 1500); }
+        flashIcon(span, 'check', 'download');
       }
     });
+  }));
+
+  // Revert buttons in restored history can't work (the file log is gone)
+  container.querySelectorAll('.ai-revert-btn').forEach(btn => {
+    if (!wiredElements.has(btn)) {
+      btn.disabled = true;
+      btn.title = 'Revert is only available in the session that made the change';
+    }
   });
 }
 
@@ -1049,7 +1182,7 @@ function clearResults() {
   resultsContainer.classList.remove('hidden');
   document.getElementById('ai-response-container').innerHTML = '';
   document.getElementById('ai-response-container').classList.add('hidden');
-  document.getElementById('settings-panel').classList.add('hidden');
+  hideSettingsPanel();
   if (window._chips) window._chips.setResultsCount(0);
   const rawInput = document.getElementById('search-input').value || '';
   renderPlaceholderState('empty', rawInput);
@@ -1182,7 +1315,7 @@ async function openConversation(id) {
   const container = document.getElementById('results-container');
   const settingsPanel = document.getElementById('settings-panel');
   container.classList.add('hidden');
-  settingsPanel.classList.add('hidden');
+  hideSettingsPanel();
   aiContainer.classList.remove('hidden');
   aiContainer.innerHTML = entry.html || '<div class="ai-text"><p>Empty conversation.</p></div>';
   document.getElementById('search-bar').classList.add('has-results');
@@ -1197,7 +1330,7 @@ async function openConversation(id) {
 
   requestAnimationFrame(() => {
     const h = getBarHeight() + aiContainer.scrollHeight;
-    window.trim.resizeWindow(Math.min(h, 500));
+    window.trim.resizeWindow(h);
     smartScroll(aiContainer);
   });
 }
@@ -1315,7 +1448,7 @@ function showConfirmation(details) {
 
   requestAnimationFrame(() => {
     const h = getBarHeight() + aiContainer.scrollHeight;
-    window.trim.resizeWindow(Math.min(h, 500));
+    window.trim.resizeWindow(h);
     smartScroll(aiContainer);
   });
 }
@@ -1330,11 +1463,27 @@ function restoreAIArea() {
     document.getElementById('search-bar').classList.add('has-results');
     requestAnimationFrame(() => {
       const h = getBarHeight() + aiContainer.scrollHeight;
-      window.trim.resizeWindow(Math.min(h, 500));
+      window.trim.resizeWindow(h);
     });
   } else {
     const rawInput = document.getElementById('search-input').value || '';
-    renderPlaceholderState(rawInput.trim() ? 'no-results' : 'empty', rawInput);
+    renderPlaceholderState(hasQueryText(rawInput) ? 'no-results' : 'empty', rawInput);
+  }
+}
+
+/** True when there's text beyond the mode prefix ("?" or "c: " alone → false). */
+function hasQueryText(raw) {
+  const r = raw || '';
+  const body = window._inputRouter && window._inputRouter.stripPrefix ? window._inputRouter.stripPrefix(r) : r;
+  return body.trim().length > 0;
+}
+
+/** Hide the settings panel and keep the settings module's open flag in sync. */
+function hideSettingsPanel() {
+  if (window._settings && window._settings.isOpen()) {
+    window._settings.dismiss();
+  } else {
+    document.getElementById('settings-panel').classList.add('hidden');
   }
 }
 
@@ -1368,4 +1517,13 @@ window._ui = {
   resetAISession,
   showConversationHistory,
   renderImageAttachments,
+  createCalcPlotElement,
+  renderPlotsIn,
+  resizeToContent() {
+    const container = document.getElementById('results-container');
+    const sheetEl = container.querySelector('.cas-sheet');
+    if (sheetEl) fitWorksheetRows(sheetEl);
+    window.trim.resizeWindow(getBarHeight() + container.scrollHeight + 2, !!sheetEl);
+  },
 };
+})();

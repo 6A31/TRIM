@@ -28,7 +28,7 @@ if (!app.requestSingleInstanceLock()) {
   const windowManager = require('./windowManager');
   const globalHotkey = require('./globalHotkey');
   const updater = require('./updater');
-  const { registerHandlers, loadSettingsSync } = require('./ipcHandlers');
+  const { registerHandlers, loadSettingsSync, stopCasEngine } = require('./ipcHandlers');
   const { IPC } = require('../shared/constants');
   const { parseLaunchArgv, secondInstanceAction } = require('./cliArgs');
 
@@ -84,9 +84,11 @@ if (!app.requestSingleInstanceLock()) {
       windowManager.hide();
     });
 
-    ipcMain.handle('trim:resize-window', (_e, height) => {
-      windowManager.resize(height);
+    ipcMain.handle('trim:resize-window', (_e, height, wide) => {
+      windowManager.resize(height, !!wide);
     });
+
+    ipcMain.handle(IPC.OPEN_EXTERNAL, (_e, url) => windowManager.openExternalSafe(url));
 
     ipcMain.handle(IPC.GET_DISPLAY_SCALE, () => {
       return screen.getPrimaryDisplay().scaleFactor;
@@ -101,6 +103,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('will-quit', () => {
     globalHotkey.unregister();
+    stopCasEngine();
   });
 
   app.on('window-all-closed', () => {

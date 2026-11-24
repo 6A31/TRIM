@@ -1,3 +1,7 @@
+// Module scope: renderer scripts are classic <script>s, so without this wrapper
+// every top-level function becomes a global and modules overwrite each other
+// (and builtins like window.open / window.close).
+(function () {
 /**
  * AI response HTML sanitize + inline-math helpers (shared by renderer + tests).
  */
@@ -68,3 +72,4 @@ if (typeof module !== 'undefined' && module.exports) {
 if (typeof window !== 'undefined') {
   window._aiSanitize = api;
 }
+})();

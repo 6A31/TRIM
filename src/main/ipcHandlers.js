@@ -385,10 +385,44 @@ function loadSettingsSync() {
 
 function applyAutoStart(enabled) {
   if (!app.isPackaged) return;
+  if (process.platform === 'linux') {
+    applyLinuxAutoStart(enabled);
+    return;
+  }
   app.setLoginItemSettings({
     openAtLogin: enabled,
     args: ['--hidden'],
   });
+}
+
+/** Electron's login items don't exist on Linux: use an XDG autostart entry. */
+function applyLinuxAutoStart(enabled) {
+  const configHome = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+  const dir = path.join(configHome, 'autostart');
+  const file = path.join(dir, 'trim.desktop');
+  try {
+    if (!enabled) {
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+      return;
+    }
+    // The AppImage path is stable; the exe inside it lives in a temp mount
+    const exe = process.env.APPIMAGE || app.getPath('exe');
+    const quoted = `"${exe.replace(/(["`$\\])/g, '\\$1')}"`;
+    const entry = [
+      '[Desktop Entry]',
+      'Type=Application',
+      'Name=TRIM',
+      'Comment=Launcher',
+      `Exec=${quoted} --hidden`,
+      'Terminal=false',
+      'X-GNOME-Autostart-enabled=true',
+      '',
+    ].join('\n');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(file, entry, 'utf-8');
+  } catch (err) {
+    console.error('[TRIM] Failed to update autostart entry:', err.message);
+  }
 }
 
 function saveSettingsWithEncryption(settings) {
@@ -519,14 +553,20 @@ const LIST_DIRECTORY_TOOL = {
   },
 };
 
+/** Env for child processes: on Linux, drop AppImage runtime paths (APPDIR libs, etc.). */
+function childProcessEnv() {
+  if (process.platform !== 'linux') return process.env;
+  return require('./platformAdapterLinux').cleanChildEnv(process.env);
+}
+
 function findPython() {
   const bundled = getBundledPythonExecutable();
   if (bundled) return bundled;
 
-  const candidates = ['python', 'python3', 'py'];
+  const candidates = process.platform === 'win32' ? ['python', 'python3', 'py'] : ['python3', 'python'];
   for (const cmd of candidates) {
     try {
-      const result = execFileSync(cmd, ['--version'], { stdio: 'pipe', timeout: 5000 }).toString().trim();
+      const result = execFileSync(cmd, ['--version'], { stdio: 'pipe', timeout: 5000, env: childProcessEnv() }).toString().trim();
       if (result.startsWith('Python 3')) return cmd;
     } catch {}
   }
@@ -542,7 +582,7 @@ const CORE_PYTHON_PACKAGES = [
 
 function execFileAsync(cmd, args, opts = {}) {
   return new Promise((resolve, reject) => {
-    execFile(cmd, args, opts, (err, stdout, stderr) => {
+    execFile(cmd, args, { env: childProcessEnv(), ...opts }, (err, stdout, stderr) => {
       if (err) reject(Object.assign(err, { stdout, stderr }));
       else resolve({ stdout: stdout || '', stderr: stderr || '' });
     });
@@ -679,7 +719,7 @@ function cleanupOrphanedTempDirs() {
   } catch {}
 }
 
-async function runPythonCode(py, code, packages, plotPath, workingDir, event) {
+async function runPythonCode(py, code, packages, plotPath, workingDir, event, signal) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trim-py-'));
   const scriptPath = path.join(tmpDir, 'script.py');
   let cwd = tmpDir;
@@ -705,10 +745,12 @@ except ImportError:
 
     fs.writeFileSync(scriptPath, preamble + code, 'utf-8');
 
+    if (signal && signal.aborted) return { error: 'Stopped by user.' };
     const { stdout, stderr } = await execFileAsync(py, [scriptPath], {
       cwd,
       timeout: 30000,
       maxBuffer: 5 * 1024 * 1024,
+      ...(signal ? { signal } : {}),
     });
 
     let plot = null;
@@ -865,17 +907,27 @@ const MUTATING_TOOLS = new Set(['write_file', 'edit_file', 'delete_file']);
 
 let ipcMainRef = null;
 
+let pendingConfirmCancel = null;
+
 function requestConfirmation(event, details) {
   return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      ipcMainRef.removeAllListeners(IPC.CONFIRM_ACTION_RESPONSE);
-      resolve(false);
-    }, 60000);
-
-    ipcMainRef.once(IPC.CONFIRM_ACTION_RESPONSE, (_e, approved) => {
+    let settled = false;
+    const finish = (approved) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timeout);
-      resolve(approved);
-    });
+      ipcMainRef.removeListener(IPC.CONFIRM_ACTION_RESPONSE, onResponse);
+      if (pendingConfirmCancel === cancel) pendingConfirmCancel = null;
+      resolve(approved === true);
+    };
+    const onResponse = (_e, approved) => finish(approved);
+    const cancel = () => finish(false);
+    const timeout = setTimeout(cancel, 60000);
+
+    // Only one confirmation can be pending at a time
+    if (pendingConfirmCancel) pendingConfirmCancel();
+    pendingConfirmCancel = cancel;
+    ipcMainRef.on(IPC.CONFIRM_ACTION_RESPONSE, onResponse);
 
     event.sender.send(IPC.CONFIRM_ACTION, details);
   });
@@ -1086,9 +1138,28 @@ function resolveFileReferences(query) {
 }
 
 let activeQueryId = 0;
+let activeAbortController = null;
+
+/** Cancel the in-flight AI query (HTTP request, running Python, pending confirmation). */
+function abortActiveAIQuery() {
+  activeQueryId++;
+  if (activeAbortController) {
+    try { activeAbortController.abort(); } catch {}
+    activeAbortController = null;
+  }
+  if (pendingConfirmCancel) pendingConfirmCancel();
+  return true;
+}
 
 async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pastedImages) {
+  // A new query supersedes any older one still in flight
+  if (activeAbortController) {
+    try { activeAbortController.abort(); } catch {}
+  }
   const queryId = ++activeQueryId;
+  const controller = new AbortController();
+  activeAbortController = controller;
+  const isAborted = () => queryId !== activeQueryId || controller.signal.aborted;
   const currentTurn = ++turnCounter;
 
   if (!ai) {
@@ -1148,8 +1219,8 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
     // eslint-disable-next-line no-constant-condition
     while (true) {
     while (round < MAX_ROUNDS) {
-      // Bail out if a newer query has started
-      if (queryId !== activeQueryId) {
+      // Bail out if a newer query has started or the user stopped this one
+      if (isAborted()) {
         return { error: '__aborted__' };
       }
 
@@ -1159,11 +1230,13 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
         config: {
           tools: AI_TOOLS,
           systemInstruction: sysInstruction,
+          abortSignal: controller.signal,
           toolConfig: {
             includeServerSideToolInvocations: true,
           },
         },
       });
+      if (isAborted()) return { error: '__aborted__' };
 
       const candidate = response.candidates?.[0];
       const functionCalls = response.functionCalls;
@@ -1222,7 +1295,8 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
             sendStatus(event, 'Running Python code...');
 
             const plotPath = path.join(os.tmpdir(), `trim-plot-${Date.now()}.png`);
-            const pyResult = await runPythonCode(py, code, packages, plotPath, workingDir, event);
+            const pyResult = await runPythonCode(py, code, packages, plotPath, workingDir, event, controller.signal);
+            if (isAborted()) return { error: '__aborted__' };
 
             if (showOutput) {
               codeOutputs.push({
@@ -1285,6 +1359,7 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
 
             sendStatus(event, 'Waiting for approval...');
             const approved = await requestConfirmation(event, details);
+            if (isAborted()) return { error: '__aborted__' };
 
             let result;
             if (approved) {
@@ -1344,6 +1419,7 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
                 contents: [{ role: 'user', parts: [{ text: promptText }] }],
                 config: {
                   responseModalities: ['TEXT', 'IMAGE'],
+                  abortSignal: controller.signal,
                 },
               });
               const imgCandidate = imgResponse.candidates?.[0];
@@ -1455,6 +1531,7 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
     // Reached round limit; ask user whether to keep going
     sendStatus(event, 'Waiting for approval...');
     const keepGoing = await requestConfirmation(event, { tool: 'continue_processing', roundsUsed: round });
+    if (isAborted()) return { error: '__aborted__' };
     if (!keepGoing) {
       const hadFileChanges = fileChangeLog.some(c => c.turn === currentTurn);
       return { text: 'Stopped after ' + round + ' rounds.', sources: [], codeOutputs, generatedImages, turnIndex: currentTurn, hadFileChanges };
@@ -1462,7 +1539,10 @@ async function handleAIQuery(event, query, usePro, forceShowOutput, followUp, pa
     round = 0; // reset and continue the outer loop
     } // end outer while
   } catch (err) {
+    if (isAborted() || (err && err.name === 'AbortError')) return { error: '__aborted__' };
     return { error: friendlyError(err) };
+  } finally {
+    if (activeAbortController === controller) activeAbortController = null;
   }
 }
 
@@ -1715,8 +1795,47 @@ function streamDeepMatches(queryLower, roots, candidateMap, settings, sender, re
 
 // --- Register all IPC handlers ---
 
+// --- Calculator math engine (SymPy worker) ---
+
+let casEngine = null;
+
+function getCasEngine() {
+  if (casEngine) return casEngine;
+  const { CasEngine } = require('./casEngine');
+  casEngine = new CasEngine({
+    findPython: () => {
+      if (!pythonCmd) pythonCmd = findPython();
+      return pythonCmd;
+    },
+    libDir: path.join(app.getPath('userData'), 'cas-lib'),
+    workDir: path.join(app.getPath('userData'), 'cas'),
+    worksheetFile: path.join(app.getPath('userData'), 'cas-worksheet.json'),
+    env: childProcessEnv(),
+    onStatus: (status) => {
+      const { BrowserWindow } = require('electron');
+      for (const win of BrowserWindow.getAllWindows()) {
+        try { win.webContents.send(IPC.CAS_STATUS, status); } catch { /* window closing */ }
+      }
+    },
+  });
+  return casEngine;
+}
+
+function stopCasEngine() {
+  if (casEngine) casEngine.stop();
+}
+
 function registerHandlers(ipcMain) {
   ipcMainRef = ipcMain;
+
+  ipcMain.handle(IPC.CAS_EVAL, async (_e, input, commit) => getCasEngine().evaluate(String(input ?? ''), { commit: !!commit }));
+  ipcMain.handle(IPC.CAS_RESET, async () => getCasEngine().reset());
+  ipcMain.handle(IPC.CAS_WORKSHEET, async () => getCasEngine().getWorksheet());
+  ipcMain.handle(IPC.CAS_COMMIT, async (_e, input, index) => getCasEngine().commitRow(String(input ?? ''), Number.isInteger(index) ? index : null));
+  ipcMain.handle(IPC.CAS_DELETE_ROW, async (_e, index) => getCasEngine().deleteRow(Number(index)));
+  ipcMain.handle(IPC.CAS_STATUS, async () => getCasEngine().getStatus());
+  // Warm the engine in the background so the first c: query doesn't wait for SymPy to load
+  setTimeout(() => { getCasEngine().start().catch(() => {}); }, 2000);
   platformAdapter = createPlatformAdapter({
     app,
     fs,
@@ -1813,6 +1932,17 @@ function registerHandlers(ipcMain) {
     return handleAIQuery(event, query, usePro, forceShowOutput, followUp, pastedImages);
   });
 
+  ipcMain.handle(IPC.AI_ABORT, async () => abortActiveAIQuery());
+
+  ipcMain.handle('trim:copy-text', async (_e, text) => {
+    try {
+      require('electron').clipboard.writeText(String(text ?? ''));
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
   ipcMain.handle('trim:copy-image', async (_e, dataUri) => {
     try {
       const { nativeImage, clipboard } = require('electron');
@@ -1857,9 +1987,14 @@ function registerHandlers(ipcMain) {
       if (hasPathSep || hasDrive) {
         // Direct path mode: list specific directory
         dbg(`[SEARCH_FOLDERS] Direct path mode (pathSep=${hasPathSep}, drive=${hasDrive})`);
-        const searchPath = hasDrive ? cleanQuery : path.join(os.homedir(), cleanQuery);
-        const dir = path.dirname(searchPath);
-        const pattern = path.basename(searchPath).toLowerCase();
+        let expanded = cleanQuery;
+        if (expanded === '~' || /^~[\\/]/.test(expanded)) expanded = path.join(os.homedir(), expanded.slice(1));
+        if (/^[a-zA-Z]:$/.test(expanded)) expanded += path.sep; // "C:" → drive root
+        const searchPath = path.isAbsolute(expanded) ? expanded : path.join(os.homedir(), expanded);
+        // "dir/" lists the folder's contents; "dir/na" filters entries of dir by "na"
+        const endsWithSep = /[\\/]$/.test(cleanQuery) || /^[a-zA-Z]:$/.test(cleanQuery);
+        const dir = endsWithSep ? searchPath : path.dirname(searchPath);
+        const pattern = endsWithSep ? '' : path.basename(searchPath).toLowerCase();
 
         if (!fs.existsSync(dir)) {
           dbg(`[SEARCH_FOLDERS] Dir not found: "${dir}"`);
@@ -1914,11 +2049,25 @@ function registerHandlers(ipcMain) {
   });
 
   ipcMain.handle(IPC.OPEN_FOLDER, async (_e, folderPath) => {
-    // Only open actual directories - refuse files to prevent executing binaries.
+    // Directories and documents open normally. Executables/scripts are revealed
+    // in the file manager instead of being run directly.
+    let stat;
     try {
-      const stat = fs.statSync(folderPath);
-      if (!stat.isDirectory()) return;
+      stat = fs.statSync(folderPath);
     } catch {
+      return;
+    }
+    if (stat.isDirectory()) {
+      shell.openPath(folderPath);
+      return;
+    }
+    const EXEC_EXTS = new Set([
+      '.exe', '.bat', '.cmd', '.com', '.ps1', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.wsh',
+      '.msi', '.scr', '.lnk', '.reg', '.sh', '.bash', '.command', '.app', '.appimage', '.run', '.bin', '.desktop',
+    ]);
+    const isUnixExecutable = process.platform !== 'win32' && (stat.mode & 0o111) !== 0;
+    if (EXEC_EXTS.has(path.extname(folderPath).toLowerCase()) || isUnixExecutable) {
+      shell.showItemInFolder(folderPath);
       return;
     }
     shell.openPath(folderPath);
@@ -1946,7 +2095,7 @@ function registerHandlers(ipcMain) {
     if (data.autoStart !== undefined) applyAutoStart(data.autoStart);
     if (data.shortcut !== undefined) {
       const globalHotkey = require('./globalHotkey');
-      globalHotkey.register(data.shortcut);
+      globalHotkey.register(data.shortcut, { silent: true });
     }
     appCache = null;
     return merged;
@@ -1954,11 +2103,11 @@ function registerHandlers(ipcMain) {
 
   ipcMain.handle(IPC.UPDATE_SHORTCUT, async (_e, accelerator) => {
     const globalHotkey = require('./globalHotkey');
-    const ok = globalHotkey.register(accelerator);
+    const ok = globalHotkey.register(accelerator, { silent: true });
     if (!ok) {
       // Re-register the saved shortcut on failure
       const settings = loadSettingsSync();
-      globalHotkey.register(settings.shortcut);
+      globalHotkey.register(settings.shortcut, { silent: true });
     }
     return ok;
   });
@@ -1990,10 +2139,14 @@ function registerHandlers(ipcMain) {
       }
     } else if (process.platform === 'darwin') {
       win.setVibrancy(type === 'none' ? null : 'under-window');
+    } else if (/^#[0-9a-f]{6}$/i.test(appColorHex || '')) {
+      // Linux has no blur material: keep the opaque window color in sync with the theme
+      win.setBackgroundColor(`#FF${appColorHex.slice(1)}`);
     }
   });
 
   ipcMain.handle(IPC.CLEANUP, async () => {
+    abortActiveAIQuery();
     resetAISessionState();
     return true;
   });
@@ -2144,4 +2297,4 @@ function registerHandlers(ipcMain) {
   });
 }
 
-module.exports = { registerHandlers, loadSettingsSync };
+module.exports = { registerHandlers, loadSettingsSync, stopCasEngine };

@@ -1,9 +1,22 @@
+// Module scope: renderer scripts are classic <script>s, so without this wrapper
+// every top-level function becomes a global and modules overwrite each other
+// (and builtins like window.open / window.close).
+(function () {
 let appList = null;
-let loading = false;
+let loadPromise = null;
 let usageData = {};
 
-async function init() {
-  loading = true;
+function init() {
+  if (!loadPromise) {
+    loadPromise = load().finally(() => {
+      // Allow a retry later if the list came back empty (e.g. enumeration failed)
+      if (!appList || appList.length === 0) loadPromise = null;
+    });
+  }
+  return loadPromise;
+}
+
+async function load() {
   try {
     const [apps, usage] = await Promise.all([
       window.trim.searchApps(),
@@ -14,7 +27,6 @@ async function init() {
   } catch {
     appList = [];
   }
-  loading = false;
 }
 
 // Levenshtein distance for typo tolerance
@@ -42,7 +54,9 @@ function levenshtein(a, b) {
 }
 
 async function search(query) {
-  if (!appList && !loading) await init();
+  // First keystrokes can arrive while the list is still loading: wait for it
+  // instead of reporting "No results"
+  if (!appList || appList.length === 0) await init();
   if (!appList) return [];
 
   const q = query.toLowerCase().trim();
@@ -132,3 +146,4 @@ async function loadIcon(exePath) {
 init();
 
 window._appSearch = { search, loadIcon };
+})();

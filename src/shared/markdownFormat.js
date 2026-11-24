@@ -1,3 +1,7 @@
+// Module scope: renderer scripts are classic <script>s, so without this wrapper
+// every top-level function becomes a global and modules overwrite each other
+// (and builtins like window.open / window.close).
+(function () {
 /**
  * Lightweight markdown → HTML for AI responses (renderer-safe subset).
  * Used by aiQuery.js; tested in Node without Electron.
@@ -82,3 +86,4 @@ if (typeof module !== 'undefined' && module.exports) {
 if (typeof window !== 'undefined') {
   window._markdownFormat = markdownFormatApi;
 }
+})();

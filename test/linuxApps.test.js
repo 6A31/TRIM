@@ -22,7 +22,13 @@ Icon=com.example.App
 `,
       'utf-8',
     );
-    fs.symlinkSync(realDesktop, path.join(appsDir, 'com.example.App.desktop'));
+    try {
+      fs.symlinkSync(realDesktop, path.join(appsDir, 'com.example.App.desktop'));
+    } catch (err) {
+      // Windows without Developer Mode can't create symlinks; nothing to test here
+      if (err.code === 'EPERM') { fs.rmSync(tmp, { recursive: true, force: true }); return; }
+      throw err;
+    }
 
     const out = [];
     collectDesktopFiles(fs, path, appsDir, out);
@@ -40,5 +46,35 @@ Icon=com.example.App
     const spotify = apps.find((a) => /spotify/i.test(a.name));
     assert.ok(spotify, 'expected Spotify from Flatpak exports');
     assert.match(spotify.target, /\.desktop$/);
+  });
+});
+
+describe('Linux desktop entry helpers', () => {
+  const { parseExecLine, cleanChildEnv, parseDesktopEntry } = require('../src/main/platformAdapterLinux');
+
+  it('parseExecLine drops field codes and honours quotes', () => {
+    assert.deepEqual(parseExecLine('firefox %u'), ['firefox']);
+    assert.deepEqual(parseExecLine('"/opt/My App/app" --flag="a b" %F'), ['/opt/My App/app', '--flag=a b']);
+    assert.deepEqual(parseExecLine('echo 100%%'), ['echo', '100%']);
+  });
+
+  it('cleanChildEnv strips AppImage runtime paths', () => {
+    const env = cleanChildEnv({
+      APPDIR: '/tmp/.mount_trim',
+      APPIMAGE: '/home/u/TRIM.AppImage',
+      PATH: '/tmp/.mount_trim/usr/bin:/usr/bin',
+      LD_LIBRARY_PATH: '/tmp/.mount_trim/usr/lib',
+      HOME: '/home/u',
+    });
+    assert.equal(env.PATH, '/usr/bin');
+    assert.equal(env.LD_LIBRARY_PATH, undefined);
+    assert.equal(env.APPIMAGE, undefined);
+    assert.equal(env.HOME, '/home/u');
+  });
+
+  it('parseDesktopEntry reads Terminal and escapes', () => {
+    const e = parseDesktopEntry('[Desktop Entry]\nName=My\\sApp\nExec=htop\nTerminal=true\n');
+    assert.equal(e.name, 'My App');
+    assert.equal(e.terminal, true);
   });
 });

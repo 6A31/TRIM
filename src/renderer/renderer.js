@@ -54,10 +54,13 @@ function boot() {
       window._settings.dismiss();
     }
 
+    // A half-finished worksheet edit shouldn't survive closing the bar
+    if (window._calculator && window._calculator.resetEditing) window._calculator.resetEditing();
+
     // Always clear pasted images on hide
     if (window._inputRouter) window._inputRouter.clearPastedImage();
 
-    const hasChat = window._aiQuery && window._aiQuery.isFollowUp();
+    const hasChat = window._aiQuery && (window._aiQuery.isFollowUp() || window._aiQuery.isBusy());
     input.value = '';
     if (window._inputRouter) window._inputRouter.refreshInputDecor(input);
 
@@ -74,9 +77,9 @@ function boot() {
 
   // Re-focus input when window is shown
   window.trim.onWindowShown(async () => {
-    const hasChat = window._aiQuery && window._aiQuery.isFollowUp();
+    const hasChat = window._aiQuery && (window._aiQuery.isFollowUp() || window._aiQuery.isBusy());
     if (hasChat) {
-      const mode = window._aiQuery.getConversationPrefix ? window._aiQuery.getConversationPrefix() : 'ai';
+      const mode = window._aiQuery.getActiveMode ? window._aiQuery.getActiveMode() : 'ai';
       const prefix = mode === 'ai_pro' ? '?? ' : '? ';
       input.value = prefix;
       if (window._inputRouter) window._inputRouter.refreshInputDecor(input);
@@ -90,7 +93,7 @@ function boot() {
         const results = document.getElementById('results-container');
         const contentH = ai.classList.contains('hidden') ? results.scrollHeight : ai.scrollHeight;
         if (contentH > 0) {
-          window.trim.resizeWindow(Math.min(barH + contentH, 500));
+          window.trim.resizeWindow(barH + contentH);
         }
       });
     } else {
@@ -100,9 +103,10 @@ function boot() {
       const MODE_PREFIXES = { app: '', ai: '? ', ai_pro: '?? ', calc: 'c: ', folder: 'f: ' };
       const prefix = MODE_PREFIXES[defaultMode] || '';
       input.value = prefix;
-      if (window._inputRouter) window._inputRouter.refreshInputDecor(input);
       if (prefix) input.setSelectionRange(prefix.length, prefix.length);
       window._ui.clearResults();
+      // Let the router update the mode icon, hint and chips for the prefix
+      input.dispatchEvent(new Event('input'));
     }
     input.focus();
   });
